@@ -23,5 +23,6 @@ build/
 .ipynb_checkpoints/
 
 # Environment files
-.env
+*.env
+!example.env
 .env.local 

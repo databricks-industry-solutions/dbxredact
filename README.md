@@ -1,38 +1,190 @@
-# Databricks Solution Accelerator Template - MODIFY THIS README.md
+# dbxredact
 
-[![Databricks](https://img.shields.io/badge/Databricks-Solution_Accelerator-FF3621?style=for-the-badge&logo=databricks)](https://databricks.com)
-[![Unity Catalog](https://img.shields.io/badge/Unity_Catalog-Enabled-00A1C9?style=for-the-badge)](https://docs.databricks.com/en/data-governance/unity-catalog/index.html)
-[![Serverless](https://img.shields.io/badge/Serverless-Compute-00C851?style=for-the-badge)](https://docs.databricks.com/en/compute/serverless.html)
+PII/PHI detection and redaction library for Databricks.
 
-## Installation Guidelines
+## Overview
 
-1. Clone the project you'd like to run into your Databricks Workspace
+dbxredact provides tools for detecting, evaluating, and redacting Protected Health Information (PHI) and Personally Identifiable Information (PII) in text data on Databricks.
 
-<img width="1726" height="677" alt="Screenshot 2025-07-23 at 11 05 25 AM" src="https://github.com/user-attachments/assets/55b1729f-ad07-420e-a271-843266abfb71" />
+### Features
 
-2. Open the Asset Bundle Editor in the Databricks UI
+- **Multiple Detection Methods**: Presidio (rule-based), AI Query (LLM-based), and GLiNER (NER-based)
+- **Multi-language Support**: English and Spanish with open-source spaCy models
+- **Entity Alignment**: Combine results from multiple detection methods with confidence scoring
+- **Flexible Redaction**: Generic (`[REDACTED]`) or typed (`[PERSON]`, `[EMAIL]`) strategies
+- **Unity Catalog Integration**: Tag-based column identification for automated redaction
 
-<img width="1120" height="665" alt="Screenshot 2025-07-23 at 11 06 12 AM" src="https://github.com/user-attachments/assets/d1f91256-eb8f-4456-8d88-c0a37b1bd4c5" />
+## Quickstart
 
-3. Click on "Deploy"
+### Option 1: CLI Deployment
 
-<img width="1523" height="902" alt="Screenshot 2025-07-23 at 11 09 37 AM" src="https://github.com/user-attachments/assets/9564cbdd-c5c5-4210-bf27-2b19e6efc85b" />
+1. **Configure environment**:
+   ```bash
+   cp example.env dev.env
+   ```
+   Edit `dev.env`:
+   ```
+   DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+   CATALOG=your_catalog
+   SCHEMA=redaction
+   ```
 
-4. Navigate to the Deployments tab in the Asset Bundle UI (🚀 icon) and click "Run" on the job available. This will run the notebooks from this project sequentially.
+2. **Deploy**:
+   ```bash
+   ./deploy.sh dev
+   ```
+   This builds the wheel, uploads it to a volume, and deploys the Databricks Asset Bundle.
 
-<img width="1527" height="880" alt="Screenshot 2025-07-23 at 11 10 13 AM" src="https://github.com/user-attachments/assets/0f612882-7123-449b-8349-1835bc59523c" />
+3. **Run the redaction pipeline**:
+   ```bash
+   databricks bundle run redaction_pipeline -t dev \
+     --notebook-params source_table=catalog.schema.source_table,text_column=text,output_table=catalog.schema.redacted_output
+   ```
 
-## Contributing
+### Option 2: Git Folder (No CLI)
 
-1. **git clone** this project locally
-2. Utilize the Databricks CLI to test your changes against a Databricks workspace of your choice
-3. Contribute to repositories with pull requests (PRs), ensuring that you always have a second-party review from a capable teammate
+1. Clone to a Databricks Git Folder
 
+2. Install dbxredact (choose one):
+   ```python
+   # From GitHub directly
+   %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
+   
+   # Or download wheel from releases, upload to a volume, then:
+   %pip install /Volumes/your_catalog/your_schema/wheels/dbxredact-<version>-py3-none-any.whl
+   ```
 
-## 📄 Third-Party Package Licenses - FILL IN WITH YOUR PROJECT'S OPEN SOURCE PACKAGES + LICENSING
+3. Open `notebooks/4_redaction_pipeline.py`, configure widgets, and run
 
-&copy; 2025 Databricks, Inc. All rights reserved. The source in this project is provided subject to the Databricks License [https://databricks.com/db-license-source]. All included or referenced third party libraries are subject to the licenses set forth below.
+## Detection Methods
 
-| Package | License | Copyright |
-|---------|---------|-----------|
-| | | |
+| Method | Description | Use Case |
+|--------|-------------|----------|
+| **Presidio** | Rule-based with spaCy NLP | Fast, deterministic, no API calls |
+| **AI Query** | LLM-based via Databricks endpoints | Context-aware, complex patterns |
+| **GLiNER** | NER with HuggingFace models | Biomedical focus, GPU acceleration |
+
+## Notebooks
+
+| Notebook | Description |
+|----------|-------------|
+| `1_benchmarking_detection.py` | Run detection benchmarks |
+| `2_benchmarking_evaluation.py` | Evaluate detection performance |
+| `3_benchmarking_redaction.py` | Apply redaction to results |
+| `4_redaction_pipeline.py` | End-to-end detection and redaction |
+
+## API Reference
+
+### Detection
+
+```python
+from dbxredact import run_detection_pipeline
+
+result_df = run_detection_pipeline(
+    spark=spark,
+    source_df=source_df,
+    doc_id_column="doc_id",
+    text_column="text",
+    use_presidio=True,
+    use_ai_query=True,
+    endpoint="databricks-gpt-oss-120b"
+)
+```
+
+### Redaction
+
+```python
+from dbxredact import run_redaction_pipeline
+
+result_df = run_redaction_pipeline(
+    spark=spark,
+    source_table="catalog.schema.medical_notes",
+    text_column="note_text",
+    output_table="catalog.schema.medical_notes_redacted",
+    redaction_strategy="typed"  # or "generic"
+)
+```
+
+### Simple Text Redaction
+
+```python
+from dbxredact import redact_text
+
+text = "Patient John Smith (SSN: 123-45-6789) visited on 2024-01-15."
+entities = [
+    {"entity": "John Smith", "start": 8, "end": 18, "entity_type": "PERSON"},
+    {"entity": "123-45-6789", "start": 25, "end": 36, "entity_type": "US_SSN"},
+]
+
+result = redact_text(text, entities, strategy="typed")
+# "Patient [PERSON] (SSN: [US_SSN]) visited on 2024-01-15."
+```
+
+## Project Structure
+
+```
+dbxredact/
+  databricks.yml.template  # DAB config template
+  deploy.sh                # Build and deploy script
+  pyproject.toml           # Poetry dependencies
+  src/dbxredact/           # Core library
+  notebooks/               # Databricks notebooks
+  tests/                   # Unit and integration tests
+  data/                    # Benchmark data
+```
+
+## Testing
+
+```bash
+pytest tests/ -v
+```
+
+## Libraries
+
+### Core Dependencies
+
+| Library | Version | License | Description | PyPI |
+|---------|---------|---------|-------------|------|
+| presidio-analyzer | 2.2.358 | MIT | Microsoft Presidio PII detection engine | [PyPI](https://pypi.org/project/presidio-analyzer/) |
+| presidio-anonymizer | 2.2.358 | MIT | Microsoft Presidio anonymization engine | [PyPI](https://pypi.org/project/presidio-anonymizer/) |
+| spacy | 3.8.7 | MIT | Industrial-strength NLP library | [PyPI](https://pypi.org/project/spacy/) |
+| gliner | >=0.1.0 | Apache 2.0 | Generalist NER using bidirectional transformers | [PyPI](https://pypi.org/project/gliner/) |
+| rapidfuzz | >=3.0.0 | MIT | Fast fuzzy string matching | [PyPI](https://pypi.org/project/rapidfuzz/) |
+| pydantic | >=2.0.0 | MIT | Data validation using Python type hints | [PyPI](https://pypi.org/project/pydantic/) |
+| pyyaml | >=6.0.1 | MIT | YAML parser and emitter | [PyPI](https://pypi.org/project/PyYAML/) |
+| databricks-sdk | >=0.30.0 | Apache 2.0 | Databricks SDK for Python | [PyPI](https://pypi.org/project/databricks-sdk/) |
+
+### Optional spaCy Models (for Presidio)
+
+| Model | License | Description | Install |
+|-------|---------|-------------|---------|
+| en_core_web_sm | MIT | English NLP model | [spaCy Models](https://spacy.io/models/en) |
+| es_core_news_sm | MIT | Spanish NLP model | [spaCy Models](https://spacy.io/models/es) |
+
+### Runtime Dependencies (provided by Databricks)
+
+| Library | License | Description |
+|---------|---------|-------------|
+| pandas | BSD-3-Clause | Data manipulation library |
+| pyspark | Apache 2.0 | Apache Spark Python API |
+| pyarrow | Apache 2.0 | Apache Arrow Python bindings |
+
+**All dependencies use permissive open-source licenses** (MIT, Apache 2.0, BSD-3-Clause). No copyleft (GPL) dependencies.
+
+## HIPAA Compliance
+
+This library provides tools for PHI detection and redaction, but **users are responsible for ensuring HIPAA compliance** in their deployment. Key considerations:
+
+| Area | Responsibility |
+|------|---------------|
+| **Data Encryption** | Enable encryption at rest and in transit in your Databricks workspace |
+| **Access Controls** | Configure appropriate table/catalog permissions in Unity Catalog |
+| **Audit Logging** | Enable workspace audit logs for compliance tracking |
+| **BAA** | Execute a Business Associate Agreement with Databricks if handling PHI |
+| **Validation** | Verify redaction completeness for your specific data and use case |
+
+This tool does not log, store, or transmit PHI. All processing occurs within your Databricks workspace.
+
+## License
+
+[DB License](LICENSE.md)

@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "dbxredact"
+version = "0.1.0"
+description = "PII/PHI detection and redaction library for Databricks"
+readme = "README.md"
+authors = ["Eli Swanson <eli.swanson@databricks.com>"]
+maintainers = ["Eli Swanson <eli.swanson@databricks.com>"]
+license = "DB License"
+requires-poetry = ">=2.0.*"
+packages = [{ include = "dbxredact", from = "src" }]
+
+[tool.poetry.dependencies]
+python = ">=3.10.12, <3.13.0"
+presidio_analyzer = "==2.2.358"
+presidio_anonymizer = "==2.2.358"
+spacy = "==3.8.7"
+rapidfuzz = ">=3.0.0"
+pydantic = ">=2.0.0"
+databricks-sdk = ">=0.30.0"
+pyyaml = ">=6.0.1"
+gliner = ">=0.1.0"
+
+[tool.poetry.requires-plugins]
+poetry-plugin-export = ">=1.9.0"
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^4.0.1"
+pytest = ">=8.3.4"
+pandas = ">=2.0.0"
+pyspark = ">=3.5.0"
+pyarrow = ">=15.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

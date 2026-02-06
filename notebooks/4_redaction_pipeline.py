@@ -1,0 +1,426 @@
+# Databricks notebook source
+# MAGIC %md
+# MAGIC # End-to-End Redaction Pipeline
+# MAGIC
+# MAGIC This notebook provides a complete end-to-end pipeline for PII/PHI detection and redaction.
+# MAGIC
+# MAGIC **Input Modes:**
+# MAGIC - **Table + Column**: Specify table name and text column directly
+# MAGIC - **Table + Tag**: Query Unity Catalog for columns with specific classification tags
+# MAGIC
+# MAGIC **Refresh Approaches:**
+# MAGIC - **full**: Batch processing with overwrite (existing behavior)
+# MAGIC - **incremental**: Structured Streaming with append mode
+# MAGIC
+# MAGIC **Output Strategies:**
+# MAGIC - **validation**: Include all detection columns for debugging
+# MAGIC - **production**: Only doc_id and redacted text columns
+
+# COMMAND ----------
+
+# MAGIC %pip install -r ../requirements.txt
+# MAGIC #%pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+# MAGIC #%pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl
+# MAGIC %restart_python
+
+# COMMAND ----------
+
+import os
+
+from dbxredact import (
+    run_redaction_pipeline,
+    run_redaction_pipeline_streaming,
+    run_redaction_pipeline_by_tag,
+    get_columns_by_tag,
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Widget Configuration
+
+# COMMAND ----------
+
+dbutils.widgets.dropdown(
+    name="input_mode",
+    defaultValue="table_column",
+    choices=["table_column", "table_tag"],
+    label="0. Input Mode",
+)
+dbutils.widgets.text(
+    name="source_table",
+    defaultValue="dbxredact.eval_data.jsl_benchmark_source",
+    label="1. Source Table (fully qualified)",
+)
+dbutils.widgets.text(
+    name="text_column",
+    defaultValue="text",
+    label="2a. Text Column (for table_column mode)",
+)
+dbutils.widgets.text(
+    name="tag_name",
+    defaultValue="data_classification",
+    label="2b. Tag Name (for table_tag mode)",
+)
+dbutils.widgets.text(
+    name="tag_value",
+    defaultValue="protected",
+    label="2c. Tag Value (for table_tag mode)",
+)
+dbutils.widgets.text(
+    name="doc_id_column", defaultValue="doc_id", label="3. Document ID Column"
+)
+dbutils.widgets.dropdown(
+    name="use_presidio",
+    defaultValue="true",
+    choices=["true", "false"],
+    label="4. Use Presidio Detection",
+)
+dbutils.widgets.dropdown(
+    name="use_ai_query",
+    defaultValue="true",
+    choices=["true", "false"],
+    label="5. Use AI Query Detection",
+)
+dbutils.widgets.dropdown(
+    name="use_gliner",
+    defaultValue="false",
+    choices=["true", "false"],
+    label="6. Use GLiNER Detection",
+)
+dbutils.widgets.dropdown(
+    name="redaction_strategy",
+    defaultValue="typed",
+    choices=["generic", "typed"],
+    label="7. Redaction Strategy",
+)
+dbutils.widgets.dropdown(
+    name="endpoint",
+    defaultValue="databricks-gpt-oss-120b",
+    choices=sorted(
+        [
+            "databricks-gpt-oss-120b",
+        ]
+    ),
+    label="8. AI Endpoint (for AI Query method)",
+)
+dbutils.widgets.text(
+    name="presidio_score_threshold",
+    defaultValue="0.5",
+    label="9. Presidio Score Threshold",
+)
+dbutils.widgets.text(name="num_cores", defaultValue="10", label="10. Number of Cores")
+dbutils.widgets.text(
+    name="output_table",
+    defaultValue="",
+    label="11. Output Table (leave blank for auto-suffix)",
+)
+dbutils.widgets.dropdown(
+    name="refresh_approach",
+    defaultValue="full",
+    choices=["full", "incremental"],
+    label="12. Refresh Approach",
+)
+dbutils.widgets.dropdown(
+    name="output_strategy",
+    defaultValue="validation",
+    choices=["validation", "production"],
+    label="13. Output Strategy",
+)
+dbutils.widgets.text(
+    name="checkpoint_path",
+    defaultValue="",
+    label="14. Checkpoint Path (for incremental, leave blank for auto)",
+)
+
+# COMMAND ----------
+
+input_mode = dbutils.widgets.get("input_mode")
+source_table = dbutils.widgets.get("source_table")
+text_column = dbutils.widgets.get("text_column")
+tag_name = dbutils.widgets.get("tag_name")
+tag_value = dbutils.widgets.get("tag_value")
+doc_id_column = dbutils.widgets.get("doc_id_column")
+use_presidio = dbutils.widgets.get("use_presidio") == "true"
+use_ai_query = dbutils.widgets.get("use_ai_query") == "true"
+use_gliner = dbutils.widgets.get("use_gliner") == "true"
+redaction_strategy = dbutils.widgets.get("redaction_strategy")
+endpoint = dbutils.widgets.get("endpoint")
+score_threshold = float(dbutils.widgets.get("presidio_score_threshold"))
+num_cores = int(dbutils.widgets.get("num_cores"))
+output_table = dbutils.widgets.get("output_table")
+refresh_approach = dbutils.widgets.get("refresh_approach")
+output_strategy = dbutils.widgets.get("output_strategy")
+checkpoint_path = dbutils.widgets.get("checkpoint_path")
+
+if not output_table:
+    output_table = f"{source_table}_redacted"
+
+# Auto-generate checkpoint path if not provided
+if not checkpoint_path and refresh_approach == "incremental":
+    # Extract table name for checkpoint path
+    table_name_only = output_table.split(".")[-1]
+    catalog = output_table.split(".")[0] if "." in output_table else "main"
+    schema = output_table.split(".")[1] if output_table.count(".") >= 1 else "default"
+    checkpoint_path = f"/Volumes/{catalog}/{schema}/checkpoints/{table_name_only}"
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Configuration
+
+# COMMAND ----------
+
+dbr_version = os.environ.get("DATABRICKS_RUNTIME_VERSION", "")
+if "client" not in dbr_version:
+    spark.conf.set("spark.sql.execution.arrow.maxRecordsPerBatch", 100)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Validate Input Mode
+
+# COMMAND ----------
+
+if input_mode == "table_tag":
+    print(f"Input Mode: Table + Tag")
+    print(f"Searching for columns with {tag_name}='{tag_value}' in {source_table}")
+
+    protected_columns = get_columns_by_tag(
+        spark=spark, table_name=source_table, tag_name=tag_name, tag_value=tag_value
+    )
+
+    if not protected_columns:
+        raise ValueError(
+            f"No columns found with {tag_name}='{tag_value}' in {source_table}"
+        )
+
+    print(f"Found {len(protected_columns)} protected column(s): {protected_columns}")
+    text_column = protected_columns[0]
+    print(f"Using first column for redaction: {text_column}")
+else:
+    print(f"Input Mode: Table + Column")
+    print(f"Using specified column: {text_column}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Run Redaction Pipeline
+
+# COMMAND ----------
+
+print("=" * 80)
+print("STARTING REDACTION PIPELINE")
+print("=" * 80)
+print(f"Source Table: {source_table}")
+print(f"Text Column: {text_column}")
+print(f"Use Presidio: {use_presidio}")
+print(f"Use AI Query: {use_ai_query}")
+print(f"Use GLiNER: {use_gliner}")
+print(f"Redaction Strategy: {redaction_strategy}")
+print(f"Output Table: {output_table}")
+print(f"Refresh Approach: {refresh_approach}")
+print(f"Output Strategy: {output_strategy}")
+if refresh_approach == "incremental":
+    print(f"Checkpoint Path: {checkpoint_path}")
+print("=" * 80)
+
+# COMMAND ----------
+
+if refresh_approach == "incremental":
+    # Streaming approach - incremental processing
+    print("Using INCREMENTAL (streaming) approach...")
+
+    if input_mode == "table_tag":
+        # For tag mode, we still need to resolve the text column first
+        # Then use the streaming pipeline
+        query = run_redaction_pipeline_streaming(
+            spark=spark,
+            source_table=source_table,
+            text_column=text_column,
+            output_table=output_table,
+            checkpoint_path=checkpoint_path,
+            doc_id_column=doc_id_column,
+            use_presidio=use_presidio,
+            use_ai_query=use_ai_query,
+            use_gliner=use_gliner,
+            redaction_strategy=redaction_strategy,
+            endpoint=endpoint if use_ai_query else None,
+            score_threshold=score_threshold,
+            num_cores=num_cores,
+            use_aligned=True,
+            output_strategy=output_strategy,
+        )
+    else:
+        query = run_redaction_pipeline_streaming(
+            spark=spark,
+            source_table=source_table,
+            text_column=text_column,
+            output_table=output_table,
+            checkpoint_path=checkpoint_path,
+            doc_id_column=doc_id_column,
+            use_presidio=use_presidio,
+            use_ai_query=use_ai_query,
+            use_gliner=use_gliner,
+            redaction_strategy=redaction_strategy,
+            endpoint=endpoint if use_ai_query else None,
+            score_threshold=score_threshold,
+            num_cores=num_cores,
+            use_aligned=True,
+            output_strategy=output_strategy,
+        )
+
+    # Wait for completion (availableNow trigger processes all then stops)
+    query.awaitTermination()
+
+    # Load result for display
+    result_df = spark.table(output_table)
+
+else:
+    # Batch approach - full refresh
+    print("Using FULL (batch) approach...")
+
+    if input_mode == "table_tag":
+        result_df = run_redaction_pipeline_by_tag(
+            spark=spark,
+            source_table=source_table,
+            output_table=output_table,
+            tag_name=tag_name,
+            tag_value=tag_value,
+            doc_id_column=doc_id_column,
+            use_presidio=use_presidio,
+            use_ai_query=use_ai_query,
+            use_gliner=use_gliner,
+            redaction_strategy=redaction_strategy,
+            endpoint=endpoint if use_ai_query else None,
+            score_threshold=score_threshold,
+            num_cores=num_cores,
+            output_strategy=output_strategy,
+        )
+    else:
+        result_df = run_redaction_pipeline(
+            spark=spark,
+            source_table=source_table,
+            text_column=text_column,
+            output_table=output_table,
+            doc_id_column=doc_id_column,
+            use_presidio=use_presidio,
+            use_ai_query=use_ai_query,
+            use_gliner=use_gliner,
+            redaction_strategy=redaction_strategy,
+            endpoint=endpoint if use_ai_query else None,
+            score_threshold=score_threshold,
+            num_cores=num_cores,
+            use_aligned=True,
+            output_strategy=output_strategy,
+        )
+
+# COMMAND ----------
+
+print("=" * 80)
+print("PIPELINE COMPLETE")
+print("=" * 80)
+print(f"Redacted table saved to: {output_table}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## View Results
+
+# COMMAND ----------
+
+display(result_df)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Results Summary
+
+# COMMAND ----------
+
+redacted_col_name = f"{text_column}_redacted"
+
+# Check which columns are available based on output_strategy
+if redacted_col_name in result_df.columns and text_column in result_df.columns:
+    summary_df = result_df.selectExpr(
+        "COUNT(*) as total_documents",
+        f"AVG(LENGTH({text_column})) as avg_original_length",
+        f"AVG(LENGTH({redacted_col_name})) as avg_redacted_length",
+    )
+    display(summary_df)
+elif redacted_col_name in result_df.columns:
+    # Production mode - only redacted column available
+    summary_df = result_df.selectExpr(
+        "COUNT(*) as total_documents",
+        f"AVG(LENGTH({redacted_col_name})) as avg_redacted_length",
+    )
+    display(summary_df)
+else:
+    print(f"Output table has {result_df.count()} documents")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Sample Comparisons (Validation Mode Only)
+
+# COMMAND ----------
+
+if text_column in result_df.columns and redacted_col_name in result_df.columns:
+    comparison_df = result_df.select(doc_id_column, text_column, redacted_col_name)
+    display(comparison_df.limit(10))
+else:
+    print("Sample comparisons only available in validation output mode")
+    display(result_df.limit(10))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Entity Statistics (Validation Mode Only)
+
+# COMMAND ----------
+
+if output_strategy == "validation":
+    if use_presidio and "presidio_results_struct" in result_df.columns:
+        print("=== Presidio Detection Stats ===")
+        presidio_stats = result_df.selectExpr(
+            "COUNT(*) as total_docs",
+            "SUM(SIZE(presidio_results_struct)) as total_entities",
+            "AVG(SIZE(presidio_results_struct)) as avg_entities_per_doc",
+        )
+        display(presidio_stats)
+
+# COMMAND ----------
+
+if output_strategy == "validation":
+    if use_ai_query and "ai_results_struct" in result_df.columns:
+        print("=== AI Query Detection Stats ===")
+        ai_stats = result_df.selectExpr(
+            "COUNT(*) as total_docs",
+            "SUM(SIZE(ai_results_struct)) as total_entities",
+            "AVG(SIZE(ai_results_struct)) as avg_entities_per_doc",
+        )
+        display(ai_stats)
+
+# COMMAND ----------
+
+if output_strategy == "validation":
+    if use_gliner and "gliner_results_struct" in result_df.columns:
+        print("=== GLiNER Detection Stats ===")
+        gliner_stats = result_df.selectExpr(
+            "COUNT(*) as total_docs",
+            "SUM(SIZE(gliner_results_struct)) as total_entities",
+            "AVG(SIZE(gliner_results_struct)) as avg_entities_per_doc",
+        )
+        display(gliner_stats)
+
+# COMMAND ----------
+
+if output_strategy == "validation":
+    if "aligned_entities" in result_df.columns:
+        print("=== Aligned Detection Stats ===")
+        aligned_stats = result_df.selectExpr(
+            "COUNT(*) as total_docs",
+            "SUM(SIZE(aligned_entities)) as total_entities",
+            "AVG(SIZE(aligned_entities)) as avg_entities_per_doc",
+        )
+        display(aligned_stats)

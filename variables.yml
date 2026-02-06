@@ -1,0 +1,34 @@
+variables:
+  workspace_host:
+    description: "Databricks workspace host URL"
+    default: ""
+  deploying_user:
+    description: "User deploying the bundle"
+    default: ""
+  current_user:
+    description: "Current user for production run_as"
+    default: ""
+  current_working_directory:
+    description: "Root path for production deployment"
+    default: ""
+  catalog:
+    description: "Unity Catalog name"
+    default: ""
+  schema:
+    description: "Schema name"
+    default: "redaction"
+  wheel_volume:
+    description: "Volume path for wheel uploads"
+    default: "/Volumes/${var.catalog}/${var.schema}/wheels"
+  checkpoints_volume:
+    description: "Volume path for checkpoint uploads"
+    default: "/Volumes/${var.catalog}/${var.schema}/checkpoints/{output_table}"
+  refresh_approach:
+    description: "ETL approach - full or incremental, incremental will use a streaming approach."
+    default: "full"
+  redaction_strategy:
+    description: Should redacted text be replaced with a generic placeholder or an entity type placeholder?
+    default: "typed"
+  output_strategy:
+    description: Should the redacted entities be included in the output table as a column (validation), or should only the primary key and redacted text be included (production)?
+    default: "production"
