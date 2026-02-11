@@ -1,10 +1,13 @@
 """GLiNER-based PHI/PII detection using HuggingFace transformers."""
 
 import json
+import logging
 import pandas as pd
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import pandas_udf, col, from_json
 from pyspark.sql.types import StringType
+
+logger = logging.getLogger(__name__)
 
 
 def run_gliner_detection(
@@ -72,7 +75,7 @@ def run_gliner_detection(
                 ]
                 results.append(json.dumps(formatted_entities))
             except Exception as e:
-                print(f"Error processing document {doc_id}: {str(e)}")
+                logger.warning(f"Error processing document {doc_id}: {str(e)}")
                 results.append(json.dumps([]))
 
         return pd.Series(results)

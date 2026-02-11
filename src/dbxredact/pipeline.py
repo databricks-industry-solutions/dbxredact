@@ -223,6 +223,7 @@ def run_redaction_pipeline(
     use_aligned: bool = True,
     fail_on_presidio_error: bool = True,
     output_strategy: OutputStrategy = "validation",
+    max_rows: Optional[int] = 1000,
 ) -> DataFrame:
     """
     Run end-to-end detection and redaction pipeline.
@@ -244,11 +245,20 @@ def run_redaction_pipeline(
         use_aligned: If True, use aligned entities for redaction
         fail_on_presidio_error: If False, continue without Presidio if models unavailable
         output_strategy: 'validation' (all columns) or 'production' (doc_id + redacted only)
+        max_rows: Maximum rows to process. Set to None to disable limit. Default: 1000
 
     Returns:
         DataFrame with redacted text
     """
     source_df = spark.table(source_table).select(doc_id_column, text_column).distinct()
+
+    if max_rows is not None:
+        row_count = source_df.count()
+        if row_count > max_rows:
+            raise ValueError(
+                f"Source table has {row_count:,} rows (after dedup), which exceeds max_rows={max_rows:,}. "
+                f"Increase max_rows or set to None to disable this limit."
+            )
 
     detection_df = run_detection_pipeline(
         spark=spark,
@@ -477,6 +487,7 @@ def run_redaction_pipeline_by_tag(
     gliner_model: str = "Ihor/gliner-biomed-large-v1.0",
     num_cores: int = 10,
     output_strategy: OutputStrategy = "validation",
+    max_rows: Optional[int] = 1000,
 ) -> DataFrame:
     """
     Run redaction pipeline on columns identified by Unity Catalog tags.
@@ -497,6 +508,7 @@ def run_redaction_pipeline_by_tag(
         gliner_model: HuggingFace model for GLiNER
         num_cores: Number of cores for repartitioning
         output_strategy: 'validation' (all columns) or 'production' (doc_id + redacted only)
+        max_rows: Maximum rows to process. Set to None to disable limit. Default: 1000
 
     Returns:
         DataFrame with redacted columns
@@ -527,6 +539,7 @@ def run_redaction_pipeline_by_tag(
         gliner_model=gliner_model,
         num_cores=num_cores,
         output_strategy=output_strategy,
+        max_rows=max_rows,
     )
 
     return result_df

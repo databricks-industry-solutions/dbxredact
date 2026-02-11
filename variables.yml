@@ -32,3 +32,6 @@ variables:
   output_strategy:
     description: Should the redacted entities be included in the output table as a column (validation), or should only the primary key and redacted text be included (production)?
     default: "production"
+  max_rows:
+    description: "Maximum rows to process in the redaction pipeline. Set to 0 for unlimited."
+    default: "1000"

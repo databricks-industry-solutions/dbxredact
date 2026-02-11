@@ -16,8 +16,18 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -r ../requirements.txt
-# MAGIC %restart_python
+# MAGIC %md
+# MAGIC ## Install dbxredact
+# MAGIC
+# MAGIC When running via a Databricks Asset Bundle job, the wheel is attached as a cluster library automatically.
+# MAGIC For interactive use, uncomment and update the `%pip install` line below.
+
+# COMMAND ----------
+
+# MAGIC # For interactive use, uncomment one of the following:
+# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.0-py3-none-any.whl
+# MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
+# MAGIC # %restart_python
 
 # COMMAND ----------
 
@@ -64,6 +74,13 @@ entities_column = dbutils.widgets.get("entities_column")
 redaction_strategy = dbutils.widgets.get("redaction_strategy")
 output_table = dbutils.widgets.get("output_table")
 redacted_suffix = dbutils.widgets.get("redacted_suffix")
+
+for _table in [detection_table, output_table]:
+    if _table and ("your_catalog" in _table or "your_schema" in _table):
+        raise ValueError(
+            "Please update the table widgets with your actual catalog and schema names. "
+            "The defaults (your_catalog.your_schema) are placeholders."
+        )
 
 if not output_table:
     output_table = f"{detection_table}_redacted"

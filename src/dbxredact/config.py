@@ -91,7 +91,7 @@ The text is listed here:
 
 EXAMPLE: 
 MedicalText: "MRN: 222345 -- I saw patient Alice Anderson today at 11:30am, who presents with a sore throat and temperature of 103F"
-response: [{{"entity": "Alice Anderson", "entity_type": "PERSON"}}, {{"entity": "222345", "entity_type": "MEDICAL_RECORED_NUMBER"}}]
+response: [{{"entity": "Alice Anderson", "entity_type": "PERSON"}}, {{"entity": "222345", "entity_type": "MEDICAL_RECORD_NUMBER"}}]
 """
 
 # Default thresholds

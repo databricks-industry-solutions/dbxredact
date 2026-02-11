@@ -12,11 +12,13 @@ resources:
               endpoint: databricks-gpt-oss-120b
           new_cluster:
             spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
             node_type_id: "i3.xlarge"
             num_workers: 2
             data_security_mode: SINGLE_USER
           libraries:
-            - whl: /Volumes/${var.catalog}/${var.schema}/wheels/dbxredact-${var.package_version}-py3-none-any.whl
+            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
         - task_key: run_evaluation
           depends_on:
@@ -29,11 +31,13 @@ resources:
               evaluation_output_table: ${var.catalog}.${var.schema}.phi_evaluation_results
           new_cluster:
             spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
             node_type_id: "i3.xlarge"
             num_workers: 2
             data_security_mode: SINGLE_USER
           libraries:
-            - whl: /Volumes/${var.catalog}/${var.schema}/wheels/dbxredact-${var.package_version}-py3-none-any.whl
+            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
     redaction_pipeline:
       name: "[${bundle.target}] dbxredact - Redaction Pipeline"
@@ -54,10 +58,13 @@ resources:
               score_threshold: "0.5"
               refresh_approach: "full"
               output_strategy: "production"
+              max_rows: ${var.max_rows}
           new_cluster:
             spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
             node_type_id: "i3.xlarge"
             num_workers: 1
             data_security_mode: SINGLE_USER
           libraries:
-            - whl: /Volumes/${var.catalog}/${var.schema}/wheels/dbxredact-${var.package_version}-py3-none-any.whl
+            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl

@@ -25,11 +25,17 @@ targets:
     default: true
     workspace:
       host: __DATABRICKS_HOST__
+    variables:
+      catalog: __CATALOG__
+      schema: __SCHEMA__
 
   prod:
     mode: production
     workspace:
       host: __DATABRICKS_HOST__
+    variables:
+      catalog: __CATALOG__
+      schema: __SCHEMA__
       root_path: ${var.current_working_directory}
     permissions:
       - user_name: ${var.current_user}

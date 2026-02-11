@@ -1,6 +1,8 @@
 # dbxredact
 
-PII/PHI detection and redaction library for Databricks.
+PII/PHI detection and redaction solution accelerator for Databricks.
+
+> **Disclaimer**: This is a Databricks Solution Accelerator -- a starting point to accelerate your project, not a finished product. You should evaluate, test, and modify this code for your specific use case. Detection and redaction results will vary depending on your data and configuration. **Use at your own risk.** Databricks makes no guarantees regarding the completeness or accuracy of any redaction performed by this tool.
 
 ## Overview
 
@@ -68,10 +70,12 @@ dbxredact provides tools for detecting, evaluating, and redacting Protected Heal
 
 | Notebook | Description |
 |----------|-------------|
-| `1_benchmarking_detection.py` | Run detection benchmarks |
-| `2_benchmarking_evaluation.py` | Evaluate detection performance |
-| `3_benchmarking_redaction.py` | Apply redaction to results |
 | `4_redaction_pipeline.py` | End-to-end detection and redaction |
+| `1_benchmarking_detection.py` | Run detection benchmarks (requires benchmark data) |
+| `2_benchmarking_evaluation.py` | Evaluate detection performance (requires benchmark data) |
+| `3_benchmarking_redaction.py` | Apply redaction to results (requires benchmark data) |
+
+> **Note**: Notebooks 1-3 are benchmarking tools that require external evaluation data (e.g. the JSL benchmark dataset). This data is not included in the repository because it is not synthetic. To use these notebooks, supply your own labeled evaluation dataset and update the widget defaults accordingly.
 
 ## API Reference
 
@@ -130,7 +134,6 @@ dbxredact/
   src/dbxredact/           # Core library
   notebooks/               # Databricks notebooks
   tests/                   # Unit and integration tests
-  data/                    # Benchmark data
 ```
 
 ## Testing
@@ -171,19 +174,18 @@ pytest tests/ -v
 
 **All dependencies use permissive open-source licenses** (MIT, Apache 2.0, BSD-3-Clause). No copyleft (GPL) dependencies.
 
-## HIPAA Compliance
+## Compliance and Responsibility
 
-This library provides tools for PHI detection and redaction, but **users are responsible for ensuring HIPAA compliance** in their deployment. Key considerations:
+This is a **solution accelerator** -- it provides tooling to assist with PII/PHI detection and redaction, but **all compliance obligations remain with the user**. This includes but is not limited to:
 
-| Area | Responsibility |
-|------|---------------|
-| **Data Encryption** | Enable encryption at rest and in transit in your Databricks workspace |
-| **Access Controls** | Configure appropriate table/catalog permissions in Unity Catalog |
-| **Audit Logging** | Enable workspace audit logs for compliance tracking |
-| **BAA** | Execute a Business Associate Agreement with Databricks if handling PHI |
-| **Validation** | Verify redaction completeness for your specific data and use case |
+- **HIPAA**: You are responsible for ensuring your deployment meets HIPAA requirements (encryption, access controls, audit logging, BAAs, etc.)
+- **GDPR, CCPA, and other privacy regulations**: Evaluate whether your use of this tool satisfies applicable data protection laws
+- **Validation**: You must verify that redaction results are complete and accurate for your specific data and use case
+- **Data Encryption**: Enable encryption at rest and in transit in your Databricks workspace
+- **Access Controls**: Configure appropriate table/catalog permissions in Unity Catalog
+- **Audit Logging**: Enable workspace audit logs for compliance tracking
 
-This tool does not log, store, or transmit PHI. All processing occurs within your Databricks workspace.
+Databricks makes no guarantees that use of this tool alone is sufficient for regulatory compliance.
 
 ## License
 

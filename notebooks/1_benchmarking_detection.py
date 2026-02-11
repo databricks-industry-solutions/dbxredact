@@ -15,7 +15,19 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -r ../requirements.txt
+# MAGIC %md
+# MAGIC ## Install dbxredact
+# MAGIC
+# MAGIC When running via a Databricks Asset Bundle job, the wheel is attached as a cluster library automatically.
+# MAGIC For interactive use, uncomment and update the `%pip install` line below.
+
+# COMMAND ----------
+
+# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl
+# MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
+# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.0-py3-none-any.whl
+# MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
 # MAGIC %restart_python
 
 # COMMAND ----------
@@ -84,6 +96,12 @@ dbutils.widgets.text(
 source_table = dbutils.widgets.get("source_table")
 doc_id_column = dbutils.widgets.get("doc_id_column")
 text_column = dbutils.widgets.get("text_column")
+
+if "your_catalog" in source_table or "your_schema" in source_table:
+    raise ValueError(
+        "Please update the 'source_table' widget with your actual catalog and schema names. "
+        "The defaults (your_catalog.your_schema) are placeholders."
+    )
 use_presidio = dbutils.widgets.get("use_presidio") == "true"
 use_ai_query = dbutils.widgets.get("use_ai_query") == "true"
 use_gliner = dbutils.widgets.get("use_gliner") == "true"
@@ -118,12 +136,18 @@ source_df = spark.table(source_table).select(doc_id_column, col(text_column))
 source_df_count = source_df.count()
 
 if source_df_count > 100:
-    raise ValueError(
+    print(
         "Source table has more than 100 documents. Please use a smaller table or increase the limit for evaluation."
     )
+    source_df = source_df.distinct()
+    source_df_distinct_count = source_df.count()
+    if source_df_distinct_count > 100:
+        raise ValueError(
+            "Source table has more than 100 distinct documents, even when distincted. Please use a smaller table or increase the limit for evaluation."
+        )
 
 print(f"Loaded {source_df_count} documents from {source_table}")
-display(source_df)
+display(source_df.limit(10))
 
 # COMMAND ----------
 

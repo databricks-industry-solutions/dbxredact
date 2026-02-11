@@ -18,9 +18,20 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -r ../requirements.txt
-# MAGIC #%pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
-# MAGIC #%pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl
+# MAGIC %md
+# MAGIC ## Install dbxredact
+# MAGIC
+# MAGIC When running via a Databricks Asset Bundle job, the wheel is attached as a cluster library automatically.
+# MAGIC For interactive use, uncomment and update the `%pip install` line below.
+# MAGIC Uncomment the spaCy model lines if using Presidio detection.
+
+# COMMAND ----------
+
+# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl
+# MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
+# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.0-py3-none-any.whl
+# MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
 # MAGIC %restart_python
 
 # COMMAND ----------
@@ -49,7 +60,7 @@ dbutils.widgets.dropdown(
 )
 dbutils.widgets.text(
     name="source_table",
-    defaultValue="dbxredact.eval_data.jsl_benchmark_source",
+    defaultValue="your_catalog.your_schema.jsl_benchmark_source",
     label="1. Source Table (fully qualified)",
 )
 dbutils.widgets.text(
@@ -132,11 +143,22 @@ dbutils.widgets.text(
     defaultValue="",
     label="14. Checkpoint Path (for incremental, leave blank for auto)",
 )
+dbutils.widgets.text(
+    name="max_rows",
+    defaultValue="1000",
+    label="15. Max Rows (0 for unlimited)",
+)
 
 # COMMAND ----------
 
 input_mode = dbutils.widgets.get("input_mode")
 source_table = dbutils.widgets.get("source_table")
+
+if "your_catalog" in source_table or "your_schema" in source_table:
+    raise ValueError(
+        "Please update the 'source_table' widget with your actual catalog and schema names. "
+        "The defaults (your_catalog.your_schema) are placeholders."
+    )
 text_column = dbutils.widgets.get("text_column")
 tag_name = dbutils.widgets.get("tag_name")
 tag_value = dbutils.widgets.get("tag_value")
@@ -152,6 +174,8 @@ output_table = dbutils.widgets.get("output_table")
 refresh_approach = dbutils.widgets.get("refresh_approach")
 output_strategy = dbutils.widgets.get("output_strategy")
 checkpoint_path = dbutils.widgets.get("checkpoint_path")
+max_rows_str = dbutils.widgets.get("max_rows")
+max_rows = None if max_rows_str == "0" else int(max_rows_str)
 
 if not output_table:
     output_table = f"{source_table}_redacted"
@@ -296,6 +320,7 @@ else:
             score_threshold=score_threshold,
             num_cores=num_cores,
             output_strategy=output_strategy,
+            max_rows=max_rows,
         )
     else:
         result_df = run_redaction_pipeline(
@@ -313,6 +338,7 @@ else:
             num_cores=num_cores,
             use_aligned=True,
             output_strategy=output_strategy,
+            max_rows=max_rows,
         )
 
 # COMMAND ----------

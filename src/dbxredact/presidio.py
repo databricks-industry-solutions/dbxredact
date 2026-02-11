@@ -55,7 +55,7 @@ def _get_cached_analyzer(add_pci: bool, score_threshold: float):
     cache_key = (add_pci, score_threshold)
     
     if cache_key not in _analyzer_cache:
-        from dbxredact.analyzer import get_analyzer_engine
+        from .analyzer import get_analyzer_engine
         _analyzer_cache[cache_key] = get_analyzer_engine(
             add_pci=add_pci, default_score_threshold=score_threshold
         )

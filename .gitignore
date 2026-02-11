@@ -1,5 +1,6 @@
 # Databricks Asset Bundle files
 .databricks/
+databricks.yml
 
 # IDE files
 .vscode/
@@ -18,6 +19,17 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.venv/
+venv/
+ENV/
+
+# Poetry
+poetry.lock
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
@@ -25,4 +37,5 @@ build/
 # Environment files
 *.env
 !example.env
-.env.local 
+.env.local
+databricks.yml

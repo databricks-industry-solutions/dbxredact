@@ -7,6 +7,7 @@
 # MAGIC **Detection Methods:**
 # MAGIC - Presidio-based detection
 # MAGIC - AI-based detection
+# MAGIC - GLiNER-based detection
 # MAGIC - Aligned/combined detection
 # MAGIC
 # MAGIC **Metrics:**
@@ -17,8 +18,18 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -r ../requirements.txt
-# MAGIC %restart_python
+# MAGIC %md
+# MAGIC ## Install dbxredact
+# MAGIC
+# MAGIC When running via a Databricks Asset Bundle job, the wheel is attached as a cluster library automatically.
+# MAGIC For interactive use, uncomment and update the `%pip install` line below.
+
+# COMMAND ----------
+
+# MAGIC # For interactive use, uncomment one of the following:
+# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.0-py3-none-any.whl
+# MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
+# MAGIC # %restart_python
 
 # COMMAND ----------
 
@@ -74,6 +85,13 @@ dataset_name = dbutils.widgets.get("dataset_name")
 evaluation_output_table = dbutils.widgets.get("evaluation_output_table")
 write_mode = dbutils.widgets.get("write_mode")
 
+for _table in [ground_truth_table, detection_results_table, evaluation_output_table]:
+    if "your_catalog" in _table or "your_schema" in _table:
+        raise ValueError(
+            "Please update all table widgets with your actual catalog and schema names. "
+            "The defaults (your_catalog.your_schema) are placeholders."
+        )
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -103,6 +121,8 @@ if "presidio_results_struct" in detection_df.columns:
     available_methods.append("presidio")
 if "ai_results_struct" in detection_df.columns:
     available_methods.append("ai")
+if "gliner_results_struct" in detection_df.columns:
+    available_methods.append("gliner")
 if "aligned_entities" in detection_df.columns:
     available_methods.append("aligned")
 
@@ -137,6 +157,20 @@ if "ai" in available_methods:
             "ai_results_exploded.score",
             "ai_results_exploded.start",
             "ai_results_exploded.end",
+        )
+    )
+
+if "gliner" in available_methods:
+    exploded_results["gliner"] = (
+        detection_df.select("doc_id", "gliner_results_struct")
+        .withColumn("gliner_results_exploded", explode("gliner_results_struct"))
+        .select(
+            "doc_id",
+            "gliner_results_exploded.entity",
+            "gliner_results_exploded.entity_type",
+            "gliner_results_exploded.score",
+            "gliner_results_exploded.start",
+            "gliner_results_exploded.end",
         )
     )
 

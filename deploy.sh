@@ -64,7 +64,10 @@ if [ ! -f "databricks.yml.template" ]; then
     exit 1
 fi
 
-sed "s|__DATABRICKS_HOST__|${DATABRICKS_HOST}|g" databricks.yml.template > databricks.yml
+sed -e "s|__DATABRICKS_HOST__|${DATABRICKS_HOST}|g" \
+    -e "s|__CATALOG__|${CATALOG}|g" \
+    -e "s|__SCHEMA__|${SCHEMA}|g" \
+    databricks.yml.template > databricks.yml
 echo "Generated databricks.yml"
 
 # Build wheel
@@ -78,11 +81,6 @@ WHEEL_FILE="dbxredact-${PACKAGE_VERSION}-py3-none-any.whl"
 WHEEL_PATH="dist/${WHEEL_FILE}"
 
 echo "Built wheel: ${WHEEL_PATH}"
-
-# Export requirements.txt
-echo ""
-echo "Exporting requirements.txt..."
-poetry export -f requirements.txt --output requirements.txt --without-hashes
 
 # Upload wheel to volume
 echo ""
