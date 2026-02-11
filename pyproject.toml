@@ -3,8 +3,16 @@ name = "dbxredact"
 version = "0.1.0"
 description = "PII/PHI detection and redaction library for Databricks"
 readme = "README.md"
-authors = ["Eli Swanson <eli.swanson@databricks.com>"]
-maintainers = ["Eli Swanson <eli.swanson@databricks.com>"]
+authors = [
+    "Eli Swanson <eli.swanson@databricks.com>",
+    "Brennan Beal <brennan.beal@databricks.com>",
+    "Yen Low <yen.low@databricks.com>",
+]
+maintainers = [
+    "Eli Swanson <eli.swanson@databricks.com>",
+    "Brennan Beal <brennan.beal@databricks.com>",
+    "Yen Low <yen.low@databricks.com>",
+]
 license = "DB License"
 requires-poetry = ">=2.0.*"
 packages = [{ include = "dbxredact", from = "src" }]
