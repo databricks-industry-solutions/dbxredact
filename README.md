@@ -2,7 +2,7 @@
 
 PII/PHI detection and redaction solution accelerator for Databricks.
 
-> **Disclaimer**: This is a Databricks Solution Accelerator -- a starting point to accelerate your project, not a finished product. You should evaluate, test, and modify this code for your specific use case. Detection and redaction results will vary depending on your data and configuration. **Use at your own risk.** Databricks makes no guarantees regarding the completeness or accuracy of any redaction performed by this tool.
+> **Disclaimer**: This is a Databricks Solution Accelerator -- a starting point to accelerate your project. dbxredact is high quality and fully functioning end-to-end, but you should evaluate, test, and modify this code for your specific use case. Detection and redaction results will vary depending on your data and configuration. 
 
 ## Overview
 
@@ -11,10 +11,9 @@ dbxredact provides tools for detecting, evaluating, and redacting Protected Heal
 ### Features
 
 - **Multiple Detection Methods**: Presidio (rule-based), AI Query (LLM-based), and GLiNER (NER-based)
-- **Multi-language Support**: English and Spanish with open-source spaCy models
+- **Multi-language Support**: AI Query and rule-based approaches support Spanish language
 - **Entity Alignment**: Combine results from multiple detection methods with confidence scoring
 - **Flexible Redaction**: Generic (`[REDACTED]`) or typed (`[PERSON]`, `[EMAIL]`) strategies
-- **Unity Catalog Integration**: Tag-based column identification for automated redaction
 
 ## Quickstart
 
