@@ -141,6 +141,9 @@ dbxredact/
 pytest tests/ -v
 ```
 
+## Compute Types
+Use an ML cluster - not currently working on serverless. GLiNER models perform better on GPU, but other models do not.
+
 ## Libraries
 
 ### Core Dependencies
