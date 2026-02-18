@@ -39,3 +39,6 @@ htmlcov/
 !example.env
 .env.local
 databricks.yml
+
+# Downloaded benchmark logs
+benchmark_results/

@@ -35,3 +35,12 @@ variables:
   max_rows:
     description: "Maximum rows to process in the redaction pipeline. Set to 0 for unlimited."
     default: "1000"
+  reasoning_effort:
+    description: "AI Query reasoning effort level: low, medium, or high"
+    default: "medium"
+  cluster_logs_volume:
+    description: "Volume path for cluster log delivery"
+    default: "/Volumes/${var.catalog}/${var.schema}/cluster_logs"
+  alignment_mode:
+    description: "Entity alignment mode: 'union' (recall-optimized, any detector) or 'consensus' (precision-optimized, majority agreement)"
+    default: "union"

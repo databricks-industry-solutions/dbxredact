@@ -7,7 +7,7 @@ import pandas as pd
 from pyspark.sql.functions import pandas_udf
 from pyspark.sql.types import StringType
 
-from .config import PHI_PROMPT_SKELETON, LABEL_ENUMS
+from .config import PHI_PROMPT_SKELETON, LABEL_ENUMS, DEFAULT_AI_CONFIDENCE_SCORE, should_ignore_entity
 
 
 def make_prompt(
@@ -69,9 +69,11 @@ def format_entity_response_object_udf(
         new_entity_list = []
 
         for entity_text, entity_type in unique_entities_set:
+            if should_ignore_entity(entity_text, entity_type):
+                continue
             pattern = re.escape(entity_text)
             positions = [
-                (m.start(), m.end() - 1) for m in re.finditer(pattern, sentence)
+                (m.start(), m.end()) for m in re.finditer(pattern, sentence)
             ]
 
             for position in positions:
@@ -81,7 +83,7 @@ def format_entity_response_object_udf(
                         "entity_type": entity_type,
                         "start": position[0],
                         "end": position[1],
-                        "score": None,
+                        "score": DEFAULT_AI_CONFIDENCE_SCORE,
                         "analysis_explanation": None,
                         "recognition_metadata": {},
                     }

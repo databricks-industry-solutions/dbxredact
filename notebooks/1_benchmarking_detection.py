@@ -23,8 +23,10 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
-# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl
+# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl
+# MAGIC # Fallback if GPU/trf not available:
+# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
+# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_lg-3.8.0/es_core_news_lg-3.8.0-py3-none-any.whl
 # MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
 # MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.0-py3-none-any.whl
 # MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
@@ -92,6 +94,12 @@ dbutils.widgets.text(
     defaultValue="",
     label="9. Output Table (leave blank for auto-suffix)",
 )
+dbutils.widgets.dropdown(
+    name="alignment_mode",
+    defaultValue="union",
+    choices=["union", "consensus"],
+    label="10. Alignment Mode (union=recall, consensus=precision)",
+)
 
 source_table = dbutils.widgets.get("source_table")
 doc_id_column = dbutils.widgets.get("doc_id_column")
@@ -109,6 +117,7 @@ endpoint = dbutils.widgets.get("endpoint")
 score_threshold = float(dbutils.widgets.get("presidio_score_threshold"))
 num_cores = int(dbutils.widgets.get("num_cores"))
 output_table = dbutils.widgets.get("output_table")
+alignment_mode = dbutils.widgets.get("alignment_mode")
 
 if not output_table:
     output_table = f"{source_table}_detection_results"
@@ -140,14 +149,13 @@ if source_df_count > 100:
         "Source table has more than 100 documents. Please use a smaller table or increase the limit for evaluation."
     )
     source_df = source_df.distinct()
-    source_df_distinct_count = source_df.count()
-    if source_df_distinct_count > 100:
+    source_df_count = source_df.count()
+    print(f"After distincting, source table has {source_df_count} documents")
+    if source_df_count > 100:
         raise ValueError(
             "Source table has more than 100 distinct documents, even when distincted. Please use a smaller table or increase the limit for evaluation."
         )
-
 print(f"Loaded {source_df_count} documents from {source_table}")
-display(source_df.limit(10))
 
 # COMMAND ----------
 
@@ -168,6 +176,7 @@ results_df = run_detection_pipeline(
     score_threshold=score_threshold,
     num_cores=num_cores,
     align_results=True,
+    alignment_mode=alignment_mode,
 )
 
 # COMMAND ----------

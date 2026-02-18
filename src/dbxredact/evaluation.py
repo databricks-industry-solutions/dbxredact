@@ -1,9 +1,52 @@
 """Evaluation and metrics functions for PHI/PII detection."""
 
-from typing import Dict, Any
+from typing import Dict, Any, List, Literal
 import pandas as pd
+import numpy as np
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, contains, asc_nulls_last
+from pyspark.sql.functions import col, contains, asc_nulls_last, struct
+
+MatchMode = Literal["strict", "overlap"]
+
+
+def _match_condition(
+    doc_id_column: str,
+    chunk_column: str,
+    entity_column: str,
+    begin_column: str,
+    end_column: str,
+    start_column: str,
+    gt_prefix: str = "gt",
+    det_prefix: str = "det",
+    match_mode: MatchMode = "strict",
+):
+    """Build the match condition between GT and detection rows.
+
+    Args:
+        match_mode:
+            "strict"  - Original full-containment with -1 tolerance.
+                        det.start <= gt.begin AND det.end >= gt.end - 1
+            "overlap" - Standard interval overlap.
+                        det.start < gt.end AND det.end > gt.begin
+    """
+    base = (
+        (col(f"{det_prefix}.{doc_id_column}") == col(f"{gt_prefix}.{doc_id_column}"))
+        & (
+            contains(col(f"{gt_prefix}.{chunk_column}"), col(f"{det_prefix}.{entity_column}"))
+            | contains(col(f"{det_prefix}.{entity_column}"), col(f"{gt_prefix}.{chunk_column}"))
+        )
+    )
+    if match_mode == "overlap":
+        position = (
+            (col(f"{det_prefix}.{start_column}") < col(f"{gt_prefix}.{end_column}"))
+            & (col(f"{det_prefix}.{end_column}") > col(f"{gt_prefix}.{begin_column}"))
+        )
+    else:  # strict
+        position = (
+            (col(f"{det_prefix}.{start_column}") <= col(f"{gt_prefix}.{begin_column}"))
+            & (col(f"{det_prefix}.{end_column}") >= col(f"{gt_prefix}.{end_column}") - 1)
+        )
+    return base & position
 
 
 def evaluate_detection(
@@ -16,6 +59,7 @@ def evaluate_detection(
     begin_column: str = "begin",
     end_column: str = "end",
     start_column: str = "start",
+    match_mode: MatchMode = "strict",
 ) -> DataFrame:
     """
     Evaluate detected entities against ground truth.
@@ -30,6 +74,8 @@ def evaluate_detection(
         begin_column: Name of ground truth start position column
         end_column: Name of ground truth end position column
         start_column: Name of detection start position column
+        match_mode: "strict" (full containment with -1 tolerance) or
+                    "overlap" (interval overlap for partial matches)
 
     Returns:
         DataFrame with matched and unmatched entities for evaluation
@@ -37,17 +83,13 @@ def evaluate_detection(
     gt = ground_truth_df.alias("gt")
     det = detection_df.alias("det")
 
-    eval_df = gt.join(
-        det,
-        (col(f"det.{doc_id_column}") == col(f"gt.{doc_id_column}"))
-        & (
-            contains(col(f"gt.{chunk_column}"), col(f"det.{entity_column}"))
-            | contains(col(f"det.{entity_column}"), col(f"gt.{chunk_column}"))
-        )
-        & (col(f"det.{start_column}") <= col(f"gt.{begin_column}"))
-        & (col(f"det.{end_column}") >= col(f"gt.{end_column}") - 1),
-        how="outer",
+    cond = _match_condition(
+        doc_id_column, chunk_column, entity_column,
+        begin_column, end_column, start_column,
+        match_mode=match_mode,
     )
+
+    eval_df = gt.join(det, cond, how="outer")
 
     if text_column in eval_df.columns:
         eval_df = eval_df.drop(text_column)
@@ -65,29 +107,68 @@ def calculate_metrics(
     total_tokens: int,
     chunk_column: str = "chunk",
     entity_column: str = "entity",
+    doc_id_column: str = "doc_id",
+    begin_column: str = "begin",
+    end_column: str = "end",
+    start_column: str = "start",
 ) -> Dict[str, Any]:
     """
     Calculate classification metrics for PHI detection.
+
+    Uses distinct-counting so that one GT entity matching multiple detections
+    (or vice versa) is only counted once.
 
     Args:
         eval_df: Result from evaluate_detection()
         total_tokens: Total number of tokens/characters in corpus
         chunk_column: Name of ground truth chunk column
         entity_column: Name of detected entity column
+        doc_id_column: Column identifying the document
+        begin_column: GT start position column (used for dedup)
+        end_column: GT end position column (used for dedup)
+        start_column: Detection start position column (used for dedup)
 
     Returns:
         Dictionary with metrics and contingency table values
     """
-    pos_actual = eval_df.where(col(chunk_column).isNotNull()).count()
-    pos_pred = eval_df.where(col(entity_column).isNotNull()).count()
-    tp = eval_df.where(
-        col(chunk_column).isNotNull() & col(entity_column).isNotNull()
-    ).count()
+    gt_id = struct(
+        col(f"gt.{doc_id_column}"), col(f"gt.{begin_column}"),
+        col(f"gt.{end_column}"), col(f"gt.{chunk_column}"),
+    )
+    det_id = struct(
+        col(f"det.{doc_id_column}"), col(f"det.{start_column}"),
+        col(f"det.{end_column}"), col(f"det.{entity_column}"),
+    )
 
-    fp = pos_pred - tp
+    # Distinct GT entities that appear in the eval_df (matched or not)
+    all_gt = eval_df.where(col(f"gt.{chunk_column}").isNotNull()).select(gt_id.alias("_gid")).distinct()
+    pos_actual = all_gt.count()
+
+    # Distinct GT entities that matched at least one detection
+    matched_gt = (
+        eval_df
+        .where(col(f"gt.{chunk_column}").isNotNull() & col(f"det.{entity_column}").isNotNull())
+        .select(gt_id.alias("_gid"))
+        .distinct()
+    )
+    tp = matched_gt.count()
+    fn = pos_actual - tp
+
+    # Distinct detections that appear in the eval_df
+    all_det = eval_df.where(col(f"det.{entity_column}").isNotNull()).select(det_id.alias("_did")).distinct()
+    pos_pred = all_det.count()
+
+    # Distinct detections that matched at least one GT
+    matched_det = (
+        eval_df
+        .where(col(f"gt.{chunk_column}").isNotNull() & col(f"det.{entity_column}").isNotNull())
+        .select(det_id.alias("_did"))
+        .distinct()
+    )
+    fp = pos_pred - matched_det.count()
+
     neg_actual = total_tokens - pos_actual
     tn = neg_actual - fp
-    fn = pos_actual - tp
     neg_pred = tn + fn
 
     recall = tp / pos_actual if pos_actual > 0 else 0.0
@@ -158,9 +239,20 @@ def format_metrics_summary(metrics: Dict[str, Any]) -> pd.DataFrame:
 
 
 def metrics_to_long_format(
-    metrics: Dict[str, Any], dataset_name: str, method_name: str
+    metrics: Dict[str, Any],
+    dataset_name: str,
+    method_name: str,
+    run_metadata: Dict[str, Any] = None,
 ) -> pd.DataFrame:
-    """Convert metrics dictionary to long format for storage and analysis."""
+    """Convert metrics dictionary to long format for storage and analysis.
+
+    Args:
+        metrics: Dictionary of metric values
+        dataset_name: Name of the evaluation dataset
+        method_name: Detection method name
+        run_metadata: Optional dict of run parameters (e.g. gliner_model,
+            reasoning_effort, score_threshold, gliner_threshold, run_id)
+    """
     import datetime
 
     metric_names = [
@@ -181,15 +273,16 @@ def metrics_to_long_format(
 
     for metric_name in metric_names:
         if metric_name in metrics:
-            rows.append(
-                {
-                    "dataset_name": dataset_name,
-                    "method_name": method_name,
-                    "metric_name": metric_name,
-                    "metric_value": float(metrics[metric_name]),
-                    "timestamp": timestamp,
-                }
-            )
+            row = {
+                "dataset_name": dataset_name,
+                "method_name": method_name,
+                "metric_name": metric_name,
+                "metric_value": float(metrics[metric_name]),
+                "timestamp": timestamp,
+            }
+            if run_metadata:
+                row.update(run_metadata)
+            rows.append(row)
 
     return pd.DataFrame(rows)
 
@@ -201,9 +294,20 @@ def save_evaluation_results(
     method_name: str,
     output_table: str,
     mode: str = "append",
+    run_metadata: Dict[str, Any] = None,
 ) -> None:
-    """Save evaluation metrics to a shared table."""
-    long_df = metrics_to_long_format(metrics, dataset_name, method_name)
+    """Save evaluation metrics to a shared table.
+
+    Args:
+        spark: Active SparkSession
+        metrics: Dictionary of metric values
+        dataset_name: Name of the evaluation dataset
+        method_name: Detection method name
+        output_table: Fully qualified output table name
+        mode: Write mode ('append' or 'overwrite')
+        run_metadata: Optional dict of run parameters for reproducibility
+    """
+    long_df = metrics_to_long_format(metrics, dataset_name, method_name, run_metadata)
     spark_df = spark.createDataFrame(long_df)
     spark_df.write.mode(mode).option("mergeSchema", "true").saveAsTable(output_table)
 
@@ -252,4 +356,232 @@ def get_best_method_per_dataset(
     """
 
     return spark.sql(query)
+
+
+_GT_ENTITY_TYPE_CANDIDATES = ["entity_type", "ner_label", "label", "ner", "type", "ner_tag"]
+
+
+def _find_gt_entity_type_col(columns: list) -> str:
+    """Find the entity-type column in the ground truth by trying common names."""
+    for candidate in _GT_ENTITY_TYPE_CANDIDATES:
+        if candidate in columns:
+            return candidate
+    return ""
+
+
+def analyze_errors(
+    ground_truth_df: DataFrame,
+    detection_df: DataFrame,
+    doc_id_column: str = "doc_id",
+    chunk_column: str = "chunk",
+    entity_column: str = "entity",
+    begin_column: str = "begin",
+    end_column: str = "end",
+    start_column: str = "start",
+    gt_entity_type_column: str = None,
+    match_mode: MatchMode = "strict",
+) -> Dict[str, pd.DataFrame]:
+    """Analyze FP/FN errors with entity type breakdowns.
+
+    Uses semi/anti joins so each GT entity and each detection is counted
+    at most once (no double-counting).
+
+    Args:
+        gt_entity_type_column: Name of the entity-type column in ground_truth_df.
+            If None, auto-detects from common names (entity_type, ner_label, label, ...).
+
+    Returns:
+        dict with keys:
+            fp_by_type   - FP counts by detected entity_type
+            fn_by_type   - FN counts by GT entity_type
+            top_fps      - Most common false-positive entity strings
+            top_fns      - Most common missed ground-truth entities
+            recall_by_type - Recall per GT entity type
+    """
+    gt = ground_truth_df
+
+    if gt_entity_type_column is None:
+        gt_entity_type_column = _find_gt_entity_type_col(gt.columns)
+
+    has_gt_type = bool(gt_entity_type_column)
+    if has_gt_type:
+        gt = gt.withColumnRenamed(gt_entity_type_column, "gt_entity_type")
+
+    gt = (
+        gt.withColumnRenamed(doc_id_column, "gt_doc_id")
+        .withColumnRenamed(end_column, "gt_end")
+    )
+
+    det = (
+        detection_df.withColumnRenamed(doc_id_column, "det_doc_id")
+        .withColumnRenamed(end_column, "det_end")
+    )
+
+    # Build match condition with renamed column names
+    base_cond = (
+        (col("det_doc_id") == col("gt_doc_id"))
+        & (
+            contains(col(chunk_column), col(entity_column))
+            | contains(col(entity_column), col(chunk_column))
+        )
+    )
+    if match_mode == "overlap":
+        pos_cond = (
+            (col(start_column) < col("gt_end"))
+            & (col("det_end") > col(begin_column))
+        )
+    else:  # strict
+        pos_cond = (
+            (col(start_column) <= col(begin_column))
+            & (col("det_end") >= col("gt_end") - 1)
+        )
+    match_cond = base_cond & pos_cond
+
+    # FPs: detections with no overlapping GT entity
+    fps = det.join(gt, match_cond, "left_anti")
+
+    # FNs: GT entities with no overlapping detection
+    fns = gt.join(det, match_cond, "left_anti")
+
+    # TPs (GT side): GT entities that matched at least one detection
+    tps_gt = gt.join(det, match_cond, "left_semi")
+
+    fp_by_type = (
+        fps.groupBy("entity_type").count().orderBy(col("count").desc()).toPandas()
+    )
+    top_fps = (
+        fps.groupBy(entity_column, "entity_type")
+        .count()
+        .orderBy(col("count").desc())
+        .limit(25)
+        .toPandas()
+    )
+
+    if has_gt_type:
+        fn_by_type = (
+            fns.groupBy("gt_entity_type")
+            .count()
+            .orderBy(col("count").desc())
+            .toPandas()
+        )
+        top_fns = (
+            fns.groupBy(chunk_column, "gt_entity_type")
+            .count()
+            .orderBy(col("count").desc())
+            .limit(25)
+            .toPandas()
+        )
+        tp_counts = (
+            tps_gt.groupBy("gt_entity_type")
+            .count()
+            .withColumnRenamed("count", "tp")
+            .toPandas()
+        )
+        fn_counts = (
+            fns.groupBy("gt_entity_type")
+            .count()
+            .withColumnRenamed("count", "fn")
+            .toPandas()
+        )
+        recall_df = tp_counts.merge(fn_counts, on="gt_entity_type", how="outer").fillna(0)
+        recall_df["total"] = recall_df["tp"] + recall_df["fn"]
+        recall_df["recall"] = recall_df["tp"] / recall_df["total"]
+        recall_df = recall_df.sort_values("recall", ascending=False)
+    else:
+        fn_by_type = pd.DataFrame()
+        top_fns = (
+            fns.groupBy(chunk_column)
+            .count()
+            .orderBy(col("count").desc())
+            .limit(25)
+            .toPandas()
+        )
+        recall_df = pd.DataFrame()
+
+    return {
+        "fp_by_type": fp_by_type,
+        "fn_by_type": fn_by_type,
+        "top_fps": top_fps,
+        "top_fns": top_fns,
+        "recall_by_type": recall_df,
+    }
+
+
+def build_recall_matrix(
+    error_analyses: Dict[str, Dict[str, pd.DataFrame]],
+) -> tuple:
+    """Build a recall-by-entity-type matrix across methods.
+
+    Args:
+        error_analyses: {method_name: analyze_errors() result}
+
+    Returns:
+        (matrix np.ndarray, entity_types list, methods list)
+    """
+    all_types: set = set()
+    for errors in error_analyses.values():
+        rt = errors.get("recall_by_type")
+        if rt is not None and not rt.empty:
+            all_types.update(rt["gt_entity_type"].tolist())
+
+    all_types_sorted = sorted(all_types)
+    methods = list(error_analyses.keys())
+    matrix = np.zeros((len(all_types_sorted), len(methods)))
+
+    for j, method in enumerate(methods):
+        rt = error_analyses[method].get("recall_by_type")
+        if rt is not None and not rt.empty:
+            for i, etype in enumerate(all_types_sorted):
+                match = rt[rt["gt_entity_type"] == etype]
+                if len(match) > 0:
+                    matrix[i, j] = match["recall"].values[0]
+
+    return matrix, all_types_sorted, methods
+
+
+def summarize_method_strengths(
+    error_analyses: Dict[str, Dict[str, pd.DataFrame]],
+    evaluation_results: Dict[str, Dict[str, Any]],
+) -> pd.DataFrame:
+    """Produce a per-method strengths/weaknesses summary.
+
+    Returns a DataFrame with columns: method, fp_count, fn_count, top_fp_types,
+    missed_types, best_recall_types.
+    """
+    rows: List[dict] = []
+    for method, errors in error_analyses.items():
+        metrics = evaluation_results.get(method, {})
+        fp_types = errors["fp_by_type"]
+        fn_types = errors["fn_by_type"]
+        recall = errors["recall_by_type"]
+
+        top_fp = ", ".join(fp_types["entity_type"].head(3).tolist()) if not fp_types.empty else "-"
+
+        if not fn_types.empty and "gt_entity_type" in fn_types.columns:
+            missed = ", ".join(fn_types["gt_entity_type"].head(3).tolist())
+        else:
+            missed = "-"
+
+        if not recall.empty:
+            best = ", ".join(recall.head(3)["gt_entity_type"].tolist())
+            worst = ", ".join(recall.tail(3)["gt_entity_type"].tolist())
+        else:
+            best = worst = "-"
+
+        rows.append(
+            {
+                "method": method,
+                "precision": round(metrics.get("precision", 0), 3),
+                "recall": round(metrics.get("recall", 0), 3),
+                "f1": round(metrics.get("f1_score", 0), 3),
+                "fp_count": int(metrics.get("false_positives", 0)),
+                "fn_count": int(metrics.get("false_negatives", 0)),
+                "top_fp_types": top_fp,
+                "most_missed_types": missed,
+                "best_recall_types": best,
+                "worst_recall_types": worst,
+            }
+        )
+
+    return pd.DataFrame(rows)
 

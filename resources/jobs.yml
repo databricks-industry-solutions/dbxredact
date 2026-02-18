@@ -2,40 +2,94 @@ resources:
   jobs:
     redaction_benchmark:
       name: "[${bundle.target}] dbxredact - Redaction Benchmark"
+      job_clusters:
+        - job_cluster_key: benchmark_cluster
+          new_cluster:
+            spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
+            node_type_id: "i3.xlarge"
+            num_workers: 2
+            data_security_mode: SINGLE_USER
+            cluster_log_conf:
+              volumes:
+                destination: /Volumes/${var.catalog}/${var.schema}/cluster_logs
       tasks:
         - task_key: run_detection
+          job_cluster_key: benchmark_cluster
           notebook_task:
             notebook_path: ../notebooks/1_benchmarking_detection.py
             base_parameters:
               source_table: ${var.catalog}.${var.schema}.jsl_benchmark_source
               output_table: ${var.catalog}.${var.schema}.jsl_benchmark_detection_results
               endpoint: databricks-gpt-oss-120b
-          new_cluster:
-            spark_version: "17.3.x-scala2.13"
-            kind: CLASSIC_PREVIEW
-            use_ml_runtime: true
-            node_type_id: "i3.xlarge"
-            num_workers: 2
-            data_security_mode: SINGLE_USER
+              alignment_mode: "union"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
         - task_key: run_evaluation
           depends_on:
             - task_key: run_detection
+          job_cluster_key: benchmark_cluster
           notebook_task:
             notebook_path: ../notebooks/2_benchmarking_evaluation.py
             base_parameters:
               ground_truth_table: ${var.catalog}.${var.schema}.jsl_benchmark_ground_truth
               detection_results_table: ${var.catalog}.${var.schema}.jsl_benchmark_detection_results
               evaluation_output_table: ${var.catalog}.${var.schema}.phi_evaluation_results
-          new_cluster:
-            spark_version: "17.3.x-scala2.13"
-            kind: CLASSIC_PREVIEW
-            use_ml_runtime: true
-            node_type_id: "i3.xlarge"
-            num_workers: 2
-            data_security_mode: SINGLE_USER
+          libraries:
+            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+
+        - task_key: run_redaction
+          depends_on:
+            - task_key: run_evaluation
+          job_cluster_key: benchmark_cluster
+          notebook_task:
+            notebook_path: ../notebooks/3_benchmarking_redaction.py
+            base_parameters:
+              detection_table: ${var.catalog}.${var.schema}.jsl_benchmark_detection_results
+              output_table: ${var.catalog}.${var.schema}.jsl_benchmark_redacted
+          libraries:
+            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+
+        - task_key: run_judge
+          depends_on:
+            - task_key: run_redaction
+          job_cluster_key: benchmark_cluster
+          notebook_task:
+            notebook_path: ../notebooks/5_benchmarking_judge.py
+            base_parameters:
+              redacted_table: ${var.catalog}.${var.schema}.jsl_benchmark_redacted
+              endpoint: databricks-gpt-oss-120b
+              output_table: ${var.catalog}.${var.schema}.jsl_benchmark_judge_results
+              judge_methods: "aligned"
+          libraries:
+            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+
+        - task_key: run_audit
+          depends_on:
+            - task_key: run_judge
+          job_cluster_key: benchmark_cluster
+          notebook_task:
+            notebook_path: ../notebooks/6_benchmarking_audit.py
+            base_parameters:
+              evaluation_table: ${var.catalog}.${var.schema}.phi_evaluation_results
+              judge_table: ${var.catalog}.${var.schema}.jsl_benchmark_judge_results
+              audit_table: ${var.catalog}.${var.schema}.phi_benchmark_audit
+          libraries:
+            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+
+        - task_key: run_next_actions
+          depends_on:
+            - task_key: run_audit
+          job_cluster_key: benchmark_cluster
+          notebook_task:
+            notebook_path: ../notebooks/7_benchmarking_next_actions.py
+            base_parameters:
+              audit_table: ${var.catalog}.${var.schema}.phi_benchmark_audit
+              evaluation_table: ${var.catalog}.${var.schema}.phi_evaluation_results
+              endpoint: databricks-gpt-oss-120b
+              output_table: ${var.catalog}.${var.schema}.phi_improvement_recommendations
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
@@ -59,6 +113,7 @@ resources:
               refresh_approach: "full"
               output_strategy: "production"
               max_rows: ${var.max_rows}
+              alignment_mode: "union"
           new_cluster:
             spark_version: "17.3.x-scala2.13"
             kind: CLASSIC_PREVIEW

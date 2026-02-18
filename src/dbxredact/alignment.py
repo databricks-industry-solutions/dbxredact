@@ -228,8 +228,15 @@ class MultiSourceAligner:
         presidio_entities: Optional[List[Dict[str, Any]]] = None,
         gliner_entities: Optional[List[Dict[str, Any]]] = None,
         ai_entities: Optional[List[Dict[str, Any]]] = None,
+        min_sources: int = 1,
     ) -> List[Dict[str, Any]]:
-        """Align entities from multiple sources for a single document."""
+        """Align entities from multiple sources for a single document.
+        
+        Args:
+            min_sources: Minimum number of detection sources that must agree
+                for an entity to be included. Use ceil(active_detectors / 2)
+                for majority-vote consensus.
+        """
         normalized_entities = {
             "presidio": self._normalize_entities(presidio_entities, "presidio", doc_id),
             "gliner": self._normalize_entities(gliner_entities, "gliner", doc_id),
@@ -294,6 +301,9 @@ class MultiSourceAligner:
                     merged["confidence"] = calculate_confidence(merged, MatchType.EXACT)
                     results.append(merged)
 
+        if min_sources > 1:
+            results = [r for r in results if len(r.get("sources", [])) >= min_sources]
+
         cleaned_results = []
         for result in results:
             cleaned = {
@@ -345,6 +355,7 @@ def align_entities_multi_source(
     ai_entities: Optional[List[Dict[str, Any]]],
     doc_id: str,
     fuzzy_threshold: int = DEFAULT_FUZZY_MATCH_THRESHOLD,
+    min_sources: int = 1,
 ) -> List[Dict[str, Any]]:
     """Align entities from multiple sources for a single document."""
     aligner = MultiSourceAligner(fuzzy_threshold=fuzzy_threshold)
@@ -353,6 +364,7 @@ def align_entities_multi_source(
         presidio_entities=presidio_entities,
         gliner_entities=gliner_entities,
         ai_entities=ai_entities,
+        min_sources=min_sources,
     )
 
 
@@ -361,6 +373,7 @@ def align_entities_udf(
     include_presidio: bool = True,
     include_gliner: bool = False,
     include_ai: bool = True,
+    min_sources: int = 1,
 ):
     """Create a Pandas UDF for aligning entities from multiple detection sources."""
     entity_struct = StructType(
@@ -397,6 +410,7 @@ def align_entities_udf(
                 ai_entities=ai_ents if include_ai else None,
                 doc_id=doc_id,
                 fuzzy_threshold=fuzzy_threshold,
+                min_sources=min_sources,
             )
             results.append(aligned)
 

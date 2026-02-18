@@ -12,8 +12,8 @@ class TestRedactText:
         """Test generic redaction strategy."""
         text = "John Smith emailed at test@email.com"
         entities = [
-            {"entity": "John Smith", "start": 0, "end": 9, "entity_type": "PERSON"},
-            {"entity": "test@email.com", "start": 22, "end": 35, "entity_type": "EMAIL"},
+            {"entity": "John Smith", "start": 0, "end": 10, "entity_type": "PERSON"},
+            {"entity": "test@email.com", "start": 22, "end": 36, "entity_type": "EMAIL"},
         ]
 
         result = redact_text(text, entities, strategy="generic")
@@ -26,8 +26,8 @@ class TestRedactText:
         """Test typed redaction strategy."""
         text = "John Smith emailed at test@email.com"
         entities = [
-            {"entity": "John Smith", "start": 0, "end": 9, "entity_type": "PERSON"},
-            {"entity": "test@email.com", "start": 22, "end": 35, "entity_type": "EMAIL"},
+            {"entity": "John Smith", "start": 0, "end": 10, "entity_type": "PERSON"},
+            {"entity": "test@email.com", "start": 22, "end": 36, "entity_type": "EMAIL"},
         ]
 
         result = redact_text(text, entities, strategy="typed")
@@ -59,8 +59,8 @@ class TestRedactText:
         """Test redaction with overlapping entities."""
         text = "John Smith lives here"
         entities = [
-            {"entity": "John Smith", "start": 0, "end": 9, "entity_type": "PERSON"},
-            {"entity": "John", "start": 0, "end": 3, "entity_type": "NAME"},
+            {"entity": "John Smith", "start": 0, "end": 10, "entity_type": "PERSON"},
+            {"entity": "John", "start": 0, "end": 4, "entity_type": "NAME"},
         ]
 
         # Should handle overlapping entities (sorted by start position in reverse)
@@ -72,7 +72,7 @@ class TestRedactText:
         """Test redaction when entity is at end of text."""
         text = "Contact John"
         entities = [
-            {"entity": "John", "start": 8, "end": 11, "entity_type": "PERSON"},
+            {"entity": "John", "start": 8, "end": 12, "entity_type": "PERSON"},
         ]
 
         result = redact_text(text, entities, strategy="typed")
@@ -83,8 +83,8 @@ class TestRedactText:
         """Test redaction with multiple entities of same type."""
         text = "John and Jane are here"
         entities = [
-            {"entity": "John", "start": 0, "end": 3, "entity_type": "PERSON"},
-            {"entity": "Jane", "start": 9, "end": 12, "entity_type": "PERSON"},
+            {"entity": "John", "start": 0, "end": 4, "entity_type": "PERSON"},
+            {"entity": "Jane", "start": 9, "end": 13, "entity_type": "PERSON"},
         ]
 
         result = redact_text(text, entities, strategy="typed")
@@ -107,11 +107,10 @@ class TestRedactText:
         """Test redaction handles entity with missing type."""
         text = "John Smith here"
         entities = [
-            {"entity": "John Smith", "start": 0, "end": 9},  # Missing entity_type
+            {"entity": "John Smith", "start": 0, "end": 10},  # Missing entity_type
         ]
 
         result = redact_text(text, entities, strategy="typed")
 
         # Should use REDACTED as default type
         assert "[REDACTED]" in result
-

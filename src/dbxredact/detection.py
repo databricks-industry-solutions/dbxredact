@@ -2,13 +2,19 @@
 
 from typing import Optional
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import col, from_json, expr, concat, lit
+from pyspark.sql.functions import col, from_json, expr
 
 from .presidio import make_presidio_batch_udf
 from .ai_detector import make_prompt, format_entity_response_object_udf
-from .gliner_detector import run_gliner_detection as _run_gliner_detection
 from .analyzer import SpacyModelNotFoundError
-from .config import LABEL_ENUMS, PHI_PROMPT_SKELETON, DEFAULT_PRESIDIO_SCORE_THRESHOLD
+from .config import (
+    LABEL_ENUMS,
+    PHI_PROMPT_SKELETON,
+    DEFAULT_PRESIDIO_SCORE_THRESHOLD,
+    DEFAULT_GLINER_MODEL,
+    DEFAULT_GLINER_THRESHOLD,
+    DEFAULT_AI_REASONING_EFFORT,
+)
 
 
 def check_presidio_available() -> tuple:
@@ -23,7 +29,7 @@ def check_presidio_available() -> tuple:
         if missing:
             return False, (
                 f"spaCy models not installed: {missing}. "
-                "Install with: %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+                "Install with: %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl"
             )
         return True, None
     except Exception as e:
@@ -36,6 +42,7 @@ def run_presidio_detection(
     text_column: str,
     score_threshold: float = DEFAULT_PRESIDIO_SCORE_THRESHOLD,
     num_cores: int = 10,
+    model_size: str = None,
 ) -> DataFrame:
     """
     Run Presidio-based PHI detection on a DataFrame.
@@ -46,6 +53,7 @@ def run_presidio_detection(
         text_column: Name of text column to analyze
         score_threshold: Minimum confidence score (0.0-1.0)
         num_cores: Number of cores for repartitioning
+        model_size: spaCy model size ('sm', 'md', 'lg'). Default 'lg'.
 
     Returns:
         DataFrame with 'presidio_results' and 'presidio_results_struct' columns
@@ -53,12 +61,13 @@ def run_presidio_detection(
     Raises:
         SpacyModelNotFoundError: If required spaCy models are not installed
     """
-    # Check if models are available before trying to run
     is_available, error_msg = check_presidio_available()
     if not is_available:
         raise SpacyModelNotFoundError(error_msg)
-    
-    presidio_udf = make_presidio_batch_udf(score_threshold=score_threshold)
+
+    presidio_udf = make_presidio_batch_udf(
+        score_threshold=score_threshold, model_size=model_size
+    )
 
     result_df = (
         df.repartition(num_cores)
@@ -86,6 +95,7 @@ def run_ai_query_detection(
     num_cores: int = 10,
     prompt_skeleton: str = PHI_PROMPT_SKELETON,
     labels: str = LABEL_ENUMS,
+    reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
 ) -> DataFrame:
     """
     Run AI-based PHI detection using Databricks AI Query.
@@ -101,6 +111,7 @@ def run_ai_query_detection(
         num_cores: Number of cores for repartitioning
         prompt_skeleton: Template prompt for AI detection
         labels: Entity type labels for detection
+        reasoning_effort: Reasoning effort level ("low", "medium", "high")
 
     Returns:
         DataFrame with 'ai_query_results' and 'ai_results_struct' columns
@@ -119,7 +130,7 @@ def run_ai_query_detection(
             concat('{prompt_prefix}', CAST({text_column} AS STRING), '{prompt_suffix}'),
             failOnError => false,
             returnType => 'STRUCT<result: ARRAY<STRUCT<entity: STRING, entity_type: STRING>>>',
-            modelParameters => named_struct('reasoning_effort', 'low')
+            modelParameters => named_struct('reasoning_effort', '{reasoning_effort}')
         )
     """
 
@@ -146,8 +157,10 @@ def run_gliner_detection(
     df: DataFrame,
     doc_id_column: str,
     text_column: str,
-    model_name: str = "Ihor/gliner-biomed-large-v1.0",
+    model_name: str = DEFAULT_GLINER_MODEL,
     num_cores: int = 10,
+    labels=None,
+    threshold: float = DEFAULT_GLINER_THRESHOLD,
 ) -> DataFrame:
     """
     Run GLiNER NER model-based PHI detection.
@@ -158,11 +171,22 @@ def run_gliner_detection(
         text_column: Name of text column to analyze
         model_name: HuggingFace model identifier for GLiNER
         num_cores: Number of cores for repartitioning
+        labels: Entity labels for detection (defaults to PII labels)
+        threshold: Minimum confidence threshold
 
     Returns:
         DataFrame with 'gliner_results' and 'gliner_results_struct' columns
     """
-    return _run_gliner_detection(df, doc_id_column, text_column, model_name, num_cores)
+    from .gliner_detector import run_gliner_detection as _run_gliner_detection
+    return _run_gliner_detection(
+        df=df,
+        doc_id_column=doc_id_column,
+        text_column=text_column,
+        model_name=model_name,
+        num_cores=num_cores,
+        labels=labels,
+        threshold=threshold,
+    )
 
 
 def run_detection(
@@ -175,9 +199,12 @@ def run_detection(
     use_gliner: bool = False,
     endpoint: Optional[str] = None,
     score_threshold: float = DEFAULT_PRESIDIO_SCORE_THRESHOLD,
-    gliner_model: str = "Ihor/gliner-biomed-large-v1.0",
+    gliner_model: str = DEFAULT_GLINER_MODEL,
+    gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
     num_cores: int = 10,
     fail_on_presidio_error: bool = True,
+    reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
+    presidio_model_size: str = None,
 ) -> DataFrame:
     """
     Run PHI/PII detection using selected method(s).
@@ -195,6 +222,8 @@ def run_detection(
         gliner_model: HuggingFace model name for GLiNER
         num_cores: Number of cores for repartitioning
         fail_on_presidio_error: If False, continue without Presidio if models unavailable
+        reasoning_effort: AI Query reasoning effort ("low", "medium", "high")
+        presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg')
 
     Returns:
         DataFrame with detection results from enabled method(s)
@@ -210,6 +239,7 @@ def run_detection(
                 text_column=text_column,
                 score_threshold=score_threshold,
                 num_cores=num_cores,
+                model_size=presidio_model_size,
             )
         except SpacyModelNotFoundError as e:
             if fail_on_presidio_error:
@@ -229,6 +259,7 @@ def run_detection(
             text_column=text_column,
             endpoint=endpoint,
             num_cores=num_cores,
+            reasoning_effort=reasoning_effort,
         )
 
     if use_gliner:
@@ -238,7 +269,7 @@ def run_detection(
             text_column=text_column,
             model_name=gliner_model,
             num_cores=num_cores,
+            threshold=gliner_threshold,
         )
 
     return result_df
-

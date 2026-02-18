@@ -27,8 +27,10 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
-# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl
+# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl
+# MAGIC # Fallback if GPU/trf not available:
+# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
+# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_lg-3.8.0/es_core_news_lg-3.8.0-py3-none-any.whl
 # MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
 # MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.0-py3-none-any.whl
 # MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
@@ -148,6 +150,12 @@ dbutils.widgets.text(
     defaultValue="1000",
     label="15. Max Rows (0 for unlimited)",
 )
+dbutils.widgets.dropdown(
+    name="alignment_mode",
+    defaultValue="union",
+    choices=["union", "consensus"],
+    label="16. Alignment Mode (union=recall, consensus=precision)",
+)
 
 # COMMAND ----------
 
@@ -176,6 +184,7 @@ output_strategy = dbutils.widgets.get("output_strategy")
 checkpoint_path = dbutils.widgets.get("checkpoint_path")
 max_rows_str = dbutils.widgets.get("max_rows")
 max_rows = None if max_rows_str == "0" else int(max_rows_str)
+alignment_mode = dbutils.widgets.get("alignment_mode")
 
 if not output_table:
     output_table = f"{source_table}_redacted"
@@ -245,6 +254,7 @@ print(f"Redaction Strategy: {redaction_strategy}")
 print(f"Output Table: {output_table}")
 print(f"Refresh Approach: {refresh_approach}")
 print(f"Output Strategy: {output_strategy}")
+print(f"Alignment Mode: {alignment_mode}")
 if refresh_approach == "incremental":
     print(f"Checkpoint Path: {checkpoint_path}")
 print("=" * 80)
@@ -256,8 +266,6 @@ if refresh_approach == "incremental":
     print("Using INCREMENTAL (streaming) approach...")
 
     if input_mode == "table_tag":
-        # For tag mode, we still need to resolve the text column first
-        # Then use the streaming pipeline
         query = run_redaction_pipeline_streaming(
             spark=spark,
             source_table=source_table,
@@ -274,6 +282,7 @@ if refresh_approach == "incremental":
             num_cores=num_cores,
             use_aligned=True,
             output_strategy=output_strategy,
+            alignment_mode=alignment_mode,
         )
     else:
         query = run_redaction_pipeline_streaming(
@@ -292,6 +301,7 @@ if refresh_approach == "incremental":
             num_cores=num_cores,
             use_aligned=True,
             output_strategy=output_strategy,
+            alignment_mode=alignment_mode,
         )
 
     # Wait for completion (availableNow trigger processes all then stops)
@@ -321,6 +331,7 @@ else:
             num_cores=num_cores,
             output_strategy=output_strategy,
             max_rows=max_rows,
+            alignment_mode=alignment_mode,
         )
     else:
         result_df = run_redaction_pipeline(
@@ -339,6 +350,7 @@ else:
             use_aligned=True,
             output_strategy=output_strategy,
             max_rows=max_rows,
+            alignment_mode=alignment_mode,
         )
 
 # COMMAND ----------

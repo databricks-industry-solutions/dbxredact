@@ -29,19 +29,19 @@ def is_overlap(
     start1: int, end1: int, start2: int, end2: int, tolerance: int = 0
 ) -> bool:
     """
-    Check if two intervals overlap.
+    Check if two half-open intervals overlap.
 
     Args:
         start1: Start position of first interval
-        end1: End position of first interval
+        end1: End position of first interval (exclusive)
         start2: Start position of second interval
-        end2: End position of second interval
-        tolerance: Optional tolerance for near-misses (default: 0)
+        end2: End position of second interval (exclusive)
+        tolerance: Extends each end position by this amount (default: 0)
 
     Returns:
-        True if intervals [start1, end1] and [start2, end2] overlap
+        True if intervals [start1, end1) and [start2, end2) overlap
     """
-    return max(start1, start2) <= min(end1, end2) + tolerance
+    return max(start1, start2) < min(end1, end2) + tolerance
 
 
 def calculate_overlap(start1: int, end1: int, start2: int, end2: int) -> int:

@@ -1,5 +1,6 @@
 """End-to-end PHI/PII detection and redaction pipelines."""
 
+import math
 from typing import Optional, Literal
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.streaming import StreamingQuery
@@ -17,9 +18,13 @@ from .detection import run_detection
 from .alignment import align_entities_udf
 from .redaction import create_redaction_udf, RedactionStrategy
 from .metadata import get_columns_by_tag
+from .config import DEFAULT_GLINER_MODEL, DEFAULT_GLINER_THRESHOLD, DEFAULT_AI_REASONING_EFFORT
 
 
 OutputStrategy = Literal["validation", "production"]
+
+
+AlignmentMode = Literal["union", "consensus"]
 
 
 def _apply_alignment(
@@ -28,6 +33,7 @@ def _apply_alignment(
     use_presidio: bool,
     use_ai_query: bool,
     use_gliner: bool,
+    alignment_mode: AlignmentMode = "union",
 ) -> DataFrame:
     """Apply entity alignment to detection results.
     
@@ -37,6 +43,9 @@ def _apply_alignment(
         use_presidio: Whether Presidio was used
         use_ai_query: Whether AI Query was used
         use_gliner: Whether GLiNER was used
+        alignment_mode: "union" includes any entity found by at least one
+            detector (recall-optimized). "consensus" requires agreement from
+            at least ceil(active_detectors / 2) sources.
         
     Returns:
         DataFrame with aligned_entities column added
@@ -63,11 +72,15 @@ def _apply_alignment(
     if "gliner_results_struct" not in df.columns:
         df = df.withColumn("gliner_results_struct", empty_entity_array)
 
+    active = sum([use_presidio, use_ai_query, use_gliner])
+    min_sources = math.ceil(active / 2) if alignment_mode == "consensus" else 1
+
     align_udf = align_entities_udf(
         fuzzy_threshold=50,
         include_presidio=use_presidio,
         include_gliner=use_gliner,
         include_ai=use_ai_query,
+        min_sources=min_sources,
     )
 
     df = df.withColumn(
@@ -152,10 +165,14 @@ def run_detection_pipeline(
     use_gliner: bool = False,
     endpoint: Optional[str] = None,
     score_threshold: float = 0.5,
-    gliner_model: str = "Ihor/gliner-biomed-large-v1.0",
+    gliner_model: str = DEFAULT_GLINER_MODEL,
+    gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
     num_cores: int = 10,
     align_results: bool = True,
     fail_on_presidio_error: bool = True,
+    reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
+    presidio_model_size: str = None,
+    alignment_mode: AlignmentMode = "union",
 ) -> DataFrame:
     """
     Run complete detection pipeline with optional alignment.
@@ -174,6 +191,7 @@ def run_detection_pipeline(
         num_cores: Number of cores for repartitioning
         align_results: If True and multiple methods enabled, align results
         fail_on_presidio_error: If False, continue without Presidio if models unavailable
+        reasoning_effort: AI Query reasoning effort ("low", "medium", "high")
 
     Returns:
         DataFrame with detection results and optional aligned entities
@@ -190,16 +208,20 @@ def run_detection_pipeline(
         endpoint=endpoint,
         score_threshold=score_threshold,
         gliner_model=gliner_model,
+        gliner_threshold=gliner_threshold,
         num_cores=num_cores,
         fail_on_presidio_error=fail_on_presidio_error,
+        reasoning_effort=reasoning_effort,
+        presidio_model_size=presidio_model_size,
     )
 
     methods_used = sum([use_presidio, use_ai_query, use_gliner])
 
     if align_results and methods_used >= 1:
-        print("2. Aligning entity results from multiple sources...")
+        print(f"2. Aligning entity results from multiple sources (mode={alignment_mode})...")
         result_df = _apply_alignment(
-            result_df, doc_id_column, use_presidio, use_ai_query, use_gliner
+            result_df, doc_id_column, use_presidio, use_ai_query, use_gliner,
+            alignment_mode=alignment_mode,
         )
         print("Alignment complete")
 
@@ -218,12 +240,16 @@ def run_redaction_pipeline(
     redaction_strategy: RedactionStrategy = "generic",
     endpoint: Optional[str] = None,
     score_threshold: float = 0.5,
-    gliner_model: str = "Ihor/gliner-biomed-large-v1.0",
+    gliner_model: str = DEFAULT_GLINER_MODEL,
+    gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
     num_cores: int = 10,
     use_aligned: bool = True,
     fail_on_presidio_error: bool = True,
     output_strategy: OutputStrategy = "validation",
     max_rows: Optional[int] = 1000,
+    reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
+    presidio_model_size: str = None,
+    alignment_mode: AlignmentMode = "union",
 ) -> DataFrame:
     """
     Run end-to-end detection and redaction pipeline.
@@ -246,6 +272,7 @@ def run_redaction_pipeline(
         fail_on_presidio_error: If False, continue without Presidio if models unavailable
         output_strategy: 'validation' (all columns) or 'production' (doc_id + redacted only)
         max_rows: Maximum rows to process. Set to None to disable limit. Default: 1000
+        presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg')
 
     Returns:
         DataFrame with redacted text
@@ -271,9 +298,13 @@ def run_redaction_pipeline(
         endpoint=endpoint,
         score_threshold=score_threshold,
         gliner_model=gliner_model,
+        gliner_threshold=gliner_threshold,
         num_cores=num_cores,
         align_results=True,
         fail_on_presidio_error=fail_on_presidio_error,
+        reasoning_effort=reasoning_effort,
+        presidio_model_size=presidio_model_size,
+        alignment_mode=alignment_mode,
     )
 
     entities_column = _get_entities_column(detection_df, use_aligned)
@@ -342,11 +373,15 @@ def run_redaction_pipeline_streaming(
     redaction_strategy: RedactionStrategy = "generic",
     endpoint: Optional[str] = None,
     score_threshold: float = 0.5,
-    gliner_model: str = "Ihor/gliner-biomed-large-v1.0",
+    gliner_model: str = DEFAULT_GLINER_MODEL,
+    gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
     num_cores: int = 10,
     use_aligned: bool = True,
     fail_on_presidio_error: bool = True,
     output_strategy: OutputStrategy = "production",
+    reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
+    presidio_model_size: str = None,
+    alignment_mode: AlignmentMode = "union",
 ) -> StreamingQuery:
     """
     Run streaming redaction pipeline with incremental processing.
@@ -372,6 +407,7 @@ def run_redaction_pipeline_streaming(
         use_aligned: If True, use aligned entities for redaction
         fail_on_presidio_error: If False, continue without Presidio if models unavailable
         output_strategy: 'validation' (all columns) or 'production' (doc_id + redacted only)
+        presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg')
 
     Returns:
         StreamingQuery that can be awaited or monitored
@@ -402,7 +438,9 @@ def run_redaction_pipeline_streaming(
     if use_presidio:
         from .presidio import make_presidio_batch_udf
         from pyspark.sql.functions import from_json
-        presidio_udf = make_presidio_batch_udf(score_threshold=score_threshold)
+        presidio_udf = make_presidio_batch_udf(
+            score_threshold=score_threshold, model_size=presidio_model_size
+        )
         stream_df = stream_df.withColumn(
             "presidio_results", presidio_udf(col(doc_id_column), col(text_column))
         ).withColumn(
@@ -423,19 +461,22 @@ def run_redaction_pipeline_streaming(
             text_column=text_column,
             endpoint=endpoint or "databricks-gpt-oss-120b",
             num_cores=num_cores,
+            reasoning_effort=reasoning_effort,
         )
 
     if use_gliner:
         from .gliner_detector import run_gliner_detection
         stream_df = run_gliner_detection(
-            stream_df, doc_id_column, text_column, gliner_model, num_cores
+            stream_df, doc_id_column, text_column, gliner_model, num_cores,
+            threshold=gliner_threshold,
         )
 
     # Apply alignment
     methods_used = sum([use_presidio, use_ai_query, use_gliner])
     if methods_used >= 1:
         stream_df = _apply_alignment(
-            stream_df, doc_id_column, use_presidio, use_ai_query, use_gliner
+            stream_df, doc_id_column, use_presidio, use_ai_query, use_gliner,
+            alignment_mode=alignment_mode,
         )
 
     # Determine entities column
@@ -484,10 +525,14 @@ def run_redaction_pipeline_by_tag(
     redaction_strategy: RedactionStrategy = "generic",
     endpoint: Optional[str] = None,
     score_threshold: float = 0.5,
-    gliner_model: str = "Ihor/gliner-biomed-large-v1.0",
+    gliner_model: str = DEFAULT_GLINER_MODEL,
+    gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
     num_cores: int = 10,
     output_strategy: OutputStrategy = "validation",
     max_rows: Optional[int] = 1000,
+    reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
+    presidio_model_size: str = None,
+    alignment_mode: AlignmentMode = "union",
 ) -> DataFrame:
     """
     Run redaction pipeline on columns identified by Unity Catalog tags.
@@ -509,6 +554,7 @@ def run_redaction_pipeline_by_tag(
         num_cores: Number of cores for repartitioning
         output_strategy: 'validation' (all columns) or 'production' (doc_id + redacted only)
         max_rows: Maximum rows to process. Set to None to disable limit. Default: 1000
+        presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg', 'trf')
 
     Returns:
         DataFrame with redacted columns
@@ -537,9 +583,13 @@ def run_redaction_pipeline_by_tag(
         endpoint=endpoint,
         score_threshold=score_threshold,
         gliner_model=gliner_model,
+        gliner_threshold=gliner_threshold,
         num_cores=num_cores,
         output_strategy=output_strategy,
         max_rows=max_rows,
+        reasoning_effort=reasoning_effort,
+        presidio_model_size=presidio_model_size,
+        alignment_mode=alignment_mode,
     )
 
     return result_df

@@ -40,14 +40,12 @@ def redact_text(
         if start is None or end is None:
             continue
 
-        end_idx = end + 1
-
         if strategy == "typed":
             replacement = f"[{entity_type}]"
         else:
             replacement = "[REDACTED]"
 
-        redacted = redacted[:start] + replacement + redacted[end_idx:]
+        redacted = redacted[:start] + replacement + redacted[end:]
 
     return redacted
 
