@@ -5,6 +5,7 @@ databricks.yml
 # IDE files
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 
@@ -42,3 +43,11 @@ databricks.yml
 
 # Downloaded benchmark logs
 benchmark_results/
+
+# Internal roadmap (not for public distribution)
+ROADMAP.md
+
+# Frontend build artifacts
+apps/dbxredact-app/node_modules/
+apps/dbxredact-app/dist/
+apps/dbxredact-app/package-lock.json

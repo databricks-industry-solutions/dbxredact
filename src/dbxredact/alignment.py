@@ -216,6 +216,42 @@ def calculate_confidence(merged_entity: Dict[str, Any], match_type: MatchType) -
         return "low"
 
 
+CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1}
+
+
+def _merge_overlapping_spans(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Merge overlapping entity spans so redaction never produces garbled output.
+
+    Sorts by start position and sweeps left-to-right. When two spans overlap,
+    the wider span is kept and the higher-confidence entity type wins.
+    """
+    if len(results) <= 1:
+        return results
+
+    sorted_results = sorted(results, key=lambda r: (r["start"], -r["end"]))
+    merged = [sorted_results[0]]
+
+    for current in sorted_results[1:]:
+        prev = merged[-1]
+        if current["start"] < prev["end"]:
+            prev["end"] = max(prev["end"], current["end"])
+            if len(current.get("entity", "")) > len(prev.get("entity", "")):
+                prev["entity"] = current["entity"]
+            cur_rank = CONFIDENCE_RANK.get(current.get("confidence", "low"), 0)
+            prev_rank = CONFIDENCE_RANK.get(prev.get("confidence", "low"), 0)
+            if cur_rank > prev_rank:
+                prev["entity_type"] = current["entity_type"]
+                prev["confidence"] = current["confidence"]
+            for key in ("presidio_score", "gliner_score", "ai_score"):
+                if current.get(key) is not None:
+                    if prev.get(key) is None or current[key] > prev[key]:
+                        prev[key] = current[key]
+        else:
+            merged.append(current)
+
+    return merged
+
+
 class MultiSourceAligner:
     """Orchestrates entity alignment across multiple detection sources."""
 
@@ -303,6 +339,8 @@ class MultiSourceAligner:
 
         if min_sources > 1:
             results = [r for r in results if len(r.get("sources", [])) >= min_sources]
+
+        results = _merge_overlapping_spans(results)
 
         cleaned_results = []
         for result in results:

@@ -2,6 +2,21 @@ resources:
   jobs:
     redaction_benchmark:
       name: "[${bundle.target}] dbxredact - Redaction Benchmark"
+      parameters:
+        - name: source_table
+          default: ${var.catalog}.${var.schema}.${var.benchmark_dataset}
+        - name: endpoint
+          default: databricks-gpt-oss-120b
+        - name: alignment_mode
+          default: "union"
+        - name: use_presidio
+          default: "true"
+        - name: use_ai_query
+          default: "true"
+        - name: use_gliner
+          default: "false"
+        - name: score_threshold
+          default: "0.5"
       job_clusters:
         - job_cluster_key: benchmark_cluster
           new_cluster:
@@ -20,10 +35,14 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/1_benchmarking_detection.py
             base_parameters:
-              source_table: ${var.catalog}.${var.schema}.jsl_benchmark_source
-              output_table: ${var.catalog}.${var.schema}.jsl_benchmark_detection_results
-              endpoint: databricks-gpt-oss-120b
-              alignment_mode: "union"
+              source_table: "{{job.parameters.source_table}}"
+              output_table: "{{job.parameters.source_table}}_detection_results"
+              endpoint: "{{job.parameters.endpoint}}"
+              alignment_mode: "{{job.parameters.alignment_mode}}"
+              use_presidio: "{{job.parameters.use_presidio}}"
+              use_ai_query: "{{job.parameters.use_ai_query}}"
+              use_gliner: "{{job.parameters.use_gliner}}"
+              presidio_score_threshold: "{{job.parameters.score_threshold}}"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
@@ -34,9 +53,10 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/2_benchmarking_evaluation.py
             base_parameters:
-              ground_truth_table: ${var.catalog}.${var.schema}.jsl_benchmark_ground_truth
-              detection_results_table: ${var.catalog}.${var.schema}.jsl_benchmark_detection_results
-              evaluation_output_table: ${var.catalog}.${var.schema}.phi_evaluation_results
+              ground_truth_table: "{{job.parameters.source_table}}"
+              detection_results_table: "{{job.parameters.source_table}}_detection_results"
+              evaluation_output_table: "{{job.parameters.source_table}}_evaluation_results"
+              dataset_name: "{{job.parameters.source_table}}"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
@@ -47,8 +67,8 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/3_benchmarking_redaction.py
             base_parameters:
-              detection_table: ${var.catalog}.${var.schema}.jsl_benchmark_detection_results
-              output_table: ${var.catalog}.${var.schema}.jsl_benchmark_redacted
+              detection_table: "{{job.parameters.source_table}}_detection_results"
+              output_table: "{{job.parameters.source_table}}_redacted"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
@@ -59,9 +79,9 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/5_benchmarking_judge.py
             base_parameters:
-              redacted_table: ${var.catalog}.${var.schema}.jsl_benchmark_redacted
-              endpoint: databricks-gpt-oss-120b
-              output_table: ${var.catalog}.${var.schema}.jsl_benchmark_judge_results
+              redacted_table: "{{job.parameters.source_table}}_redacted"
+              endpoint: "{{job.parameters.endpoint}}"
+              output_table: "{{job.parameters.source_table}}_judge_results"
               judge_methods: "aligned"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
@@ -73,9 +93,9 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/6_benchmarking_audit.py
             base_parameters:
-              evaluation_table: ${var.catalog}.${var.schema}.phi_evaluation_results
-              judge_table: ${var.catalog}.${var.schema}.jsl_benchmark_judge_results
-              audit_table: ${var.catalog}.${var.schema}.phi_benchmark_audit
+              evaluation_table: "{{job.parameters.source_table}}_evaluation_results"
+              judge_table: "{{job.parameters.source_table}}_judge_results"
+              audit_table: "{{job.parameters.source_table}}_audit"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
@@ -86,10 +106,10 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/7_benchmarking_next_actions.py
             base_parameters:
-              audit_table: ${var.catalog}.${var.schema}.phi_benchmark_audit
-              evaluation_table: ${var.catalog}.${var.schema}.phi_evaluation_results
-              endpoint: databricks-gpt-oss-120b
-              output_table: ${var.catalog}.${var.schema}.phi_improvement_recommendations
+              audit_table: "{{job.parameters.source_table}}_audit"
+              evaluation_table: "{{job.parameters.source_table}}_evaluation_results"
+              endpoint: "{{job.parameters.endpoint}}"
+              output_table: "{{job.parameters.source_table}}_recommendations"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 

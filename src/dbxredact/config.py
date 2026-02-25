@@ -78,6 +78,12 @@ Pay special attention to these commonly missed entity types:
 - Hospital/Facility Names: full names AND abbreviations, including those with suffixes
   like "Center", "Clinic", "Unit", "Institute" (e.g., "FIH", "Cancer Center", "ELMVH")
 
+When the text is financial or business-related, also pay special attention to:
+- Organization/Company Names: banks, insurers, law firms, investment firms, and any named business entity (e.g., "Heritage Trust Bank", "Trident Manufacturing Inc.", "Pinnacle Wealth Advisors")
+- Financial Account Numbers: sequences of digits possibly separated by dashes (e.g., "8820-5567-1243")
+- Reference/Case IDs: prefixed alphanumeric codes used as identifiers (e.g., "AP-2024-09-3382", "WIRE-2024-081590", "CLM-2024-08-29471", "EMP-04417")
+- EIN/TIN: employer or tax identification numbers in NN-NNNNNNN format (e.g., "95-4281037")
+
 You will identify all PHI with the following enums as the "label":
 
 {label_enums}
@@ -100,6 +106,9 @@ response: [{{"entity": "957770228", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{
 
 MedicalText: "Patient was referred from Elm Valley Cancer Center by Dr. Page Forrestine for further evaluation at ELMVH."
 response: [{{"entity": "Elm Valley Cancer Center", "entity_type": "HOSPITAL_NAME"}}, {{"entity": "Page Forrestine", "entity_type": "PERSON"}}, {{"entity": "ELMVH", "entity_type": "HOSPITAL_NAME"}}]
+
+MedicalText: "RE: WIRE-2024-081590 -- Wire transfer of $50,000 from account 8820-5567-1243 at Heritage Trust Bank. Contact: Lisa Chen, EIN 95-4281037."
+response: [{{"entity": "WIRE-2024-081590", "entity_type": "ID_NUMBER"}}, {{"entity": "8820-5567-1243", "entity_type": "ID_NUMBER"}}, {{"entity": "Heritage Trust Bank", "entity_type": "ORGANIZATION"}}, {{"entity": "Lisa Chen", "entity_type": "PERSON"}}, {{"entity": "95-4281037", "entity_type": "ID_NUMBER"}}]
 """
 
 # Default thresholds
@@ -140,6 +149,8 @@ DEFAULT_GLINER_LABELS = [
     "ip_address",
     "mac_address",
     "company_name",
+    "hospital_or_medical_facility",
+    "bank",
     "customer_id",
     "pin",
 ]
@@ -170,10 +181,34 @@ GLINER_LABEL_MAP = {
     "ip_address": "IP_ADDRESS",
     "mac_address": "MAC_ADDRESS",
     "company_name": "ORGANIZATION",
+    "hospital_or_medical_facility": "LOCATION",
+    "bank": "ORGANIZATION",
     "customer_id": "CUSTOMER_ID",
     "pin": "PIN",
 }
 DEFAULT_GLINER_THRESHOLD = 0.2
+
+DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
+    "person": 0.15,
+    "first_name": 0.15,
+    "last_name": 0.15,
+    "phone number": 0.3,
+    "email": 0.3,
+    "social security number": 0.4,
+    "date of birth": 0.25,
+    "address": 0.2,
+    "medical record number": 0.35,
+    "credit card number": 0.4,
+    "health plan beneficiary number": 0.35,
+    "account number": 0.35,
+    "license number": 0.35,
+    "vehicle identifier": 0.35,
+    "url": 0.3,
+    "ip address": 0.3,
+    "biometric identifier": 0.3,
+    "full face photograph": 0.3,
+    "pin": 0.4,
+}
 
 # Confidence thresholds
 HIGH_CONFIDENCE_THRESHOLD = 0.7
@@ -217,15 +252,23 @@ ENTITY_TEXT_IGNORE_PATTERNS = _re.compile(
     r"|he|she|they|you|we|it|i"                       # pronouns
     r"|doctor|nurse|patient|physician|surgeon"         # generic clinical roles
     r"|am|pm"                                          # bare time fragments
+    r"|today|yesterday|tomorrow"                         # relative day words
+    r"|(19|20)\d{2}"                                     # bare 4-digit years
+    r"|.*\bago"                                          # "approximately one hour ago" etc.
+    r"|(?:post)?operative\s+day\s+\w+"                   # "postoperative day two"
     # Relative time durations -- not identifying dates under Safe Harbor
-    r"|daily|weekly|monthly|annually|hourly|nightly"
-    r"|\d+\s*(?:min(?:ute)?s?|hrs?|hours?|days?|weeks?|months?|years?)"
+    r"|daily|weekly|monthly|annually|hourly|nightly|quarterly|biweekly|bimonthly"
+    r"|\d+\s*(?:min(?:ute)?s?|hrs?|hours?|days?|weeks?|months?|years?|nights?)"
     r"|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
-    r"\s+(?:days?|weeks?|months?|years?|hours?|minutes?)"
+    r"\s+(?:days?|weeks?|months?|years?|hours?|minutes?|nights?)"
     r"|past\s+\d+\s+(?:months?|years?|days?|weeks?)"
     r")$",
     _re.IGNORECASE,
 )
+
+# Short all-caps strings (2-3 chars) tagged as LOCATION are almost always
+# country/state codes (US, UK, CA, NYC) rather than identifying locations.
+_SHORT_LOCATION_RE = _re.compile(r"^[A-Z]{2,3}$")
 
 
 def should_ignore_entity(entity_text: str, entity_type: str) -> bool:
@@ -233,6 +276,8 @@ def should_ignore_entity(entity_text: str, entity_type: str) -> bool:
     if entity_type in ENTITY_TYPES_TO_IGNORE:
         return True
     if ENTITY_TEXT_IGNORE_PATTERNS.match(entity_text.strip()):
+        return True
+    if entity_type == "LOCATION" and _SHORT_LOCATION_RE.match(entity_text.strip()):
         return True
     return False
 
@@ -291,14 +336,20 @@ If no PHI remains, return {{"grade": "PASS", "findings": []}}.
 # ---------------------------------------------------------------------------
 NEXT_ACTION_PROMPT_SKELETON = """
 You are a PHI/PII detection engineering advisor. Given the benchmark results
-below, recommend the top 3-5 specific, actionable improvements. Consider:
-threshold tuning, label/prompt changes, model upgrades, entity filtering, and
-architectural changes. Cite the data when possible.
+below, recommend the top 3-5 specific, actionable improvements.
 
-Key architecture notes:
-- "aligned" IS the ensemble method -- it combines presidio, ai, and gliner
-  detections via entity alignment. Do not recommend creating a separate ensemble;
-  instead recommend tuning the alignment logic or individual methods.
+CONSTRAINTS -- follow these strictly:
+- Every recommendation must be SAFE: it must not risk a large increase in false
+  positives. If you suggest lowering a threshold, quantify the expected FP cost.
+- Focus on changes to configuration values, entity filter patterns, and prompt
+  wording. Do NOT recommend replacing models, switching libraries, or major
+  architectural rewrites.
+- The system has an entity text ignore filter (regex patterns and entity-type
+  blocklist in config.py). Adding patterns there is a valid, low-risk action.
+- The "aligned" method IS the ensemble -- it combines presidio, ai, and gliner.
+  Do not recommend creating a separate ensemble.
+- Aligned recall is the single most important metric because aligned output is
+  what gets used for redaction. Improving individual method recall feeds aligned.
 - Some ground truth entities (3-letter hospital abbreviations, bare number
   sequences, standalone day names) represent a benchmark ceiling that no general
   model will reach. Factor this into recall expectations.
@@ -306,8 +357,9 @@ Key architecture notes:
 Respond with a JSON list of objects, each with:
 - "priority": 1-5 (1 = highest)
 - "method": which detection method this applies to (presidio, ai, gliner, aligned, or all)
-- "action": concise description of the change
+- "action": concise description of the change (one sentence)
 - "rationale": why this will help, referencing specific metrics or FP/FN patterns
+  and the expected precision/recall tradeoff
 
 <BenchmarkContext>
 {{context}}

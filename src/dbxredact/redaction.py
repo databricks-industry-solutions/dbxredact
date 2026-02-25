@@ -129,38 +129,3 @@ def create_redacted_table(
 
     return result_df
 
-
-def apply_redaction_to_columns(
-    spark: SparkSession,
-    table_name: str,
-    column_entities_map: Dict[str, List[Dict[str, Any]]],
-    output_table: str,
-    strategy: RedactionStrategy = "generic",
-) -> DataFrame:
-    """
-    Apply redaction to multiple columns in a table.
-
-    Args:
-        spark: Active SparkSession
-        table_name: Source table name
-        column_entities_map: Map of column names to their entity lists
-        output_table: Output table name
-        strategy: Redaction strategy ('generic' or 'typed')
-
-    Returns:
-        DataFrame with all specified columns redacted
-    """
-    df = spark.table(table_name)
-
-    for col_name, entities in column_entities_map.items():
-        if col_name not in df.columns:
-            continue
-
-        redacted_col = f"{col_name}_redacted"
-        redact_udf = create_redaction_udf(strategy=strategy)
-        df = df.withColumn(redacted_col, redact_udf(col(col_name), col(col_name)))
-
-    df.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(output_table)
-
-    return df
-

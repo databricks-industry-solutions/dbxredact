@@ -43,6 +43,7 @@ def run_presidio_detection(
     score_threshold: float = DEFAULT_PRESIDIO_SCORE_THRESHOLD,
     num_cores: int = 10,
     model_size: str = None,
+    _repartition: bool = True,
 ) -> DataFrame:
     """
     Run Presidio-based PHI detection on a DataFrame.
@@ -54,6 +55,7 @@ def run_presidio_detection(
         score_threshold: Minimum confidence score (0.0-1.0)
         num_cores: Number of cores for repartitioning
         model_size: spaCy model size ('sm', 'md', 'lg'). Default 'lg'.
+        _repartition: Whether to repartition. Set False when caller already did.
 
     Returns:
         DataFrame with 'presidio_results' and 'presidio_results_struct' columns
@@ -69,8 +71,9 @@ def run_presidio_detection(
         score_threshold=score_threshold, model_size=model_size
     )
 
+    base_df = df.repartition(num_cores) if _repartition else df
     result_df = (
-        df.repartition(num_cores)
+        base_df
         .withColumn(
             "presidio_results", presidio_udf(col(doc_id_column), col(text_column))
         )
@@ -96,6 +99,7 @@ def run_ai_query_detection(
     prompt_skeleton: str = PHI_PROMPT_SKELETON,
     labels: str = LABEL_ENUMS,
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
+    _repartition: bool = True,
 ) -> DataFrame:
     """
     Run AI-based PHI detection using Databricks AI Query.
@@ -112,6 +116,7 @@ def run_ai_query_detection(
         prompt_skeleton: Template prompt for AI detection
         labels: Entity type labels for detection
         reasoning_effort: Reasoning effort level ("low", "medium", "high")
+        _repartition: Whether to repartition. Set False when caller already did.
 
     Returns:
         DataFrame with 'ai_query_results' and 'ai_results_struct' columns
@@ -134,8 +139,9 @@ def run_ai_query_detection(
         )
     """
 
+    base_df = df.repartition(num_cores) if _repartition else df
     result_df = (
-        df.repartition(num_cores)
+        base_df
         .withColumn("response", expr(ai_query_expr))
         .withColumn(
             "ai_query_results",
@@ -161,6 +167,7 @@ def run_gliner_detection(
     num_cores: int = 10,
     labels=None,
     threshold: float = DEFAULT_GLINER_THRESHOLD,
+    _repartition: bool = True,
 ) -> DataFrame:
     """
     Run GLiNER NER model-based PHI detection.
@@ -173,6 +180,7 @@ def run_gliner_detection(
         num_cores: Number of cores for repartitioning
         labels: Entity labels for detection (defaults to PII labels)
         threshold: Minimum confidence threshold
+        _repartition: Whether to repartition. Set False when caller already did.
 
     Returns:
         DataFrame with 'gliner_results' and 'gliner_results_struct' columns
@@ -186,6 +194,7 @@ def run_gliner_detection(
         num_cores=num_cores,
         labels=labels,
         threshold=threshold,
+        _repartition=_repartition,
     )
 
 

@@ -185,5 +185,20 @@ def get_analyzer_engine(
         )
         analyzer.registry.add_recognizer(phi_recognizer)
 
+    # Business reference / case IDs (AP-2024-09-3382, WIRE-2024-081590, etc.)
+    ref_patterns = [
+        Pattern(
+            name="reference_number",
+            regex=r"\b[A-Z]{2,4}-[\d-]{4,}\b",
+            score=0.6,
+        ),
+    ]
+    ref_recognizer = PatternRecognizer(
+        supported_entity="ID_NUMBER",
+        patterns=ref_patterns,
+        context=["reference", "case", "claim", "application", "wire", "dispute"],
+    )
+    analyzer.registry.add_recognizer(ref_recognizer)
+
     analyzer = add_recognizers_to_analyzer(analyzer)
     return analyzer

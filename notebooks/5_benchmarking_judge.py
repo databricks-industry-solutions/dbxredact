@@ -209,3 +209,17 @@ for method, summary in summaries.items():
     print(f"[BENCHMARK_RESULTS] {method}: PASS={summary['pass_rate']:.1%} PARTIAL={summary['partial_rate']:.1%} FAIL={summary['fail_rate']:.1%} docs={summary['total_docs']}")
     if summary["top_missed"]:
         print(f"[BENCHMARK_RESULTS]   top_missed: {json.dumps(summary['top_missed'][:5])}")
+
+partial_fail_rows = (
+    all_judge_df.where(col("grade").isin("PARTIAL", "FAIL"))
+    .select("doc_id", "method", "grade", explode_outer("findings").alias("f"))
+    .select("doc_id", "method", "grade", "f.entity", "f.entity_type", "f.status")
+    .collect()
+)
+if partial_fail_rows:
+    print("[BENCHMARK_RESULTS] === PARTIAL/FAIL DETAILS (up to 20) ===")
+    for row in partial_fail_rows[:20]:
+        print(
+            f"[BENCHMARK_RESULTS]   {row['method']} | {row['grade']} | doc={row['doc_id']} | "
+            f"{row['entity_type']}: {row['entity']} ({row['status']})"
+        )

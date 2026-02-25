@@ -45,6 +45,8 @@ from dbxredact import (
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
     get_columns_by_tag,
+    load_filter_from_table,
+    EntityFilter,
 )
 
 # COMMAND ----------
@@ -107,14 +109,9 @@ dbutils.widgets.dropdown(
     choices=["generic", "typed"],
     label="7. Redaction Strategy",
 )
-dbutils.widgets.dropdown(
+dbutils.widgets.text(
     name="endpoint",
     defaultValue="databricks-gpt-oss-120b",
-    choices=sorted(
-        [
-            "databricks-gpt-oss-120b",
-        ]
-    ),
     label="8. AI Endpoint (for AI Query method)",
 )
 dbutils.widgets.text(
@@ -136,7 +133,7 @@ dbutils.widgets.dropdown(
 )
 dbutils.widgets.dropdown(
     name="output_strategy",
-    defaultValue="validation",
+    defaultValue="production",
     choices=["validation", "production"],
     label="13. Output Strategy",
 )
@@ -147,7 +144,7 @@ dbutils.widgets.text(
 )
 dbutils.widgets.text(
     name="max_rows",
-    defaultValue="1000",
+    defaultValue="10000",
     label="15. Max Rows (0 for unlimited)",
 )
 dbutils.widgets.dropdown(
@@ -155,6 +152,21 @@ dbutils.widgets.dropdown(
     defaultValue="union",
     choices=["union", "consensus"],
     label="16. Alignment Mode (union=recall, consensus=precision)",
+)
+dbutils.widgets.text(
+    name="max_files_per_trigger",
+    defaultValue="10",
+    label="17. Max Files Per Trigger (incremental only, 0 for unlimited)",
+)
+dbutils.widgets.text(
+    name="deny_list_table",
+    defaultValue="",
+    label="18. Deny List Table (optional, fully qualified)",
+)
+dbutils.widgets.text(
+    name="allow_list_table",
+    defaultValue="",
+    label="19. Allow List Table (optional, fully qualified)",
 )
 
 # COMMAND ----------
@@ -185,6 +197,42 @@ checkpoint_path = dbutils.widgets.get("checkpoint_path")
 max_rows_str = dbutils.widgets.get("max_rows")
 max_rows = None if max_rows_str == "0" else int(max_rows_str)
 alignment_mode = dbutils.widgets.get("alignment_mode")
+max_files_str = dbutils.widgets.get("max_files_per_trigger")
+max_files_per_trigger = None if max_files_str == "0" else int(max_files_str)
+deny_list_table = dbutils.widgets.get("deny_list_table").strip()
+allow_list_table = dbutils.widgets.get("allow_list_table").strip()
+
+entity_filter = None
+if deny_list_table or allow_list_table:
+    ef = EntityFilter()
+    if deny_list_table:
+        deny_ef = load_filter_from_table(spark, deny_list_table, list_type="deny")
+        ef.deny_list = deny_ef.deny_list
+        ef.deny_patterns = deny_ef.deny_patterns
+        ef._deny_set = deny_ef._deny_set
+        ef._deny_re = deny_ef._deny_re
+        print(f"Loaded deny list: {len(ef.deny_list)} exact, {len(ef.deny_patterns)} patterns")
+    if allow_list_table:
+        allow_ef = load_filter_from_table(spark, allow_list_table, list_type="allow")
+        ef.allow_list = allow_ef.allow_list
+        ef.allow_patterns = allow_ef.allow_patterns
+        ef._allow_set = allow_ef._allow_set
+        ef._allow_re = allow_ef._allow_re
+        print(f"Loaded allow list: {len(ef.allow_list)} exact, {len(ef.allow_patterns)} patterns")
+    entity_filter = ef
+
+if not any([use_presidio, use_ai_query, use_gliner]):
+    raise ValueError("At least one detection method must be enabled.")
+if not 0.0 <= score_threshold <= 1.0:
+    raise ValueError(f"Presidio score threshold must be in [0.0, 1.0], got {score_threshold}")
+if num_cores < 1:
+    raise ValueError(f"Number of cores must be a positive integer, got {num_cores}")
+
+if input_mode == "table_column":
+    _source_columns = [c.name for c in spark.table(source_table).schema]
+    for _col in [doc_id_column, text_column]:
+        if _col not in _source_columns:
+            raise ValueError(f"Column '{_col}' not found in {source_table}. Available: {_source_columns}")
 
 if not output_table:
     output_table = f"{source_table}_redacted"
@@ -255,6 +303,8 @@ print(f"Output Table: {output_table}")
 print(f"Refresh Approach: {refresh_approach}")
 print(f"Output Strategy: {output_strategy}")
 print(f"Alignment Mode: {alignment_mode}")
+if entity_filter:
+    print(f"Entity Filter: deny={len(entity_filter.deny_list)}+{len(entity_filter.deny_patterns)}pat, allow={len(entity_filter.allow_list)}+{len(entity_filter.allow_patterns)}pat")
 if refresh_approach == "incremental":
     print(f"Checkpoint Path: {checkpoint_path}")
 print("=" * 80)
@@ -283,6 +333,7 @@ if refresh_approach == "incremental":
             use_aligned=True,
             output_strategy=output_strategy,
             alignment_mode=alignment_mode,
+            max_files_per_trigger=max_files_per_trigger,
         )
     else:
         query = run_redaction_pipeline_streaming(
@@ -302,6 +353,7 @@ if refresh_approach == "incremental":
             use_aligned=True,
             output_strategy=output_strategy,
             alignment_mode=alignment_mode,
+            max_files_per_trigger=max_files_per_trigger,
         )
 
     # Wait for completion (availableNow trigger processes all then stops)
@@ -351,6 +403,7 @@ else:
             output_strategy=output_strategy,
             max_rows=max_rows,
             alignment_mode=alignment_mode,
+            entity_filter=entity_filter,
         )
 
 # COMMAND ----------

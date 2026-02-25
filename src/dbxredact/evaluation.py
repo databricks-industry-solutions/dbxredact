@@ -4,7 +4,7 @@ from typing import Dict, Any, List, Literal
 import pandas as pd
 import numpy as np
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, contains, asc_nulls_last, struct
+from pyspark.sql.functions import col, contains, asc_nulls_last, struct, lower
 
 MatchMode = Literal["strict", "overlap"]
 
@@ -29,12 +29,11 @@ def _match_condition(
             "overlap" - Standard interval overlap.
                         det.start < gt.end AND det.end > gt.begin
     """
+    gt_chunk = lower(col(f"{gt_prefix}.{chunk_column}"))
+    det_entity = lower(col(f"{det_prefix}.{entity_column}"))
     base = (
         (col(f"{det_prefix}.{doc_id_column}") == col(f"{gt_prefix}.{doc_id_column}"))
-        & (
-            contains(col(f"{gt_prefix}.{chunk_column}"), col(f"{det_prefix}.{entity_column}"))
-            | contains(col(f"{det_prefix}.{entity_column}"), col(f"{gt_prefix}.{chunk_column}"))
-        )
+        & (contains(gt_chunk, det_entity) | contains(det_entity, gt_chunk))
     )
     if match_mode == "overlap":
         position = (
@@ -144,35 +143,30 @@ def calculate_metrics(
     all_gt = eval_df.where(col(f"gt.{chunk_column}").isNotNull()).select(gt_id.alias("_gid")).distinct()
     pos_actual = all_gt.count()
 
-    # Distinct GT entities that matched at least one detection
-    matched_gt = (
-        eval_df
-        .where(col(f"gt.{chunk_column}").isNotNull() & col(f"det.{entity_column}").isNotNull())
-        .select(gt_id.alias("_gid"))
-        .distinct()
+    matched_rows = eval_df.where(
+        col(f"gt.{chunk_column}").isNotNull() & col(f"det.{entity_column}").isNotNull()
     )
-    tp = matched_gt.count()
-    fn = pos_actual - tp
 
-    # Distinct detections that appear in the eval_df
+    # GT entities that matched at least one detection (for recall)
+    tp_recall = matched_rows.select(gt_id.alias("_gid")).distinct().count()
+    fn = pos_actual - tp_recall
+
+    # Distinct detections
     all_det = eval_df.where(col(f"det.{entity_column}").isNotNull()).select(det_id.alias("_did")).distinct()
     pos_pred = all_det.count()
 
-    # Distinct detections that matched at least one GT
-    matched_det = (
-        eval_df
-        .where(col(f"gt.{chunk_column}").isNotNull() & col(f"det.{entity_column}").isNotNull())
-        .select(det_id.alias("_did"))
-        .distinct()
-    )
-    fp = pos_pred - matched_det.count()
+    # Detections that matched at least one GT (for precision)
+    tp_precision = matched_rows.select(det_id.alias("_did")).distinct().count()
+    fp = pos_pred - tp_precision
+
+    tp = tp_recall
 
     neg_actual = total_tokens - pos_actual
     tn = neg_actual - fp
     neg_pred = tn + fn
 
-    recall = tp / pos_actual if pos_actual > 0 else 0.0
-    precision = tp / pos_pred if pos_pred > 0 else 0.0
+    recall = tp_recall / pos_actual if pos_actual > 0 else 0.0
+    precision = tp_precision / pos_pred if pos_pred > 0 else 0.0
     specificity = tn / neg_actual if neg_actual > 0 else 0.0
     npv = tn / neg_pred if neg_pred > 0 else 0.0
     accuracy = (

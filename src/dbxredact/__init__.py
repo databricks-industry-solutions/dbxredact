@@ -75,7 +75,6 @@ from .redaction import (
     redact_text,
     create_redaction_udf,
     create_redacted_table,
-    apply_redaction_to_columns,
     RedactionStrategy,
 )
 
@@ -83,6 +82,24 @@ from .metadata import (
     get_columns_by_tag,
     get_protected_columns,
     get_table_metadata,
+)
+
+from .active_learning import (
+    compute_document_uncertainty,
+    build_review_queue,
+    compute_detector_disagreement,
+)
+
+from .cost import estimate_ai_query_cost, print_cost_estimate
+
+from .calibration import CalibratedScorer
+
+from .entity_filter import (
+    EntityFilter,
+    load_filter_from_yaml,
+    load_filter_from_table,
+    apply_deny_filter,
+    apply_allow_filter,
 )
 
 from .pipeline import (
@@ -108,6 +125,8 @@ __all__ = [
     "ENTITY_TYPES_TO_IGNORE",
     "ENTITY_TEXT_IGNORE_PATTERNS",
     "should_ignore_entity",
+    "GLINER_LABEL_MAP",
+    "DEFAULT_GLINER_THRESHOLD",
     "JUDGE_PROMPT_SKELETON",
     "NEXT_ACTION_PROMPT_SKELETON",
     "PROMPT_VERSION",
@@ -147,12 +166,26 @@ __all__ = [
     "redact_text",
     "create_redaction_udf",
     "create_redacted_table",
-    "apply_redaction_to_columns",
     "RedactionStrategy",
     # Metadata
     "get_columns_by_tag",
     "get_protected_columns",
     "get_table_metadata",
+    # Active Learning
+    "compute_document_uncertainty",
+    "build_review_queue",
+    "compute_detector_disagreement",
+    # Cost
+    "estimate_ai_query_cost",
+    "print_cost_estimate",
+    # Calibration
+    "CalibratedScorer",
+    # Entity Filter
+    "EntityFilter",
+    "load_filter_from_yaml",
+    "load_filter_from_table",
+    "apply_deny_filter",
+    "apply_allow_filter",
     # Pipeline
     "run_detection_pipeline",
     "run_redaction_pipeline",

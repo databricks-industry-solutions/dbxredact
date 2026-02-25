@@ -3,6 +3,24 @@
 import pytest
 
 
+@pytest.fixture(scope="session")
+def spark():
+    """Session-scoped local SparkSession for integration tests."""
+    from pyspark.sql import SparkSession
+
+    session = (
+        SparkSession.builder
+        .master("local[2]")
+        .appName("dbxredact-tests")
+        .config("spark.sql.shuffle.partitions", "2")
+        .config("spark.default.parallelism", "2")
+        .config("spark.ui.enabled", "false")
+        .getOrCreate()
+    )
+    yield session
+    session.stop()
+
+
 @pytest.fixture
 def sample_presidio_entities():
     """Sample Presidio detection results."""

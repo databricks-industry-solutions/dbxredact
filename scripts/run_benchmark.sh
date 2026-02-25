@@ -3,10 +3,13 @@
 # and extract [BENCHMARK_RESULTS] lines for local review.
 #
 # Usage:
+#   ./scripts/run_benchmark.sh -d synthetic_benchmark_finance
+#   ./scripts/run_benchmark.sh -d synthetic_benchmark_medical -p "use_gliner=true"
 #   ./scripts/run_benchmark.sh -p "source_table=cat.schema.table,text_column=text,doc_id_column=doc_id"
 #
 # Flags:
-#   -p / --params     Notebook params string (required, passed to --notebook-params)
+#   -d / --dataset    Benchmark dataset name (overrides var.benchmark_dataset; default: jsl_benchmark)
+#   -p / --params     Extra job params string (passed to --params for job-level parameters)
 #   -t / --target     Bundle target (default: dev)
 #   -s / --skip-deploy  Skip validate+deploy steps
 #   --keep            Keep raw downloaded logs after extraction
@@ -27,34 +30,36 @@ fi
 : "${SCHEMA:?Set SCHEMA in dev.env}"
 
 TARGET="dev"
-NOTEBOOK_PARAMS=""
+DATASET=""
+JOB_PARAMS=""
 SKIP_DEPLOY=false
 KEEP_LOGS=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -p|--params)  NOTEBOOK_PARAMS="$2"; shift 2 ;;
+        -d|--dataset) DATASET="$2"; shift 2 ;;
+        -p|--params)  JOB_PARAMS="$2"; shift 2 ;;
         -t|--target)  TARGET="$2"; shift 2 ;;
         -s|--skip-deploy) SKIP_DEPLOY=true; shift ;;
         --keep)       KEEP_LOGS=true; shift ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 -p \"key=val,key=val\" [-t target] [-s] [--keep]"
+            echo "Usage: $0 [-d dataset_name] [-p \"key=val,...\"] [-t target] [-s] [--keep]"
             exit 1
             ;;
     esac
 done
 
-if [ -z "$NOTEBOOK_PARAMS" ]; then
-    echo "ERROR: --params is required"
-    echo "Usage: $0 -p \"source_table=cat.schema.table,text_column=text,doc_id_column=doc_id\""
-    exit 1
+# Build --var flags for DAB variable overrides
+VAR_FLAGS=""
+if [ -n "$DATASET" ]; then
+    VAR_FLAGS="--var benchmark_dataset=${DATASET}"
 fi
 
 # --- Step 1: Validate & Deploy ---
 if [ "$SKIP_DEPLOY" = false ]; then
     echo "=== Step 1a: Validate bundle ==="
-    databricks bundle validate -t "$TARGET"
+    databricks bundle validate -t "$TARGET" $VAR_FLAGS
     if [ $? -ne 0 ]; then
         echo "ERROR: Bundle validation failed"
         exit 1
@@ -62,7 +67,7 @@ if [ "$SKIP_DEPLOY" = false ]; then
 
     echo ""
     echo "=== Step 1b: Deploy bundle ==="
-    databricks bundle deploy -t "$TARGET"
+    databricks bundle deploy -t "$TARGET" $VAR_FLAGS
     if [ $? -ne 0 ]; then
         echo "ERROR: Bundle deploy failed"
         exit 1
@@ -74,8 +79,12 @@ fi
 # --- Step 2: Run benchmark job ---
 echo ""
 echo "=== Step 2: Run benchmark job ==="
-databricks bundle run redaction_benchmark -t "$TARGET" \
-    --notebook-params "$NOTEBOOK_PARAMS"
+RUN_CMD="databricks bundle run redaction_benchmark -t $TARGET $VAR_FLAGS"
+if [ -n "$JOB_PARAMS" ]; then
+    RUN_CMD="$RUN_CMD --params \"$JOB_PARAMS\""
+fi
+echo "Running: $RUN_CMD"
+eval $RUN_CMD
 JOB_EXIT_CODE=$?
 if [ $JOB_EXIT_CODE -ne 0 ]; then
     echo ""
@@ -133,7 +142,8 @@ echo "=== Step 5: Extract benchmark results ==="
     echo "=== Benchmark Results ==="
     echo "Timestamp: $(date -Iseconds)"
     echo "Target: ${TARGET}"
-    echo "Params: ${NOTEBOOK_PARAMS}"
+    echo "Dataset: ${DATASET:-jsl_benchmark}"
+    echo "Params: ${JOB_PARAMS}"
     echo "Cluster: ${NEWEST}"
     echo ""
     grep -rh '\[BENCHMARK_RESULTS\]' "${RAW_DIR}" 2>/dev/null \

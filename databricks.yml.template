@@ -1,6 +1,6 @@
 bundle:
   name: dbxredact
-  databricks_cli_version: ">=0.234.*"
+  databricks_cli_version: ">=0.283.0"
 
 variables:
   package_version:

@@ -57,7 +57,7 @@ flowchart LR
 flowchart TB
     subgraph Local["Local Dev Environment"]
         DEV["dev.env\nCATALOG, SCHEMA, HOST"]
-        SCRIPT["scripts/run_benchmark.sh\n-p notebook_params"]
+        SCRIPT["scripts/run_benchmark.sh\n-p job_params"]
         DEPLOY["deploy.sh\npoetry build + bundle deploy"]
         LOGS["benchmark_results/\nstdout, stderr, summary"]
     end
@@ -123,6 +123,20 @@ flowchart TB
     judge -.->|"benchmarking only"| pipeline
 ```
 
+## Prerequisites
+
+| Tool | Minimum Version | Purpose |
+|------|----------------|---------|
+| [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html) | >= 0.283.0 | Bundle deployment and job management |
+| [Poetry](https://python-poetry.org/docs/#installation) | >= 1.5 | Python dependency management and wheel build |
+| [Node.js / npm](https://nodejs.org/) | >= 18 | Frontend build for the management app |
+| Python | >= 3.10 | Core library and notebooks |
+
+You also need:
+- A **Databricks workspace** with Unity Catalog enabled
+- A **SQL Warehouse** -- set the ID in `variables.yml` (`sql_warehouse_id`) for the app and deploy grants
+- **Unity Catalog Volumes** for the target schema (created automatically by `deploy.sh` for `wheels`; you may need to create `cluster_logs` and `checkpoints` manually for benchmarking)
+
 ## Quickstart
 
 ### Option 1: CLI Deployment
@@ -147,7 +161,7 @@ flowchart TB
 3. **Run the redaction pipeline**:
    ```bash
    databricks bundle run redaction_pipeline -t dev \
-     --notebook-params source_table=catalog.schema.source_table,text_column=text,output_table=catalog.schema.redacted_output
+     --params source_table=catalog.schema.source_table,text_column=text,output_table=catalog.schema.redacted_output
    ```
 
 ### Option 2: Git Folder (No CLI)
@@ -164,6 +178,38 @@ flowchart TB
    ```
 
 3. Open `notebooks/4_redaction_pipeline.py`, configure widgets, and run
+
+### Unity Catalog Volumes
+
+The bundle and benchmark jobs require these volumes in your target schema. Create them before running jobs:
+
+```sql
+CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.wheels;
+CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.cluster_logs;
+CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.checkpoints;
+```
+
+`deploy.sh` uploads the wheel to `wheels`. `cluster_logs` is used by the benchmark job for cluster log delivery. `checkpoints` is used by the streaming pipeline.
+
+### Deploying to Production
+
+The `prod` target in `databricks.yml.template` uses two variables that must be configured in `variables.yml`:
+
+- `current_user`: The service principal or user email for `run_as` permissions (e.g. `deployer@company.com`)
+- `current_working_directory`: The workspace path for artifact deployment (e.g. `/Workspace/Shared/dbxredact`)
+
+Without these, the prod target will fail. Set them before running `./deploy.sh prod`.
+
+### SQL Warehouse Configuration
+
+The management app and the `deploy.sh` permission grants require a SQL Warehouse ID. Set it in `variables.yml`:
+
+```yaml
+sql_warehouse_id:
+  default: "your_warehouse_id_here"
+```
+
+This is also needed in your `dev.env` / `prod.env` as `WAREHOUSE_ID` for the deploy script to execute SQL grants.
 
 ## Detection Methods
 
@@ -185,7 +231,23 @@ flowchart TB
 | `6_benchmarking_audit.py` | Consolidate metrics and judge grades into audit table |
 | `7_benchmarking_next_actions.py` | AI-generated improvement recommendations |
 
-> **Note**: Notebooks 1-3 and 5-7 are benchmarking tools that require external evaluation data (e.g. the JSL benchmark dataset). This data is not included in the repository because it is not synthetic. To use these notebooks, supply your own labeled evaluation dataset and update the widget defaults accordingly.
+> **Synthetic benchmark data** is included in `data/` with ground-truth PII annotations (NAME, DATE, LOCATION, IDNUM, CONTACT):
+>
+> | File | Domain | Docs | Annotations |
+> |------|--------|------|-------------|
+> | `synthetic_benchmark_medical.csv` | Clinical (discharge summaries, lab reports, etc.) | 10 | ~180 |
+> | `synthetic_benchmark_finance.csv` | Financial (wire transfers, loans, KYC, tax, etc.) | 10 | ~250 |
+> | `synthetic_benchmark.csv` | Combined | 20 | ~430 |
+>
+> Upload a CSV to a Unity Catalog table and use it as both the source and ground truth for the benchmarking notebooks. To regenerate or customize: `python scripts/generate_synthetic_benchmark.py --domain medical|finance|all`.
+>
+> **Important:** After regenerating CSVs, you must re-upload the data to your Unity Catalog table for the updated annotations to take effect in benchmarking. Example:
+> ```sql
+> DROP TABLE IF EXISTS your_catalog.your_schema.synthetic_benchmark_medical;
+> -- Then re-create from CSV upload or use the Databricks UI file upload
+> ```
+>
+> For larger-scale evaluation, supply your own labeled dataset and update the widget defaults accordingly.
 
 ## API Reference
 
@@ -234,6 +296,59 @@ result = redact_text(text, entities, strategy="typed")
 # "Patient [PERSON] (SSN: [US_SSN]) visited on 2024-01-15."
 ```
 
+## Streaming (Incremental) Mode
+
+The redaction pipeline supports incremental processing via Structured Streaming. Select **incremental** for the "Refresh Approach" widget in `4_redaction_pipeline.py`, or call `run_redaction_pipeline_streaming` directly.
+
+### Key operational notes
+
+- **Deduplication**: Output uses `foreachBatch` with `MERGE INTO` on `doc_id`, so re-processed or retried documents overwrite their earlier result rather than creating duplicates.
+- **Checkpoint coupling**: The streaming checkpoint is tightly coupled to the Spark query plan. If you change which detectors are enabled, switch alignment mode, or modify detection logic, delete the checkpoint directory before restarting the stream.
+- **`mergeSchema` is on**: Switching between `production` and `validation` output strategies will widen the output table automatically.
+- **AI failure flagging**: When AI Query returns an error for a row, the output includes `_ai_detection_failed = True` and a warning is logged. These rows still flow through redaction (using other detectors if available) but should be reviewed or retried.
+- **LLM non-determinism**: If a micro-batch is retried after a transient failure, AI Query may produce slightly different results for the same document.
+- **`max_files_per_trigger`**: Controls how many files each micro-batch ingests (default 10). Set to 0 / None for unlimited. Useful for throttling first-run backfill on large tables.
+- **Checkpoint path**: Should be a Unity Catalog Volume path (`/Volumes/catalog/schema/volume_name/...`). Non-Volume paths (DBFS, local) may not persist across cluster restarts; a warning is emitted if detected.
+
+## Pipeline Details
+
+### Output Columns
+
+The pipeline reads only `doc_id` and the specified `text_column` from the source table. Other source columns are **not** carried to the output.
+
+- **Production mode** (default): Output contains `doc_id` + `{text_column}_redacted`.
+- **Validation mode**: Output includes all intermediate columns (raw detector results, aligned entities, redacted text) for debugging.
+
+To join redacted output back to your original table, use `doc_id` as the key:
+
+```sql
+SELECT o.*, r.text_redacted
+FROM catalog.schema.original o
+JOIN catalog.schema.redacted r ON o.doc_id = r.doc_id
+```
+
+### Multiple Column Redaction
+
+Currently, each pipeline run processes a single text column. Multi-column support is on the roadmap. For now, run the pipeline once per column and join outputs downstream on `doc_id`:
+
+```python
+for col in ["notes", "address", "comments"]:
+    run_redaction_pipeline(spark, source_table=..., text_column=col,
+                           output_table=f"..._{col}_redacted", ...)
+```
+
+### Document Length
+
+dbxredact does not impose an explicit document length limit. Practical limits depend on the detection method:
+
+- **GLiNER**: Handles long texts internally via word-boundary chunking with automatic offset correction (`_chunk_and_predict`). No user-side chunking needed.
+- **AI Query**: Subject to the LLM endpoint's context window / token limit. Documents exceeding the limit will be truncated by the endpoint.
+- **Presidio**: Processes text in-memory via spaCy. No hard cap, but very large documents may be slow.
+
+### Allow / Deny Lists
+
+Allow and deny lists are applied as post-processing filters after detection and alignment, not as Presidio custom recognizers. This means they work uniformly across all three detection methods. See `src/dbxredact/entity_filter.py` for the `EntityFilter` API and `load_filter_from_table` to load lists from Unity Catalog tables.
+
 ## Project Structure
 
 ```
@@ -262,18 +377,18 @@ pytest tests/ -v
 | presidio-anonymizer | 2.2.358 | MIT | Microsoft Presidio anonymization engine | [PyPI](https://pypi.org/project/presidio-anonymizer/) |
 | spacy | 3.8.7 | MIT | Industrial-strength NLP library | [PyPI](https://pypi.org/project/spacy/) |
 | gliner | >=0.1.0 | Apache 2.0 | Generalist NER using bidirectional transformers | [PyPI](https://pypi.org/project/gliner/) |
+| rapidfuzz | >=3.0.0 | MIT | Fast fuzzy string matching | [PyPI](https://pypi.org/project/rapidfuzz/) |
+| pydantic | >=2.0.0 | MIT | Data validation using Python type hints | [PyPI](https://pypi.org/project/pydantic/) |
+| pyyaml | >=6.0.1 | MIT | YAML parser and emitter | [PyPI](https://pypi.org/project/PyYAML/) |
+| databricks-sdk | >=0.30.0 | Apache 2.0 | Databricks SDK for Python | [PyPI](https://pypi.org/project/databricks-sdk/) |
 
-### GLiNER Models
+### GLiNER Model
 
 | Model | License | Description | HuggingFace |
 |-------|---------|-------------|-------------|
 | nvidia/gliner-PII | NVIDIA Open Model License | PII/PHI-focused NER model with 55+ entity types | [HuggingFace](https://huggingface.co/nvidia/gliner-PII) |
 
-> **Note:** The `nvidia/gliner-PII` model is released under the [NVIDIA Open Model License](https://developer.download.nvidia.com/licenses/nvidia-open-model-license-agreement-june-2024.pdf), which permits commercial use but is not Apache 2.0. Users should review the license terms before deploying in production.
-| rapidfuzz | >=3.0.0 | MIT | Fast fuzzy string matching | [PyPI](https://pypi.org/project/rapidfuzz/) |
-| pydantic | >=2.0.0 | MIT | Data validation using Python type hints | [PyPI](https://pypi.org/project/pydantic/) |
-| pyyaml | >=6.0.1 | MIT | YAML parser and emitter | [PyPI](https://pypi.org/project/PyYAML/) |
-| databricks-sdk | >=0.30.0 | Apache 2.0 | Databricks SDK for Python | [PyPI](https://pypi.org/project/databricks-sdk/) |
+This solution accelerator uses the `nvidia/gliner-PII` model in accordance with the [NVIDIA Open Model License](https://developer.download.nvidia.com/licenses/nvidia-open-model-license-agreement-june-2024.pdf). The NVIDIA Open Model License permits commercial use and is compatible with the [DB License](LICENSE.md) under which this accelerator is released. However, **use of the model itself is governed by NVIDIA's license terms, not the DB License**. Customers are responsible for reviewing and complying with the NVIDIA Open Model License independently before deploying in production.
 
 ### spaCy Models (for Presidio)
 

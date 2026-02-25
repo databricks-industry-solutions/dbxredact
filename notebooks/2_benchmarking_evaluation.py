@@ -356,18 +356,21 @@ for mode in MATCH_MODES:
         errors = analyze_errors(ground_truth_df, exploded_df, match_mode=mode)
         error_analyses[mode][method_name] = errors
 
-        print(f"\nFalse Positives by Entity Type:")
-        display(errors["fp_by_type"])
+        if not errors["fp_by_type"].empty:
+            print(f"\nFalse Positives by Entity Type:")
+            display(errors["fp_by_type"])
 
-        print(f"\nTop 25 False Positive Entities:")
-        display(errors["top_fps"])
+        if not errors["top_fps"].empty:
+            print(f"\nTop 25 False Positive Entities:")
+            display(errors["top_fps"])
 
         if not errors["fn_by_type"].empty:
             print(f"\nFalse Negatives by GT Entity Type:")
             display(errors["fn_by_type"])
 
-        print(f"\nTop 25 Missed Ground Truth Entities:")
-        display(errors["top_fns"])
+        if not errors["top_fns"].empty:
+            print(f"\nTop 25 Missed Ground Truth Entities:")
+            display(errors["top_fns"])
 
         if not errors["recall_by_type"].empty:
             print(f"\nRecall by Entity Type:")

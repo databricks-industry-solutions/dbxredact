@@ -13,6 +13,7 @@ from .config import (
     DEFAULT_GLINER_MODEL,
     DEFAULT_GLINER_LABELS,
     DEFAULT_GLINER_THRESHOLD,
+    DEFAULT_GLINER_THRESHOLDS_BY_TYPE,
     GLINER_LABEL_MAP,
     should_ignore_entity,
 )
@@ -189,12 +190,20 @@ def make_gliner_udf(
                     norm_text = _WHITESPACE_RE.sub(" ", text).strip()
                     offset_map = _build_offset_map(text)
                     entities = _chunk_and_predict(model, norm_text, labels_list, threshold)
+                    entities = [
+                        e for e in entities
+                        if e.get("score", 0) >= DEFAULT_GLINER_THRESHOLDS_BY_TYPE.get(
+                            e["label"], threshold
+                        )
+                    ]
                     entities = _merge_adjacent_names(entities)
                     # Remap offsets from normalized text back to original text
+                    # and re-derive entity text from original to fix merged-name mismatches
                     for ent in entities:
                         s, e = ent["start"], ent["end"]
                         ent["start"] = offset_map[s] if s < len(offset_map) else s
                         ent["end"] = offset_map[e - 1] + 1 if 0 < e <= len(offset_map) else e
+                        ent["text"] = text[ent["start"]:ent["end"]]
                     formatted = [
                         {
                             "entity": ent["text"],
@@ -225,6 +234,7 @@ def run_gliner_detection(
     num_cores: int = 10,
     labels: List[str] = None,
     threshold: float = DEFAULT_GLINER_THRESHOLD,
+    _repartition: bool = True,
 ) -> DataFrame:
     """Run GLiNER-based PHI detection on a DataFrame.
 
@@ -236,10 +246,12 @@ def run_gliner_detection(
         num_cores: Number of cores for repartitioning
         labels: Entity labels for detection
         threshold: Minimum confidence threshold
+        _repartition: Whether to repartition. Set False when caller already did.
     """
     gliner_udf = make_gliner_udf(model_name=model_name, labels=labels, threshold=threshold)
 
-    result_df = df.repartition(num_cores).withColumn(
+    base_df = df.repartition(num_cores) if _repartition else df
+    result_df = base_df.withColumn(
         "gliner_results", gliner_udf(col(doc_id_column), col(text_column))
     )
 

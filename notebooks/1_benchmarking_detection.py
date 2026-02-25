@@ -37,7 +37,7 @@
 import os
 from pyspark.sql.functions import col
 
-from dbxredact import run_detection_pipeline
+from dbxredact import run_detection_pipeline, load_filter_from_table, EntityFilter
 
 # COMMAND ----------
 
@@ -73,14 +73,9 @@ dbutils.widgets.dropdown(
     choices=["true", "false"],
     label="5. Use GLiNER Detection",
 )
-dbutils.widgets.dropdown(
+dbutils.widgets.text(
     name="endpoint",
     defaultValue="databricks-gpt-oss-120b",
-    choices=sorted(
-        [
-            "databricks-gpt-oss-120b",
-        ]
-    ),
     label="6. AI Endpoint (for AI Query method)",
 )
 dbutils.widgets.text(
@@ -100,6 +95,21 @@ dbutils.widgets.dropdown(
     choices=["union", "consensus"],
     label="10. Alignment Mode (union=recall, consensus=precision)",
 )
+dbutils.widgets.text(
+    name="max_rows",
+    defaultValue="10000",
+    label="11. Max Rows (0 for unlimited)",
+)
+dbutils.widgets.text(
+    name="deny_list_table",
+    defaultValue="",
+    label="12. Deny List Table (optional, fully qualified)",
+)
+dbutils.widgets.text(
+    name="allow_list_table",
+    defaultValue="",
+    label="13. Allow List Table (optional, fully qualified)",
+)
 
 source_table = dbutils.widgets.get("source_table")
 doc_id_column = dbutils.widgets.get("doc_id_column")
@@ -118,6 +128,32 @@ score_threshold = float(dbutils.widgets.get("presidio_score_threshold"))
 num_cores = int(dbutils.widgets.get("num_cores"))
 output_table = dbutils.widgets.get("output_table")
 alignment_mode = dbutils.widgets.get("alignment_mode")
+max_rows_str = dbutils.widgets.get("max_rows")
+max_rows = None if max_rows_str == "0" else int(max_rows_str)
+deny_list_table = dbutils.widgets.get("deny_list_table").strip()
+allow_list_table = dbutils.widgets.get("allow_list_table").strip()
+
+entity_filter = None
+if deny_list_table or allow_list_table:
+    ef = EntityFilter()
+    if deny_list_table:
+        deny_ef = load_filter_from_table(spark, deny_list_table, list_type="deny")
+        ef.deny_list, ef.deny_patterns = deny_ef.deny_list, deny_ef.deny_patterns
+        ef._deny_set, ef._deny_re = deny_ef._deny_set, deny_ef._deny_re
+        print(f"Loaded deny list: {len(ef.deny_list)} exact, {len(ef.deny_patterns)} patterns")
+    if allow_list_table:
+        allow_ef = load_filter_from_table(spark, allow_list_table, list_type="allow")
+        ef.allow_list, ef.allow_patterns = allow_ef.allow_list, allow_ef.allow_patterns
+        ef._allow_set, ef._allow_re = allow_ef._allow_set, allow_ef._allow_re
+        print(f"Loaded allow list: {len(ef.allow_list)} exact, {len(ef.allow_patterns)} patterns")
+    entity_filter = ef
+
+if not any([use_presidio, use_ai_query, use_gliner]):
+    raise ValueError("At least one detection method must be enabled.")
+if not 0.0 <= score_threshold <= 1.0:
+    raise ValueError(f"Presidio score threshold must be in [0.0, 1.0], got {score_threshold}")
+if num_cores < 1:
+    raise ValueError(f"Number of cores must be a positive integer, got {num_cores}")
 
 if not output_table:
     output_table = f"{source_table}_detection_results"
@@ -140,22 +176,18 @@ if "client" not in dbr_version:
 
 # COMMAND ----------
 
-source_df = spark.table(source_table).select(doc_id_column, col(text_column))
+_source_columns = [c.name for c in spark.table(source_table).schema]
+for _col in [doc_id_column, text_column]:
+    if _col not in _source_columns:
+        raise ValueError(f"Column '{_col}' not found in {source_table}. Available: {_source_columns}")
 
+source_df = spark.table(source_table).select(doc_id_column, col(text_column)).distinct()
 source_df_count = source_df.count()
+print(f"Source has {source_df_count} distinct documents from {source_table}")
 
-if source_df_count > 100:
-    print(
-        "Source table has more than 100 documents. Please use a smaller table or increase the limit for evaluation."
-    )
-    source_df = source_df.distinct()
-    source_df_count = source_df.count()
-    print(f"After distincting, source table has {source_df_count} documents")
-    if source_df_count > 100:
-        raise ValueError(
-            "Source table has more than 100 distinct documents, even when distincted. Please use a smaller table or increase the limit for evaluation."
-        )
-print(f"Loaded {source_df_count} documents from {source_table}")
+if max_rows and source_df_count > max_rows:
+    print(f"WARNING: Limiting to {max_rows:,} rows (set max_rows=0 for unlimited).")
+    source_df = source_df.limit(max_rows)
 
 # COMMAND ----------
 
@@ -177,6 +209,7 @@ results_df = run_detection_pipeline(
     num_cores=num_cores,
     align_results=True,
     alignment_mode=alignment_mode,
+    entity_filter=entity_filter,
 )
 
 # COMMAND ----------
