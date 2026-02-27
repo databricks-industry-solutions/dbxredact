@@ -1,7 +1,7 @@
 """Evaluation metrics and audit routes."""
 
 import logging
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query
 from api.services.db import fetch_all, fetch_one, _table, quote_table
 
 logger = logging.getLogger(__name__)
@@ -134,19 +134,21 @@ async def recommendations(recs_table: str = Query(...)):
 
 @router.get("/recommendations-for-lists")
 async def recommendations_for_lists(recs_table: str = Query(...)):
-    """Filter recommendations relevant to deny/allow list changes."""
+    """Filter recommendations relevant to block/safe list changes."""
     rows = fetch_all(
         f"""SELECT priority, method, action, rationale
         FROM {quote_table(recs_table)}
-        WHERE lower(action) LIKE '%deny%'
+        WHERE lower(action) LIKE '%block%'
+           OR lower(action) LIKE '%safe%'
+           OR lower(action) LIKE '%deny%'
            OR lower(action) LIKE '%allow%'
            OR lower(action) LIKE '%whitelist%'
            OR lower(action) LIKE '%blacklist%'
            OR lower(action) LIKE '%false positive%'
            OR lower(action) LIKE '%suppress%'
            OR lower(action) LIKE '%add to%'
-           OR lower(rationale) LIKE '%deny%'
-           OR lower(rationale) LIKE '%allow%'
+           OR lower(rationale) LIKE '%block list%'
+           OR lower(rationale) LIKE '%safe list%'
            OR lower(rationale) LIKE '%false positive%'
         ORDER BY priority"""
     )

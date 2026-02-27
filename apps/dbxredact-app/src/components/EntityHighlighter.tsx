@@ -20,43 +20,62 @@ const TYPE_COLORS: Record<string, string> = {
 export default function EntityHighlighter({
   text,
   entities,
+  showIndices = false,
 }: {
   text: string;
   entities: Entity[];
+  showIndices?: boolean;
 }) {
   if (!entities?.length) return <p className="whitespace-pre-wrap leading-relaxed">{text}</p>;
 
-  // Merge overlapping spans: keep the wider/higher-score entity when spans overlap
-  const sorted = [...entities].sort((a, b) => a.start - b.start || b.end - a.end);
-  const merged: Entity[] = [];
+  // Build render list: sort by start, then widest first. Track original index.
+  const indexed = entities.map((e, i) => ({ ...e, idx: i }));
+  const sorted = [...indexed].sort((a, b) => a.start - b.start || b.end - a.end);
+
+  // Resolve overlaps: skip entities whose start falls inside an already-claimed span.
+  // For overlapping entities that share the same start, group their indices together.
+  const segments: { start: number; end: number; entity_type: string; score?: number; indices: number[] }[] = [];
   for (const ent of sorted) {
-    const prev = merged[merged.length - 1];
-    if (prev && ent.start < prev.end) {
-      if (ent.end > prev.end) prev.end = ent.end;
+    const last = segments[segments.length - 1];
+    if (last && ent.start < last.end) {
+      // Overlapping -- add this entity's index to the existing segment
+      last.indices.push(ent.idx);
+      if (ent.end > last.end) last.end = ent.end;
     } else {
-      merged.push({ ...ent });
+      segments.push({
+        start: ent.start,
+        end: ent.end,
+        entity_type: ent.entity_type,
+        score: ent.score,
+        indices: [ent.idx],
+      });
     }
   }
 
   const parts: JSX.Element[] = [];
   let cursor = 0;
 
-  merged.forEach((ent, i) => {
-    if (ent.start > cursor) {
-      parts.push(<span key={`t${i}`}>{text.slice(cursor, ent.start)}</span>);
+  segments.forEach((seg, i) => {
+    if (seg.start > cursor) {
+      parts.push(<span key={`t${i}`}>{text.slice(cursor, seg.start)}</span>);
     }
-    if (ent.start < cursor) return; // safety: skip if still behind
-    const color = TYPE_COLORS[ent.entity_type] || "bg-orange-200/70 dark:bg-orange-800/40";
+    if (seg.start < cursor) return;
+    const color = TYPE_COLORS[seg.entity_type] || "bg-orange-200/70 dark:bg-orange-800/40";
     parts.push(
       <span
         key={`e${i}`}
         className={`${color} rounded px-0.5 cursor-help border-b-2 border-current`}
-        title={`${ent.entity_type} (${(ent.score ?? 0).toFixed(2)})`}
+        title={`${seg.entity_type} (${(seg.score ?? 0).toFixed(2)})`}
       >
-        {text.slice(ent.start, ent.end)}
+        {text.slice(seg.start, seg.end)}
+        {showIndices && (
+          <sup className="text-[9px] font-bold ml-0.5 opacity-70">
+            {seg.indices.map((idx) => idx + 1).join(",")}
+          </sup>
+        )}
       </span>
     );
-    cursor = ent.end;
+    cursor = seg.end;
   });
 
   if (cursor < text.length) {

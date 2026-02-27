@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useGet, apiPost, apiDelete } from "../hooks/useApi";
 import type { ListEntry } from "../types";
 import TablePicker from "../components/TablePicker";
+import ErrorBanner from "../components/ErrorBanner";
 
 const ENTITY_TYPES = [
   "", "PERSON", "PHONE_NUMBER", "EMAIL_ADDRESS", "LOCATION", "DATE_TIME",
@@ -9,53 +10,55 @@ const ENTITY_TYPES = [
 ];
 
 export default function ListsPage() {
-  const { data: denyList, refetch: refetchDeny } = useGet<ListEntry[]>("/lists/deny");
-  const { data: allowList, refetch: refetchAllow } = useGet<ListEntry[]>("/lists/allow");
+  const { data: blockList, refetch: refetchBlock } = useGet<ListEntry[]>("/lists/block");
+  const { data: safeList, refetch: refetchSafe } = useGet<ListEntry[]>("/lists/safe");
 
   const [value, setValue] = useState("");
   const [isPattern, setIsPattern] = useState(false);
   const [entityType, setEntityType] = useState("");
-  const [tab, setTab] = useState<"deny" | "allow">("deny");
+  const [tab, setTab] = useState<"block" | "safe">("block");
+  const [error, setError] = useState("");
 
   async function add() {
     await apiPost(`/lists/${tab}`, { value, is_pattern: isPattern, entity_type: entityType || null });
     setValue("");
     setEntityType("");
     setIsPattern(false);
-    tab === "deny" ? refetchDeny() : refetchAllow();
+    tab === "block" ? refetchBlock() : refetchSafe();
   }
 
-  async function remove(id: string, type: "deny" | "allow") {
+  async function remove(id: string, type: "block" | "safe") {
     await apiDelete(`/lists/${type}/${id}`);
-    type === "deny" ? refetchDeny() : refetchAllow();
+    type === "block" ? refetchBlock() : refetchSafe();
   }
 
-  const list = tab === "deny" ? denyList : allowList;
+  const list = tab === "block" ? blockList : safeList;
 
   return (
     <div>
-      <h2 className="page-title">Deny / Allow Lists</h2>
+      <h2 className="page-title">Block / Safe Lists</h2>
+      <ErrorBanner message={error} onDismiss={() => setError("")} />
       <p className="page-desc">
-        Control detection behavior with static lists. <b>Deny list</b> entries force the pipeline to always flag
-        matching text as PII, even if detectors miss it. <b>Allow list</b> entries suppress false positives --
+        Control detection behavior with static lists. <b>Block list</b> entries force the pipeline to always
+        flag matching text as PII, even if detectors miss it. <b>Safe list</b> entries suppress false positives --
         matching text will never be redacted. Use regex patterns for flexible matching (e.g. company names, product codes).
       </p>
 
       <div className="card p-4 mb-6">
         <div className="text-xs text-gray-500 dark:text-gray-400 mb-3 leading-relaxed">
           <b>How to use:</b> After reviewing detection results, add entries here for corrections that should apply globally.
-          For example, if "Acme Corp" keeps being flagged as a PERSON, add it to the Allow list.
-          If a known SSN format is being missed, add a regex pattern to the Deny list.
+          For example, if "Acme Corp" keeps being flagged as a PERSON, add it to the Safe list.
+          If a known SSN format is being missed, add a regex pattern to the Block list.
         </div>
       </div>
 
       <div className="flex gap-2 mb-5">
         <button className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-          tab === "deny" ? "bg-red-600 text-white shadow-sm" : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-        }`} onClick={() => setTab("deny")}>Deny List ({denyList?.length || 0})</button>
+          tab === "block" ? "bg-red-600 text-white shadow-sm" : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+        }`} onClick={() => setTab("block")}>Block List ({blockList?.length || 0})</button>
         <button className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-          tab === "allow" ? "bg-emerald-600 text-white shadow-sm" : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-        }`} onClick={() => setTab("allow")}>Allow List ({allowList?.length || 0})</button>
+          tab === "safe" ? "bg-emerald-600 text-white shadow-sm" : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+        }`} onClick={() => setTab("safe")}>Safe List ({safeList?.length || 0})</button>
       </div>
 
       <div className="card p-4 mb-6 flex gap-3 items-end flex-wrap">
@@ -106,14 +109,14 @@ export default function ListsPage() {
       <SuggestionsSection
         onApprove={(val, listType) => {
           apiPost(`/lists/${listType}`, { value: val, is_pattern: false, entity_type: null })
-            .then(() => { refetchDeny(); refetchAllow(); });
+            .then(() => { refetchBlock(); refetchSafe(); });
         }}
       />
     </div>
   );
 }
 
-function SuggestionsSection({ onApprove }: { onApprove: (value: string, listType: "deny" | "allow") => void }) {
+function SuggestionsSection({ onApprove }: { onApprove: (value: string, listType: "block" | "safe") => void }) {
   const [sourceTable, setSourceTable] = useState("");
   const [suggestions, setSuggestions] = useState<any[] | null>(null);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
@@ -139,7 +142,7 @@ function SuggestionsSection({ onApprove }: { onApprove: (value: string, listType
     <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
       <h3 className="text-lg font-semibold mb-2">AI Suggestions</h3>
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-        Select a benchmark source table to see AI-generated recommendations for deny/allow list changes.
+        Select a benchmark source table to see AI-generated recommendations for block/safe list changes.
       </p>
       <div className="max-w-xl mb-4">
         <TablePicker value={sourceTable} onChange={setSourceTable} label="Benchmark Source Table" />
@@ -155,16 +158,16 @@ function SuggestionsSection({ onApprove }: { onApprove: (value: string, listType
               </div>
               <div className="flex gap-2 shrink-0">
                 <button className="text-xs font-medium px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 hover:bg-red-100 transition-colors"
-                  onClick={() => { onApprove(s.action, "deny"); setDismissed(prev => new Set(prev).add(i)); }}>Add to Deny</button>
+                  onClick={() => { onApprove(s.action, "block"); setDismissed(prev => new Set(prev).add(i)); }}>Add to Block</button>
                 <button className="text-xs font-medium px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 transition-colors"
-                  onClick={() => { onApprove(s.action, "allow"); setDismissed(prev => new Set(prev).add(i)); }}>Add to Allow</button>
+                  onClick={() => { onApprove(s.action, "safe"); setDismissed(prev => new Set(prev).add(i)); }}>Add to Safe</button>
                 <button className="text-xs font-medium px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 transition-colors"
                   onClick={() => setDismissed(prev => new Set(prev).add(i))}>Dismiss</button>
               </div>
             </div>
           ))}
         </div>
-      ) : (hasTable && !loading && <p className="text-xs text-gray-400">No deny/allow suggestions found in this benchmark's recommendations.</p>)}
+      ) : (hasTable && !loading && <p className="text-xs text-gray-400">No block/safe suggestions found in this benchmark's recommendations.</p>)}
     </div>
   );
 }

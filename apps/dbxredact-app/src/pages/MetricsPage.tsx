@@ -1,16 +1,18 @@
 import { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from "recharts";
 import TablePicker from "../components/TablePicker";
+import ErrorBanner from "../components/ErrorBanner";
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4"];
 
-type Tab = "detection" | "evaluation" | "judge" | "recommendations";
+type Tab = "detection" | "evaluation" | "judge";
 
 export default function MetricsPage() {
   const [baseTable, setBaseTable] = useState("");
   const [tab, setTab] = useState<Tab>("detection");
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any>(null);
+  const [error, setError] = useState("");
 
   const parts = baseTable.split(".");
   const hasTable = parts.length === 3 && parts[2] !== "";
@@ -19,7 +21,6 @@ export default function MetricsPage() {
     detection: `${baseTable}_detection_results`,
     evaluation: `${baseTable}_evaluation_results`,
     judge: `${baseTable}_judge_results`,
-    recommendations: `${baseTable}_recommendations`,
   };
 
   useEffect(() => {
@@ -41,21 +42,21 @@ export default function MetricsPage() {
     } else if (tab === "judge") {
       req = fetch(`/api/metrics/judge?judge_table=${enc}`).then(r => r.json()).then(rows => ({ rows }));
     } else {
-      req = fetch(`/api/metrics/recommendations?recs_table=${enc}`).then(r => r.json()).then(rows => ({ rows }));
+      return;
     }
-    req.then(setData).catch(() => setData(null)).finally(() => setLoading(false));
+    req.then(setData).catch((e: any) => { setError(e.message || "Failed to load metrics"); setData(null); }).finally(() => setLoading(false));
   }, [baseTable, tab, hasTable]);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "detection", label: "Detection" },
     { key: "evaluation", label: "Evaluation" },
     { key: "judge", label: "Judge" },
-    { key: "recommendations", label: "Next Actions" },
   ];
 
   return (
     <div>
       <h2 className="page-title">Metrics Dashboard</h2>
+      <ErrorBanner message={error} onDismiss={() => setError("")} />
       <p className="page-desc">
         Pick the original source table (e.g. <code className="text-xs font-mono">jsl_benchmark</code>).
         All result tables are derived automatically with standard suffixes.
@@ -83,8 +84,6 @@ export default function MetricsPage() {
       {data && tab === "detection" && <DetectionView data={data} />}
       {data && tab === "evaluation" && <EvaluationView rows={data.rows} />}
       {data && tab === "judge" && <JudgeView rows={data.rows} judgeTable={tableMap["judge"]} />}
-
-      {data && tab === "recommendations" && <RecommendationsView rows={data.rows} />}
     </div>
   );
 }
@@ -163,7 +162,7 @@ function EvaluationView({ rows }: { rows: any[] }) {
 
   const stripSuffix = (name: string) => name.replace(/_strict$|_overlap$/, "");
   const methods = [...new Set(filtered.map(r => stripSuffix(r.method_name)))];
-  const coreMetrics = ["precision", "recall", "f1_score", "accuracy"];
+  const coreMetrics = ["precision", "recall", "f1_score"];
 
   const chartData = coreMetrics.map(m => {
     const point: Record<string, any> = { metric: m.replace("_", " ") };
@@ -191,11 +190,15 @@ function EvaluationView({ rows }: { rows: any[] }) {
     return { method, tp: get("true_positives"), fp: get("false_positives"), fn: get("false_negatives"), tn: get("true_negatives") };
   });
 
-  const bestF1 = methods.reduce((best, m) => {
-    const row = filtered.find(r => stripSuffix(r.method_name) === m && r.metric_name === "f1_score");
+  const bestOf = (metric: string) => methods.reduce((best, m) => {
+    const row = filtered.find(r => stripSuffix(r.method_name) === m && r.metric_name === metric);
     const val = row ? Number(row.metric_value) : 0;
     return val > best.val ? { method: m, val } : best;
   }, { method: "", val: 0 });
+
+  const bestF1 = bestOf("f1_score");
+  const bestP = bestOf("precision");
+  const bestR = bestOf("recall");
 
   const avgP = methods.reduce((s, m) => { const r = filtered.find(x => stripSuffix(x.method_name) === m && x.metric_name === "precision"); return s + (r ? Number(r.metric_value) : 0); }, 0) / (methods.length || 1);
   const avgR = methods.reduce((s, m) => { const r = filtered.find(x => stripSuffix(x.method_name) === m && x.metric_name === "recall"); return s + (r ? Number(r.metric_value) : 0); }, 0) / (methods.length || 1);
@@ -211,9 +214,11 @@ function EvaluationView({ rows }: { rows: any[] }) {
         ))}
       </div>
 
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-4 mb-6">
         <div className="stat-card"><div className="stat-label">methods evaluated</div><div className="stat-value">{methods.length}</div></div>
-        <div className="stat-card"><div className="stat-label">best F1 method</div><div className="stat-value text-sm">{bestF1.method || "---"}</div></div>
+        <div className="stat-card"><div className="stat-label">best F1</div><div className="stat-value text-sm">{bestF1.method || "---"} ({bestF1.val.toFixed(3)})</div></div>
+        <div className="stat-card"><div className="stat-label">best precision</div><div className="stat-value text-sm">{bestP.method || "---"} ({bestP.val.toFixed(3)})</div></div>
+        <div className="stat-card"><div className="stat-label">best recall</div><div className="stat-value text-sm">{bestR.method || "---"} ({bestR.val.toFixed(3)})</div></div>
         <div className="stat-card"><div className="stat-label">avg precision</div><div className="stat-value">{avgP.toFixed(3)}</div></div>
         <div className="stat-card"><div className="stat-label">avg recall</div><div className="stat-value">{avgR.toFixed(3)}</div></div>
       </div>
@@ -272,19 +277,29 @@ function EvaluationView({ rows }: { rows: any[] }) {
   );
 }
 
+function parseFindings(val: unknown): any[] {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") {
+    try { return JSON.parse(val); } catch { return []; }
+  }
+  return [];
+}
+
 function JudgeView({ rows, judgeTable }: { rows: any[]; judgeTable: string }) {
   const [selectedGrade, setSelectedGrade] = useState<"PASS" | "PARTIAL" | "FAIL">("FAIL");
   const [examples, setExamples] = useState<any[] | null>(null);
   const [loadingEx, setLoadingEx] = useState(false);
+  const [exampleCount, setExampleCount] = useState(5);
 
   useEffect(() => {
     if (!judgeTable) return;
     setLoadingEx(true);
-    fetch(`/api/metrics/judge-examples?judge_table=${encodeURIComponent(judgeTable)}&grade=${selectedGrade}&limit=5`)
+    fetch(`/api/metrics/judge-examples?judge_table=${encodeURIComponent(judgeTable)}&grade=${selectedGrade}&limit=${exampleCount}`)
       .then(r => r.json()).then(setExamples)
-      .catch(() => setExamples(null))
+      .catch((e: any) => setExamples(null))
       .finally(() => setLoadingEx(false));
-  }, [judgeTable, selectedGrade]);
+  }, [judgeTable, selectedGrade, exampleCount]);
 
   if (!rows?.length) return <p className="text-sm text-gray-400">No judge data found. Run a benchmark first.</p>;
 
@@ -332,7 +347,16 @@ function JudgeView({ rows, judgeTable }: { rows: any[]; judgeTable: string }) {
         </div>
 
         <div className="card p-5">
-          <h3 className="font-semibold mb-3">Example Documents</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">Example Documents</h3>
+            <label className="flex items-center gap-1.5 text-xs text-gray-500">
+              Show
+              <select className="input-field text-xs py-0.5 px-1.5 w-16" value={exampleCount}
+                onChange={e => setExampleCount(Number(e.target.value))}>
+                {[5, 10, 15, 20].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </div>
           <div className="flex gap-1 mb-4 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit">
             {(["FAIL", "PARTIAL", "PASS"] as const).map(g => (
               <button key={g} onClick={() => setSelectedGrade(g)}
@@ -343,26 +367,31 @@ function JudgeView({ rows, judgeTable }: { rows: any[]; judgeTable: string }) {
           </div>
           {loadingEx && <p className="text-xs text-gray-400 animate-pulse">Loading...</p>}
           {examples?.length ? (
-            <div className="space-y-3 max-h-[320px] overflow-y-auto">
-              {examples.map((ex: any, i: number) => (
-                <div key={i} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-mono text-gray-500">{ex.doc_id}</span>
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">{ex.method}</span>
+            <div className="space-y-3 max-h-[400px] overflow-y-auto">
+              {examples.map((ex: any, i: number) => {
+                const findings = parseFindings(ex.findings);
+                return (
+                  <div key={i} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-mono text-gray-500">{ex.doc_id}</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">{ex.method}</span>
+                    </div>
+                    {findings.length ? (
+                      <ul className="space-y-1">
+                        {findings.slice(0, 10).map((f: any, j: number) => (
+                          <li key={j} className="text-xs leading-relaxed">
+                            <span className="font-medium">{f.entity_type || f.type}</span>
+                            {(f.entity || f.value) && <>: <span className="font-mono">{f.entity || f.value}</span></>}
+                            {f.status && <span className="ml-1 text-gray-400">({f.status})</span>}
+                            {f.explanation && <span className="ml-1 text-gray-500 dark:text-gray-400"> -- {f.explanation}</span>}
+                          </li>
+                        ))}
+                        {findings.length > 10 && <li className="text-xs text-gray-400">...and {findings.length - 10} more</li>}
+                      </ul>
+                    ) : <p className="text-xs text-gray-400">No findings</p>}
                   </div>
-                  {ex.findings?.length ? (
-                    <ul className="space-y-1">
-                      {(Array.isArray(ex.findings) ? ex.findings : []).slice(0, 5).map((f: any, j: number) => (
-                        <li key={j} className="text-xs leading-relaxed">
-                          <span className="font-medium">{f.entity_type}</span>: <span className="font-mono">{f.entity}</span>
-                          {f.status && <span className="ml-1 text-gray-400">({f.status})</span>}
-                          {f.explanation && <span className="ml-1 text-gray-500 dark:text-gray-400"> -- {f.explanation}</span>}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : <p className="text-xs text-gray-400">No findings</p>}
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (!loadingEx && <p className="text-xs text-gray-400">No {selectedGrade} examples found.</p>)}
         </div>
@@ -371,35 +400,3 @@ function JudgeView({ rows, judgeTable }: { rows: any[]; judgeTable: string }) {
   );
 }
 
-function RecommendationsView({ rows }: { rows: any[] }) {
-  if (!rows?.length) return <p className="text-sm text-gray-400">No recommendations found. Run a full benchmark first.</p>;
-
-  return (
-    <>
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="stat-card"><div className="stat-label">total recommendations</div><div className="stat-value">{rows.length}</div></div>
-        <div className="stat-card"><div className="stat-label">methods covered</div><div className="stat-value">{new Set(rows.map(r => r.method).filter(Boolean)).size}</div></div>
-      </div>
-    <div className="space-y-3">
-      {rows.map((r, i) => (
-        <div key={i} className="card p-5">
-          <div className="flex items-start gap-3">
-            <span className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 flex items-center justify-center text-sm font-bold">
-              {r.priority}
-            </span>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-semibold text-sm">{r.action}</span>
-                {r.method && r.method !== "all" && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">{r.method}</span>
-                )}
-              </div>
-              <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{r.rationale}</p>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-    </>
-  );
-}

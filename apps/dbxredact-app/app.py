@@ -14,14 +14,18 @@ from api.services.db import execute, fetch_one, _table, CATALOG, SCHEMA
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="dbxredact", version="0.1.0")
+app = FastAPI(title="dbxredact", version="0.0.2")
 app.include_router(api_router, prefix="/api")
+
+
+_DEBUG = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
 
 
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):
     logger.error("Unhandled error on %s: %s", request.url.path, exc, exc_info=True)
-    return JSONResponse(status_code=500, content={"error": str(exc)})
+    detail = str(exc) if _DEBUG else "Internal server error"
+    return JSONResponse(status_code=500, content={"error": detail})
 
 
 # ---------------------------------------------------------------------------
@@ -35,22 +39,23 @@ TABLE_DDLS = [
         gliner_model STRING, gliner_threshold DOUBLE, redaction_strategy STRING,
         alignment_mode STRING, extra_params STRING, created_at TIMESTAMP, updated_at TIMESTAMP
     )""",
-    f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_deny_list (
+    f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_block_list (
         entry_id STRING, value STRING, is_pattern BOOLEAN, entity_type STRING,
         notes STRING, created_at TIMESTAMP
     )""",
-    f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_allow_list (
+    f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_safe_list (
         entry_id STRING, value STRING, is_pattern BOOLEAN, entity_type STRING,
         notes STRING, created_at TIMESTAMP
     )""",
-    f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_corrections (
-        correction_id STRING, doc_id STRING, source_table STRING, entity_text STRING,
-        entity_type STRING, start INT, end INT, action STRING, corrected_type STRING,
-        corrected_text STRING, created_at TIMESTAMP, created_by STRING
+    f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_annotations (
+        annotation_id STRING, doc_id STRING, source_table STRING,
+        workflow STRING, entity_text STRING, entity_type STRING,
+        start INT, end_pos INT, action STRING, corrected_type STRING,
+        corrected_value STRING, detection_method STRING, created_at TIMESTAMP
     )""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_job_history (
         run_id BIGINT, config_id STRING, source_table STRING, output_table STRING,
-        status STRING, started_at TIMESTAMP, completed_at TIMESTAMP
+        status STRING, cost_estimate_usd DOUBLE, started_at TIMESTAMP, completed_at TIMESTAMP
     )""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_ab_tests (
         test_id STRING, name STRING, config_a_id STRING, config_b_id STRING,
@@ -60,10 +65,6 @@ TABLE_DDLS = [
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_active_learn_queue (
         entry_id STRING, doc_id STRING, source_table STRING, priority_score DOUBLE,
         status STRING, assigned_to STRING, created_at TIMESTAMP, reviewed_at TIMESTAMP
-    )""",
-    f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_ground_truth (
-        ground_truth_id STRING, doc_id STRING, source_table STRING,
-        entities STRING, created_at TIMESTAMP
     )""",
 ]
 

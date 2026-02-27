@@ -1,50 +1,69 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useGet, apiPost } from "../hooks/useApi";
 import TablePicker from "../components/TablePicker";
+import ErrorBanner from "../components/ErrorBanner";
 import type { ActiveLearnItem, ActiveLearnStats } from "../types";
 
 export default function ActiveLearnPage() {
-  const { data: queue, refetch: refetchQueue } = useGet<ActiveLearnItem[]>("/active-learn/queue?status=pending");
-  const { data: stats, refetch: refetchStats } = useGet<ActiveLearnStats>("/active-learn/stats");
+  const { data: queue, refetch: refetchQueue, error: queueError } = useGet<ActiveLearnItem[]>("/active-learn/queue?status=pending");
+  const { data: stats, refetch: refetchStats, error: statsError } = useGet<ActiveLearnStats>("/active-learn/stats");
   const [detectionTable, setDetectionTable] = useState("");
   const [topK, setTopK] = useState(100);
   const [building, setBuilding] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (queueError) setError(queueError);
+    else if (statsError) setError(statsError);
+  }, [queueError, statsError]);
 
   const parts = detectionTable.split(".");
   const hasTable = parts.length === 3 && parts[2] !== "";
 
   async function buildQueue() {
     setBuilding(true);
-    await apiPost("/active-learn/build-queue", {
-      detection_table: detectionTable,
-      top_k: topK,
-    });
+    try {
+      await apiPost("/active-learn/build-queue", {
+        detection_table: detectionTable,
+        top_k: topK,
+      });
+      refetchQueue();
+      refetchStats();
+    } catch (e: any) {
+      setError(e.message || "Failed to build queue");
+    }
     setBuilding(false);
-    refetchQueue();
-    refetchStats();
   }
 
   async function markReviewed(docId: string) {
-    await apiPost(`/active-learn/queue/${docId}/review`, { corrections: [] });
-    refetchQueue();
-    refetchStats();
+    try {
+      await apiPost(`/active-learn/queue/${docId}/review`, { corrections: [] });
+      refetchQueue();
+      refetchStats();
+    } catch (e: any) {
+      setError(e.message || "Failed to mark reviewed");
+    }
   }
 
   return (
     <div>
+      <ErrorBanner message={error} onDismiss={() => setError("")} />
       <h2 className="page-title">Active Learning</h2>
       <p className="page-desc">
-        Prioritize documents where the model is most uncertain for human review. This focuses your labeling
-        effort on the documents that will most improve detection quality. The system ranks documents by
-        average confidence score -- lowest-confidence documents appear first.
+        Active learning identifies the documents where the detection model is <b>least confident</b> and
+        queues them for human review. This focuses labeling effort where it matters most -- on
+        ambiguous cases that, once corrected, provide the highest-value training signal.
       </p>
 
       <div className="card p-4 mb-6">
-        <div className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-          <b>How to use:</b> 1) Select a detection results table (from a pipeline or benchmark run).
-          2) Set how many documents to queue (Top K). 3) Click "Build Queue" to analyze confidence
-          scores and populate the review queue. 4) Review documents in priority order --
-          the most uncertain predictions appear first. After reviewing, labels are saved as corrections.
+        <div className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed space-y-1">
+          <p><b>How it works:</b> The system explodes the entity arrays from a detection table, computes
+            the average and minimum confidence scores per document, and ranks documents by ascending
+            confidence. The top-K lowest-confidence documents are added to the review queue.</p>
+          <p><b>Workflow:</b> 1) Point to any detection results table. 2) Set how many documents to queue.
+            3) Click "Build Queue." 4) Review queued documents in priority order on this page (or on the Review tab for
+            richer annotation). 5) Annotations are saved to the unified <code>redact_annotations</code> table and
+            can be used for evaluation benchmarks or model fine-tuning.</p>
         </div>
       </div>
 

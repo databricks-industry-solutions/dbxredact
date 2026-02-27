@@ -5,22 +5,25 @@ const sections = [
   {
     label: "Pipeline",
     links: [
-      { to: "/", label: "Config" },
+      { to: "/", label: "Home" },
+      { to: "/config", label: "Config" },
       { to: "/run", label: "Run Pipeline" },
-      { to: "/benchmark", label: "Benchmark" },
+      { to: "/review", label: "Review" },
     ],
   },
   {
-    label: "Analysis",
+    label: "Benchmarks + Analysis",
+    hint: "For developers running custom benchmarks",
     links: [
-      { to: "/review", label: "Review" },
+      { to: "/benchmark", label: "Benchmark" },
       { to: "/metrics", label: "Metrics" },
     ],
   },
   {
     label: "Tuning",
+    badge: "BETA -- Under Active Development",
     links: [
-      { to: "/lists", label: "Deny/Allow Lists" },
+      { to: "/lists", label: "Block / Safe Lists" },
       { to: "/labels", label: "Labeling" },
       { to: "/ab-tests", label: "A/B Testing" },
       { to: "/active-learn", label: "Active Learning" },
@@ -66,12 +69,15 @@ export default function Layout() {
             <div key={sec.label}>
               <div className="px-3 mb-1.5 text-[10px] uppercase tracking-widest text-gray-500 font-semibold flex items-center gap-2">
                 {sec.label}
-                {sec.label === "Tuning" && (
+                {sec.badge && (
                   <span className="normal-case tracking-normal text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium">
-                    Under Active Development
+                    {sec.badge}
                   </span>
                 )}
               </div>
+              {sec.hint && (
+                <div className="px-3 mb-1.5 text-[10px] text-gray-600 leading-tight">{sec.hint}</div>
+              )}
               <div className="space-y-0.5">
                 {sec.links.map((l) => (
                   <NavLink

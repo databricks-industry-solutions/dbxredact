@@ -345,9 +345,9 @@ dbxredact does not impose an explicit document length limit. Practical limits de
 - **AI Query**: Subject to the LLM endpoint's context window / token limit. Documents exceeding the limit will be truncated by the endpoint.
 - **Presidio**: Processes text in-memory via spaCy. No hard cap, but very large documents may be slow.
 
-### Allow / Deny Lists
+### Block / Safe Lists
 
-Allow and deny lists are applied as post-processing filters after detection and alignment, not as Presidio custom recognizers. This means they work uniformly across all three detection methods. See `src/dbxredact/entity_filter.py` for the `EntityFilter` API and `load_filter_from_table` to load lists from Unity Catalog tables.
+Block and safe lists are applied as post-processing filters after detection and alignment, not as Presidio custom recognizers. This means they work uniformly across all three detection methods. **Block lists** force specific terms to always be flagged as PII. **Safe lists** suppress false positives by removing matches. See `src/dbxredact/entity_filter.py` for the `EntityFilter` API and `load_filter_from_table` to load lists from Unity Catalog tables.
 
 ## Project Structure
 

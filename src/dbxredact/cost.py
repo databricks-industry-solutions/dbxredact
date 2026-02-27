@@ -1,11 +1,17 @@
 """AI Query cost estimation utilities."""
 
+import logging
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import col, length, sum as spark_sum
+
+logger = logging.getLogger(__name__)
 
 
 TOKENS_PER_CHAR = 0.25
 
+# Token prices per 1K tokens. Not fetched live -- no API exists.
+# Source: https://www.databricks.com/product/pricing/foundation-model-training
+# LAST_UPDATED: 2025-06-01
 COST_PER_1K_INPUT_TOKENS = {
     "databricks-gpt-oss-120b": 0.001,
     "databricks-meta-llama-3-3-70b-instruct": 0.001,
@@ -19,7 +25,7 @@ COST_PER_1K_OUTPUT_TOKENS = {
     "databricks-gpt-4o-mini": 0.0006,
 }
 
-PROMPT_OVERHEAD_CHARS = 500
+PROMPT_OVERHEAD_CHARS = 5500
 ESTIMATED_OUTPUT_RATIO = 0.3
 
 
@@ -69,11 +75,14 @@ def estimate_ai_query_cost(
 
 def print_cost_estimate(estimate: dict) -> None:
     """Pretty-print a cost estimate."""
-    print("--- AI Query Cost Estimate ---")
-    print(f"Endpoint:        {estimate['endpoint']}")
-    print(f"Rows:            {estimate['row_count']:,}")
-    print(f"Total chars:     {estimate['total_chars']:,}")
-    print(f"Input tokens:    {estimate['estimated_input_tokens']:,}")
-    print(f"Output tokens:   {estimate['estimated_output_tokens']:,}")
-    print(f"Estimated cost:  ${estimate['estimated_cost_usd']:.4f}")
-    print("------------------------------")
+    lines = [
+        "--- AI Query Cost Estimate ---",
+        f"Endpoint:        {estimate['endpoint']}",
+        f"Rows:            {estimate['row_count']:,}",
+        f"Total chars:     {estimate['total_chars']:,}",
+        f"Input tokens:    {estimate['estimated_input_tokens']:,}",
+        f"Output tokens:   {estimate['estimated_output_tokens']:,}",
+        f"Estimated cost:  ${estimate['estimated_cost_usd']:.4f}",
+        "------------------------------",
+    ]
+    logger.info("\n".join(lines))

@@ -1,9 +1,9 @@
 """Labeling/annotation routes for ground truth creation."""
 
 import uuid
-from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query
-from api.services.db import fetch_all, fetch_one, execute, _table, quote_table
+from typing import List
+from fastapi import APIRouter, Query
+from api.services.db import fetch_all, fetch_one, execute, _table, quote_table, validate_identifier
 
 router = APIRouter()
 
@@ -11,44 +11,83 @@ router = APIRouter()
 @router.get("/documents")
 async def list_unlabeled_documents(
     source_table: str = Query(...),
+    text_column: str = Query("text"),
+    doc_id_column: str = Query("doc_id"),
     limit: int = Query(20, le=100),
 ):
-    """Return documents that don't yet have corrections."""
+    validate_identifier(text_column)
+    validate_identifier(doc_id_column)
     rows = fetch_all(
-        f"""SELECT s.doc_id, s.text
+        f"""SELECT s.`{doc_id_column}` AS doc_id, s.`{text_column}` AS text
         FROM {quote_table(source_table)} s
-        LEFT ANTI JOIN {_table('redact_corrections')} c
-            ON s.doc_id = c.doc_id AND c.source_table = %(source_table)s
+        LEFT ANTI JOIN {_table('redact_annotations')} a
+            ON CAST(s.`{doc_id_column}` AS STRING) = a.doc_id AND a.source_table = %(source_table)s
+                AND a.workflow = 'label'
         LIMIT %(limit)s""",
         {"source_table": source_table, "limit": limit},
     )
     return rows
 
 
-@router.post("/batch")
-async def batch_label(
-    doc_id: str,
-    source_table: str,
-    labels: List[dict],
+@router.get("/documents-with-labels")
+async def list_documents_with_labels(
+    source_table: str = Query(...),
+    text_column: str = Query("text"),
+    doc_id_column: str = Query("doc_id"),
+    entity_text_column: str = Query("entity_text"),
+    entity_type_column: str = Query("entity_type"),
+    start_column: str = Query("start"),
+    end_column: str = Query("end"),
+    limit: int = Query(20, le=100),
+    offset: int = Query(0),
 ):
-    """Save a batch of entity labels for a document."""
+    """Fetch documents that already have denormalized label columns."""
+    for col in [text_column, doc_id_column, entity_text_column, entity_type_column, start_column, end_column]:
+        validate_identifier(col)
+    qt = quote_table(source_table)
+    rows = fetch_all(
+        f"""SELECT `{doc_id_column}` AS doc_id, `{text_column}` AS text,
+                   `{entity_text_column}` AS entity_text, `{entity_type_column}` AS entity_type,
+                   CAST(`{start_column}` AS INT) AS start, CAST(`{end_column}` AS INT) AS end
+            FROM {qt}
+            ORDER BY `{doc_id_column}`, `{start_column}`
+            LIMIT %(limit)s OFFSET %(offset)s""",
+        {"limit": limit, "offset": offset},
+    )
+    # Group rows by doc_id
+    docs: dict = {}
+    for r in rows:
+        did = str(r["doc_id"])
+        if did not in docs:
+            docs[did] = {"doc_id": did, "text": r["text"], "labels": []}
+        docs[did]["labels"].append({
+            "entity_text": r["entity_text"],
+            "entity_type": r["entity_type"],
+            "start": int(r["start"]) if r["start"] is not None else 0,
+            "end": int(r["end"]) if r["end"] is not None else 0,
+        })
+    return list(docs.values())
+
+
+@router.post("/batch")
+async def batch_label(doc_id: str, source_table: str, labels: List[dict]):
     for label in labels:
-        correction_id = str(uuid.uuid4())
+        annotation_id = str(uuid.uuid4())
         execute(
-            f"""INSERT INTO {_table('redact_corrections')}
-            (correction_id, doc_id, source_table, entity_text, entity_type,
-             start, end, action, corrected_type, corrected_text, created_at)
-            VALUES (%(correction_id)s, %(doc_id)s, %(source_table)s, %(entity_text)s,
-                    %(entity_type)s, %(start)s, %(end)s, 'label', %(entity_type)s,
-                    %(entity_text)s, current_timestamp())""",
+            f"""INSERT INTO {_table('redact_annotations')}
+            (annotation_id, doc_id, source_table, workflow, entity_text, entity_type,
+             start, end_pos, action, corrected_type, corrected_value, detection_method, created_at)
+            VALUES (%(annotation_id)s, %(doc_id)s, %(source_table)s, 'label',
+                    %(entity_text)s, %(entity_type)s, %(start)s, %(end_pos)s,
+                    'label', %(entity_type)s, NULL, NULL, current_timestamp())""",
             {
-                "correction_id": correction_id,
+                "annotation_id": annotation_id,
                 "doc_id": doc_id,
                 "source_table": source_table,
                 "entity_text": label["entity_text"],
                 "entity_type": label["entity_type"],
                 "start": label["start"],
-                "end": label["end"],
+                "end_pos": label["end"],
             },
         )
     return {"labeled": len(labels)}
@@ -56,12 +95,11 @@ async def batch_label(
 
 @router.get("/stats")
 async def labeling_stats(source_table: str = Query(...)):
-    """How many documents have been labeled."""
     row = fetch_one(
         f"""SELECT
             (SELECT count(DISTINCT doc_id) FROM {quote_table(source_table)}) as total_docs,
-            (SELECT count(DISTINCT doc_id) FROM {_table('redact_corrections')}
-             WHERE source_table = %(source_table)s) as labeled_docs""",
+            (SELECT count(DISTINCT doc_id) FROM {_table('redact_annotations')}
+             WHERE source_table = %(source_table)s AND workflow = 'label') as labeled_docs""",
         {"source_table": source_table},
     )
     return row or {}

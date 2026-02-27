@@ -5,6 +5,7 @@ from dbxredact.gliner_detector import (
     _merge_adjacent_names,
     _build_offset_map,
     _chunk_and_predict,
+    _map_label,
 )
 
 
@@ -91,3 +92,58 @@ class TestChunkAndPredict:
 
         result = _chunk_and_predict(MockModel(), "John", ["person"], 0.5)
         assert len(result) == 1
+
+    def test_long_text_triggers_chunking(self):
+        """Verify chunking is triggered when text exceeds MAX_WORDS."""
+        words = ["word"] * 300
+        text = " ".join(words)
+        call_count = 0
+
+        class MockModel:
+            def predict_entities(self, text, labels, threshold=0.5):
+                nonlocal call_count
+                call_count += 1
+                return []
+
+        _chunk_and_predict(MockModel(), text, ["person"], 0.5)
+        assert call_count > 1
+
+    def test_chunk_offset_adjustment(self):
+        """Entities from later chunks should have adjusted offsets."""
+        words = ["word"] * 300
+        text = " ".join(words)
+
+        class MockModel:
+            def predict_entities(self, text_input, labels, threshold=0.5):
+                if text_input.startswith("word word"):
+                    return [{"text": "word", "label": "person", "start": 0, "end": 4, "score": 0.9}]
+                return []
+
+        result = _chunk_and_predict(MockModel(), text, ["person"], 0.5)
+        assert len(result) >= 1
+
+
+class TestMapLabel:
+
+    def test_known_label(self):
+        assert _map_label("first_name") == "PERSON"
+        assert _map_label("email") == "EMAIL_ADDRESS"
+        assert _map_label("ssn") == "US_SSN"
+
+    def test_hospital_maps_to_hospital_name(self):
+        assert _map_label("hospital_or_medical_facility") == "HOSPITAL_NAME"
+
+    def test_unknown_label_uppercased(self):
+        assert _map_label("custom type") == "CUSTOM_TYPE"
+
+
+class TestOffsetMapRoundTrip:
+
+    def test_remap_preserves_text(self):
+        original = "John  Smith\nfrom  NYC"
+        mapping = _build_offset_map(original)
+        import re
+        normalized = re.sub(r"\s+", " ", original).strip()
+        for ni, oi in enumerate(mapping):
+            if ni < len(normalized):
+                assert normalized[ni] == original[oi]

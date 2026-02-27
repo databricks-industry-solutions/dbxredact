@@ -40,6 +40,8 @@ class PipelineRunRequest(BaseModel):
     doc_id_column: str = "doc_id"
     output_table: Optional[str] = None
     max_rows: Optional[int] = 10000
+    max_cost_usd: Optional[float] = None
+    cluster_profile: str = "cpu_small"
 
 
 class RunStatusResponse(BaseModel):
@@ -57,26 +59,28 @@ class JobHistoryItem(BaseModel):
     source_table: str
     output_table: str
     status: str
+    cost_estimate_usd: Optional[float] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
 
 
-class CorrectionCreate(BaseModel):
+class AnnotationCreate(BaseModel):
     doc_id: str
     source_table: str
     entity_text: str
     entity_type: str
     start: int
-    end: int
-    action: str  # "confirm", "reject", "retype"
+    end_pos: int
+    action: str  # "accept", "reject", "retype"
     corrected_type: Optional[str] = None
-    corrected_text: Optional[str] = None
+    corrected_value: Optional[str] = None
+    detection_method: Optional[str] = None
+    workflow: str = "review"
 
 
-class CorrectionResponse(CorrectionCreate):
-    correction_id: str
+class AnnotationResponse(AnnotationCreate):
+    annotation_id: str
     created_at: Optional[str] = None
-    created_by: Optional[str] = None
 
 
 class ListEntryCreate(BaseModel):
@@ -140,7 +144,7 @@ class BuildQueueRequest(BaseModel):
 
 
 class ReviewRequest(BaseModel):
-    corrections: List[CorrectionCreate]
+    corrections: List[AnnotationCreate]
 
 
 class ActiveLearnStats(BaseModel):

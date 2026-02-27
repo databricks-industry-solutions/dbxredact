@@ -1,5 +1,6 @@
 """Unified PHI/PII detection interface."""
 
+import logging
 from typing import Optional
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import col, from_json, expr
@@ -15,6 +16,8 @@ from .config import (
     DEFAULT_GLINER_THRESHOLD,
     DEFAULT_AI_REASONING_EFFORT,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def check_presidio_available() -> tuple:
@@ -253,8 +256,8 @@ def run_detection(
         except SpacyModelNotFoundError as e:
             if fail_on_presidio_error:
                 raise
-            print(f"WARNING: Presidio detection skipped - {e}")
-            print("Continuing with other detection methods...")
+            logger.warning("Presidio detection skipped - %s", e)
+            logger.info("Continuing with other detection methods...")
             presidio_skipped = True
 
     if use_ai_query:

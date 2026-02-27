@@ -2,12 +2,16 @@
 
 import os
 import re
+import time
 import logging
 from typing import Any, Dict, List, Optional
 
 from databricks.sdk import WorkspaceClient
 
 logger = logging.getLogger(__name__)
+
+_MAX_RETRIES = 3
+_INITIAL_BACKOFF_S = 1.0
 
 _client: Optional[WorkspaceClient] = None
 
@@ -58,25 +62,43 @@ def _parse_result(result) -> List[Dict[str, Any]]:
     return [dict(zip(columns, row)) for row in result.result.data_array]
 
 
+def _execute_with_retry(statement: str):
+    """Execute a statement with exponential backoff on transient failures."""
+    last_exc = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            result = _get_client().statement_execution.execute_statement(
+                warehouse_id=WAREHOUSE_ID, statement=statement, wait_timeout="30s",
+            )
+            if result.status and result.status.error:
+                raise RuntimeError(f"SQL error: {result.status.error.message}")
+            return result
+        except Exception as exc:
+            last_exc = exc
+            msg = str(exc).lower()
+            is_transient = any(
+                kw in msg for kw in ("temporarily unavailable", "timeout", "throttl", "429", "503")
+            )
+            if not is_transient or attempt == _MAX_RETRIES - 1:
+                raise
+            wait = _INITIAL_BACKOFF_S * (2 ** attempt)
+            logger.warning("Transient SQL error (attempt %d/%d), retrying in %.1fs: %s",
+                           attempt + 1, _MAX_RETRIES, wait, exc)
+            time.sleep(wait)
+    raise last_exc  # unreachable but satisfies type checker
+
+
 def execute(sql: str, params: Optional[Dict[str, Any]] = None) -> None:
     """Execute a SQL statement (INSERT/UPDATE/DELETE). Params are interpolated manually."""
     statement = _interpolate(sql, params) if params else sql
     logger.debug("execute: %s", statement[:200])
-    result = _get_client().statement_execution.execute_statement(
-        warehouse_id=WAREHOUSE_ID, statement=statement, wait_timeout="30s",
-    )
-    if result.status and result.status.error:
-        raise RuntimeError(f"SQL error: {result.status.error.message}")
+    _execute_with_retry(statement)
 
 
 def fetch_all(sql: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     statement = _interpolate(sql, params) if params else sql
     logger.debug("fetch_all: %s", statement[:200])
-    result = _get_client().statement_execution.execute_statement(
-        warehouse_id=WAREHOUSE_ID, statement=statement, wait_timeout="30s",
-    )
-    if result.status and result.status.error:
-        raise RuntimeError(f"SQL error: {result.status.error.message}")
+    result = _execute_with_retry(statement)
     return _parse_result(result)
 
 

@@ -1,9 +1,8 @@
 """Active learning queue routes."""
 
-import json
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from api.models.schemas import (
     ActiveLearnQueueItem, BuildQueueRequest, ReviewRequest, ActiveLearnStats,
 )
@@ -72,16 +71,24 @@ async def get_queue(
 @router.post("/queue/{doc_id}/review")
 async def review_document(doc_id: str, body: ReviewRequest):
     """Mark a document as reviewed and save corrections."""
-    for correction in body.corrections:
-        correction_id = str(uuid.uuid4())
+    queue_row = fetch_one(
+        f"""SELECT source_table FROM {_table('redact_active_learn_queue')}
+        WHERE doc_id = %(doc_id)s LIMIT 1""",
+        {"doc_id": doc_id},
+    )
+    source_table = queue_row.get("source_table", "") if queue_row else ""
+
+    for c in body.corrections:
+        annotation_id = str(uuid.uuid4())
         execute(
-            f"""INSERT INTO {_table('redact_corrections')}
-            (correction_id, doc_id, source_table, entity_text, entity_type,
-             start, end, action, corrected_type, corrected_text, created_at)
-            VALUES (%(correction_id)s, %(doc_id)s, %(source_table)s, %(entity_text)s,
-                    %(entity_type)s, %(start)s, %(end)s, %(action)s, %(corrected_type)s,
-                    %(corrected_text)s, current_timestamp())""",
-            {"correction_id": correction_id, **correction.model_dump()},
+            f"""INSERT INTO {_table('redact_annotations')}
+            (annotation_id, doc_id, source_table, workflow, entity_text, entity_type,
+             start, end_pos, action, corrected_type, corrected_value, detection_method, created_at)
+            VALUES (%(annotation_id)s, %(doc_id)s, %(source_table)s, 'active_learn',
+                    %(entity_text)s, %(entity_type)s, %(start)s, %(end_pos)s,
+                    %(action)s, %(corrected_type)s, %(corrected_value)s, %(detection_method)s,
+                    current_timestamp())""",
+            {"annotation_id": annotation_id, **c.model_dump()},
         )
 
     execute(
@@ -91,27 +98,7 @@ async def review_document(doc_id: str, body: ReviewRequest):
         {"doc_id": doc_id},
     )
 
-    # Write reviewed entities to ground truth table
-    entities_json = json.dumps([c.model_dump() for c in body.corrections]) if body.corrections else "[]"
-    queue_row = fetch_one(
-        f"""SELECT source_table FROM {_table('redact_active_learn_queue')}
-        WHERE doc_id = %(doc_id)s LIMIT 1""",
-        {"doc_id": doc_id},
-    )
-    source_table = queue_row.get("source_table", "") if queue_row else ""
-    execute(
-        f"""INSERT INTO {_table('redact_ground_truth')}
-        (ground_truth_id, doc_id, source_table, entities, created_at)
-        VALUES (%(gt_id)s, %(doc_id)s, %(source_table)s, %(entities)s, current_timestamp())""",
-        {
-            "gt_id": str(uuid.uuid4()),
-            "doc_id": doc_id,
-            "source_table": source_table,
-            "entities": entities_json,
-        },
-    )
-
-    return {"doc_id": doc_id, "status": "reviewed", "corrections_saved": len(body.corrections)}
+    return {"doc_id": doc_id, "status": "reviewed", "annotations_saved": len(body.corrections)}
 
 
 @router.get("/stats", response_model=ActiveLearnStats)
@@ -119,9 +106,9 @@ async def queue_stats():
     row = fetch_one(
         f"""SELECT
             count(*) as total_queued,
-            sum(CASE WHEN status='reviewed' THEN 1 ELSE 0 END) as reviewed,
-            sum(CASE WHEN status='pending' THEN 1 ELSE 0 END) as pending,
-            sum(CASE WHEN status='skipped' THEN 1 ELSE 0 END) as skipped,
+            COALESCE(sum(CASE WHEN status='reviewed' THEN 1 ELSE 0 END), 0) as reviewed,
+            COALESCE(sum(CASE WHEN status='pending' THEN 1 ELSE 0 END), 0) as pending,
+            COALESCE(sum(CASE WHEN status='skipped' THEN 1 ELSE 0 END), 0) as skipped,
             avg(priority_score) as avg_priority
         FROM {_table('redact_active_learn_queue')}"""
     )

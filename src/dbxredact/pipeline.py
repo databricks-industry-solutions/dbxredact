@@ -20,7 +20,7 @@ from .alignment import align_entities_udf
 from .redaction import create_redaction_udf, RedactionStrategy
 from .metadata import get_columns_by_tag
 from .config import DEFAULT_GLINER_MODEL, DEFAULT_GLINER_THRESHOLD, DEFAULT_AI_REASONING_EFFORT
-from .entity_filter import EntityFilter, apply_deny_filter, apply_allow_filter
+from .entity_filter import EntityFilter, apply_safe_filter, apply_block_filter
 
 logger = logging.getLogger(__name__)
 
@@ -250,16 +250,16 @@ def run_detection_pipeline(
             StructField("source", StringType()),
         ]))
         ef = entity_filter
-        has_allow = bool(ef._allow_set or ef._allow_re)
-        has_deny = bool(ef._deny_set or ef._deny_re)
+        has_block = bool(ef._block_set or ef._block_re)
+        has_safe = bool(ef._safe_set or ef._safe_re)
 
         @udf(entity_struct)
         def _apply_entity_filter(entities, text):
             ents = [e.asDict() for e in entities] if entities else []
-            if has_deny:
-                ents = apply_deny_filter(ents, ef)
-            if has_allow and text:
-                forced = apply_allow_filter(text, ef)
+            if has_safe:
+                ents = apply_safe_filter(ents, ef)
+            if has_block and text:
+                forced = apply_block_filter(text, ef)
                 ents.extend(forced)
             return ents
 

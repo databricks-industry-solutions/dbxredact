@@ -159,14 +159,14 @@ dbutils.widgets.text(
     label="17. Max Files Per Trigger (incremental only, 0 for unlimited)",
 )
 dbutils.widgets.text(
-    name="deny_list_table",
+    name="safe_list_table",
     defaultValue="",
-    label="18. Deny List Table (optional, fully qualified)",
+    label="18. Safe List Table (optional, fully qualified)",
 )
 dbutils.widgets.text(
-    name="allow_list_table",
+    name="block_list_table",
     defaultValue="",
-    label="19. Allow List Table (optional, fully qualified)",
+    label="19. Block List Table (optional, fully qualified)",
 )
 
 # COMMAND ----------
@@ -199,26 +199,26 @@ max_rows = None if max_rows_str == "0" else int(max_rows_str)
 alignment_mode = dbutils.widgets.get("alignment_mode")
 max_files_str = dbutils.widgets.get("max_files_per_trigger")
 max_files_per_trigger = None if max_files_str == "0" else int(max_files_str)
-deny_list_table = dbutils.widgets.get("deny_list_table").strip()
-allow_list_table = dbutils.widgets.get("allow_list_table").strip()
+safe_list_table = dbutils.widgets.get("safe_list_table").strip()
+block_list_table = dbutils.widgets.get("block_list_table").strip()
 
 entity_filter = None
-if deny_list_table or allow_list_table:
+if safe_list_table or block_list_table:
     ef = EntityFilter()
-    if deny_list_table:
-        deny_ef = load_filter_from_table(spark, deny_list_table, list_type="deny")
-        ef.deny_list = deny_ef.deny_list
-        ef.deny_patterns = deny_ef.deny_patterns
-        ef._deny_set = deny_ef._deny_set
-        ef._deny_re = deny_ef._deny_re
-        print(f"Loaded deny list: {len(ef.deny_list)} exact, {len(ef.deny_patterns)} patterns")
-    if allow_list_table:
-        allow_ef = load_filter_from_table(spark, allow_list_table, list_type="allow")
-        ef.allow_list = allow_ef.allow_list
-        ef.allow_patterns = allow_ef.allow_patterns
-        ef._allow_set = allow_ef._allow_set
-        ef._allow_re = allow_ef._allow_re
-        print(f"Loaded allow list: {len(ef.allow_list)} exact, {len(ef.allow_patterns)} patterns")
+    if safe_list_table:
+        safe_ef = load_filter_from_table(spark, safe_list_table, list_type="safe")
+        ef.safe_list = safe_ef.safe_list
+        ef.safe_patterns = safe_ef.safe_patterns
+        ef._safe_set = safe_ef._safe_set
+        ef._safe_re = safe_ef._safe_re
+        print(f"Loaded safe list: {len(ef.safe_list)} exact, {len(ef.safe_patterns)} patterns")
+    if block_list_table:
+        block_ef = load_filter_from_table(spark, block_list_table, list_type="block")
+        ef.block_list = block_ef.block_list
+        ef.block_patterns = block_ef.block_patterns
+        ef._block_set = block_ef._block_set
+        ef._block_re = block_ef._block_re
+        print(f"Loaded block list: {len(ef.block_list)} exact, {len(ef.block_patterns)} patterns")
     entity_filter = ef
 
 if not any([use_presidio, use_ai_query, use_gliner]):
@@ -304,7 +304,7 @@ print(f"Refresh Approach: {refresh_approach}")
 print(f"Output Strategy: {output_strategy}")
 print(f"Alignment Mode: {alignment_mode}")
 if entity_filter:
-    print(f"Entity Filter: deny={len(entity_filter.deny_list)}+{len(entity_filter.deny_patterns)}pat, allow={len(entity_filter.allow_list)}+{len(entity_filter.allow_patterns)}pat")
+    print(f"Entity Filter: safe={len(entity_filter.safe_list)}+{len(entity_filter.safe_patterns)}pat, block={len(entity_filter.block_list)}+{len(entity_filter.block_patterns)}pat")
 if refresh_approach == "incremental":
     print(f"Checkpoint Path: {checkpoint_path}")
 print("=" * 80)

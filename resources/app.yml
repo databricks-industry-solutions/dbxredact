@@ -25,9 +25,29 @@ resources:
           sql_warehouse:
             id: ${var.sql_warehouse_id}
             permission: "CAN_USE"
-        - name: "pipeline-job"
+        - name: "pipeline-cpu-small"
           job:
-            id: ${resources.jobs.redaction_pipeline.id}
+            id: ${resources.jobs.redaction_pipeline_cpu_small.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "pipeline-cpu-medium"
+          job:
+            id: ${resources.jobs.redaction_pipeline_cpu_medium.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "pipeline-cpu-large"
+          job:
+            id: ${resources.jobs.redaction_pipeline_cpu_large.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "pipeline-gpu-small"
+          job:
+            id: ${resources.jobs.redaction_pipeline_gpu_small.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "pipeline-gpu-medium"
+          job:
+            id: ${resources.jobs.redaction_pipeline_gpu_medium.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "pipeline-gpu-large"
+          job:
+            id: ${resources.jobs.redaction_pipeline_gpu_large.id}
             permission: "CAN_MANAGE_RUN"
         - name: "benchmark-job"
           job:

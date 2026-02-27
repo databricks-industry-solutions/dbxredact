@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useGet, apiPost } from "../hooks/useApi";
 import TablePicker from "../components/TablePicker";
+import ErrorBanner from "../components/ErrorBanner";
 import type { Config, RunStatus } from "../types";
 
 const TERMINAL_STATES = ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"];
@@ -10,8 +11,13 @@ export default function BenchmarkPage() {
   const [configId, setConfigId] = useState("");
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const [running, setRunning] = useState(false);
+  const [error, setError] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const { data: configs, loading: loadingConfigs } = useGet<Config[]>("/config/");
+  const { data: configs, loading: loadingConfigs, error: configsError } = useGet<Config[]>("/config/");
+
+  useEffect(() => {
+    if (configsError) setError(configsError);
+  }, [configsError]);
 
   useEffect(() => {
     if (configs?.length && !configId) setConfigId(configs[0].config_id);
@@ -45,7 +51,7 @@ export default function BenchmarkPage() {
       });
       setRunStatus(status);
     } catch (e: any) {
-      alert(e.message || "Failed to launch benchmark");
+      setError(e.message || "Failed to launch benchmark");
     }
     setRunning(false);
   }
@@ -57,6 +63,7 @@ export default function BenchmarkPage() {
 
   return (
     <div className="max-w-2xl">
+      <ErrorBanner message={error} onDismiss={() => setError("")} />
       <h2 className="text-xl font-semibold mb-1">Benchmark</h2>
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
         Run the full benchmark pipeline (detection, evaluation, redaction) against a labeled dataset.

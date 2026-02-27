@@ -47,6 +47,3 @@ variables:
   benchmark_dataset:
     description: "Base table name for benchmark data (source, ground truth, and intermediate tables are derived from this)"
     default: "jsl_benchmark"
-  sql_warehouse_id:
-    description: "SQL Warehouse ID for the management app"
-    default: ""

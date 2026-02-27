@@ -1,30 +1,45 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useGet, apiPost } from "../hooks/useApi";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import TablePicker from "../components/TablePicker";
+import ErrorBanner from "../components/ErrorBanner";
 import type { Config, ABTest } from "../types";
 
 export default function ABTestPage() {
-  const { data: tests, refetch } = useGet<ABTest[]>("/ab-tests/");
-  const { data: configs } = useGet<Config[]>("/config/");
+  const { data: tests, refetch, error: testsError } = useGet<ABTest[]>("/ab-tests/");
+  const { data: configs, error: configsError } = useGet<Config[]>("/config/");
   const [name, setName] = useState("");
   const [configA, setConfigA] = useState("");
   const [configB, setConfigB] = useState("");
   const [sourceTable, setSourceTable] = useState("");
   const [sampleSize, setSampleSize] = useState(100);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (testsError) setError(testsError);
+    else if (configsError) setError(configsError);
+  }, [testsError, configsError]);
 
   async function create() {
-    await apiPost("/ab-tests/", {
-      name, config_a_id: configA, config_b_id: configB,
-      source_table: sourceTable, sample_size: sampleSize,
-    });
-    setName("");
-    refetch();
+    try {
+      await apiPost("/ab-tests/", {
+        name, config_a_id: configA, config_b_id: configB,
+        source_table: sourceTable, sample_size: sampleSize,
+      });
+      setName("");
+      refetch();
+    } catch (e: any) {
+      setError(e.message || "Failed to create test");
+    }
   }
 
   async function runTest(testId: string) {
-    await apiPost(`/ab-tests/${testId}/run`, {});
-    refetch();
+    try {
+      await apiPost(`/ab-tests/${testId}/run`, {});
+      refetch();
+    } catch (e: any) {
+      setError(e.message || "Failed to run test");
+    }
   }
 
   function metricsChart(test: ABTest) {
@@ -54,6 +69,7 @@ export default function ABTestPage() {
 
   return (
     <div>
+      <ErrorBanner message={error} onDismiss={() => setError("")} />
       <h2 className="page-title">A/B Testing</h2>
       <p className="page-desc">
         Compare two detection configurations on the same data to find the best setup.

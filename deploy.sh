@@ -52,10 +52,20 @@ if [ -z "${SCHEMA}" ]; then
     exit 1
 fi
 
+if [ -z "${WAREHOUSE_ID}" ]; then
+    echo "Error: WAREHOUSE_ID not set in ${ENV_FILE}"
+    exit 1
+fi
+
 echo "Databricks Host: ${DATABRICKS_HOST}"
 echo "Catalog: ${CATALOG}"
 echo "Schema: ${SCHEMA}"
+echo "Warehouse ID: ${WAREHOUSE_ID}"
 echo ""
+
+# Get package version from pyproject.toml (single source of truth)
+PACKAGE_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+echo "Package version: ${PACKAGE_VERSION}"
 
 # Generate databricks.yml from template
 echo "Generating databricks.yml from template..."
@@ -67,19 +77,15 @@ fi
 sed -e "s|__DATABRICKS_HOST__|${DATABRICKS_HOST}|g" \
     -e "s|__CATALOG__|${CATALOG}|g" \
     -e "s|__SCHEMA__|${SCHEMA}|g" \
+    -e "s|__WAREHOUSE_ID__|${WAREHOUSE_ID}|g" \
+    -e "s|__PACKAGE_VERSION__|${PACKAGE_VERSION}|g" \
     databricks.yml.template > databricks.yml
 echo "Generated databricks.yml"
-
-# Frontend is built at deploy time on the Databricks runtime via app.yaml.
-# For local testing, run: cd apps/dbxredact-app && npm install && npm run build
 
 # Build wheel
 echo ""
 echo "Building wheel with poetry..."
 poetry build
-
-# Get package version from pyproject.toml
-PACKAGE_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
 WHEEL_FILE="dbxredact-${PACKAGE_VERSION}-py3-none-any.whl"
 WHEEL_PATH="dist/${WHEEL_FILE}"
 
@@ -159,13 +165,6 @@ if [ -n "${APP_JSON}" ]; then
     echo "Service principal application_id: ${APP_ID}"
     echo "Granting UC permissions..."
 
-    SQL_WAREHOUSE_ID=$(grep -A3 'sql_warehouse_id:' variables.yml | grep 'default:' | sed 's/.*default: *["]*\([^"]*\)["]*$/\1/' | tr -d ' ')
-
-    if [ -z "${SQL_WAREHOUSE_ID}" ]; then
-        echo "ERROR: sql_warehouse_id not set in variables.yml. Cannot run grants."
-        exit 1
-    fi
-
     GRANT_STATEMENTS=(
         "GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${APP_ID}\`"
         "GRANT USE SCHEMA ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
@@ -177,7 +176,7 @@ if [ -n "${APP_JSON}" ]; then
     for STMT in "${GRANT_STATEMENTS[@]}"; do
         echo "  Running: ${STMT}"
         RESULT=$(databricks api post /api/2.0/sql/statements \
-            --json "{\"warehouse_id\": \"${SQL_WAREHOUSE_ID}\", \"statement\": \"${STMT}\", \"wait_timeout\": \"30s\"}" 2>&1)
+            --json "{\"warehouse_id\": \"${WAREHOUSE_ID}\", \"statement\": \"${STMT}\", \"wait_timeout\": \"30s\"}" 2>&1)
         STATUS=$(echo "${RESULT}" | python3 -c "import sys,json; d=json.load(sys.stdin); s=d.get('status',{}); print(s.get('state','UNKNOWN'))" 2>/dev/null || echo "PARSE_ERROR")
         if [ "${STATUS}" = "SUCCEEDED" ]; then
             echo "    OK"

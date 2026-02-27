@@ -1,4 +1,8 @@
-"""Deny/Allow list filtering for detected entities."""
+"""Block/Safe list filtering for detected entities.
+
+Block List = items that must always be flagged as PII (force detection).
+Safe List  = items that should never be flagged as PII (suppress false positives).
+"""
 
 import re
 from dataclasses import dataclass, field
@@ -9,38 +13,38 @@ import yaml
 
 @dataclass
 class EntityFilter:
-    """Configuration for entity-level deny/allow filtering.
+    """Configuration for entity-level block/safe filtering.
 
-    deny_list: exact entity texts to always remove (case-insensitive)
-    allow_list: exact entity texts to always keep / force-detect
-    deny_patterns: regex patterns -- matching entities are removed
-    allow_patterns: regex patterns -- matches in raw text become forced entities
+    safe_list: exact texts to suppress -- matching entities are removed (false-positive suppression)
+    block_list: exact texts to force-detect -- always flagged as PII
+    safe_patterns: regex patterns -- matching entities are removed
+    block_patterns: regex patterns -- matches in raw text become forced PII entities
     """
-    deny_list: List[str] = field(default_factory=list)
-    allow_list: List[str] = field(default_factory=list)
-    deny_patterns: List[str] = field(default_factory=list)
-    allow_patterns: List[str] = field(default_factory=list)
+    safe_list: List[str] = field(default_factory=list)
+    block_list: List[str] = field(default_factory=list)
+    safe_patterns: List[str] = field(default_factory=list)
+    block_patterns: List[str] = field(default_factory=list)
 
     def __post_init__(self):
-        self._deny_set = {t.lower() for t in self.deny_list}
-        self._allow_set = {t.lower() for t in self.allow_list}
-        self._deny_re = [re.compile(p, re.IGNORECASE) for p in self.deny_patterns]
-        self._allow_re = [re.compile(p, re.IGNORECASE) for p in self.allow_patterns]
+        self._safe_set = {t.lower() for t in self.safe_list}
+        self._block_set = {t.lower() for t in self.block_list}
+        self._safe_re = [re.compile(p, re.IGNORECASE) for p in self.safe_patterns]
+        self._block_re = [re.compile(p, re.IGNORECASE) for p in self.block_patterns]
 
 
 def load_filter_from_yaml(path: str) -> EntityFilter:
     with open(path) as f:
         data = yaml.safe_load(f) or {}
     return EntityFilter(
-        deny_list=data.get("deny_list", []),
-        allow_list=data.get("allow_list", []),
-        deny_patterns=data.get("deny_patterns", []),
-        allow_patterns=data.get("allow_patterns", []),
+        safe_list=data.get("safe_list", []),
+        block_list=data.get("block_list", []),
+        safe_patterns=data.get("safe_patterns", []),
+        block_patterns=data.get("block_patterns", []),
     )
 
 
-def load_filter_from_table(spark, table_name: str, list_type: str = "deny") -> EntityFilter:
-    """Load deny or allow entries from a Unity Catalog table.
+def load_filter_from_table(spark, table_name: str, list_type: str = "safe") -> EntityFilter:
+    """Load block or safe entries from a Unity Catalog table.
 
     Expected columns: value (str), is_pattern (bool).
     """
@@ -51,33 +55,33 @@ def load_filter_from_table(spark, table_name: str, list_type: str = "deny") -> E
             patterns.append(row["value"])
         else:
             exact.append(row["value"])
-    if list_type == "deny":
-        return EntityFilter(deny_list=exact, deny_patterns=patterns)
-    return EntityFilter(allow_list=exact, allow_patterns=patterns)
+    if list_type == "safe":
+        return EntityFilter(safe_list=exact, safe_patterns=patterns)
+    return EntityFilter(block_list=exact, block_patterns=patterns)
 
 
-def apply_deny_filter(
+def apply_safe_filter(
     entities: List[Dict[str, Any]], ef: EntityFilter
 ) -> List[Dict[str, Any]]:
-    """Remove entities matching the deny list or deny patterns."""
+    """Remove entities matching the safe list (suppress false positives)."""
     result = []
     for ent in entities:
         text = ent.get("entity", "")
-        if text.lower() in ef._deny_set:
+        if text.lower() in ef._safe_set:
             continue
-        if any(rx.search(text) for rx in ef._deny_re):
+        if any(rx.search(text) for rx in ef._safe_re):
             continue
         result.append(ent)
     return result
 
 
-def apply_allow_filter(
+def apply_block_filter(
     text: str, ef: EntityFilter
 ) -> List[Dict[str, Any]]:
-    """Scan raw text for allow-list terms/patterns and return forced entities."""
+    """Scan raw text for block-list terms/patterns and return forced PII entities."""
     forced = []
     lower_text = text.lower()
-    for term in ef._allow_set:
+    for term in ef._block_set:
         start = 0
         while True:
             idx = lower_text.find(term, start)
@@ -87,19 +91,19 @@ def apply_allow_filter(
                 "entity": text[idx : idx + len(term)],
                 "start": idx,
                 "end": idx + len(term),
-                "entity_type": "ALLOW_LIST",
+                "entity_type": "BLOCK_LIST",
                 "score": 1.0,
-                "source": "allow_list",
+                "source": "block_list",
             })
             start = idx + 1
-    for rx in ef._allow_re:
+    for rx in ef._block_re:
         for m in rx.finditer(text):
             forced.append({
                 "entity": m.group(),
                 "start": m.start(),
                 "end": m.end(),
-                "entity_type": "ALLOW_LIST",
+                "entity_type": "BLOCK_LIST",
                 "score": 1.0,
-                "source": "allow_list",
+                "source": "block_list",
             })
     return forced

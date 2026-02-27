@@ -42,7 +42,7 @@ print(f"Created {prefix}.redact_config")
 # COMMAND ----------
 
 spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {prefix}.redact_deny_list (
+CREATE TABLE IF NOT EXISTS {prefix}.redact_block_list (
     entry_id STRING NOT NULL,
     value STRING NOT NULL,
     is_pattern BOOLEAN DEFAULT false,
@@ -51,12 +51,12 @@ CREATE TABLE IF NOT EXISTS {prefix}.redact_deny_list (
     created_at TIMESTAMP
 )
 """)
-print(f"Created {prefix}.redact_deny_list")
+print(f"Created {prefix}.redact_block_list")
 
 # COMMAND ----------
 
 spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {prefix}.redact_allow_list (
+CREATE TABLE IF NOT EXISTS {prefix}.redact_safe_list (
     entry_id STRING NOT NULL,
     value STRING NOT NULL,
     is_pattern BOOLEAN DEFAULT false,
@@ -65,27 +65,28 @@ CREATE TABLE IF NOT EXISTS {prefix}.redact_allow_list (
     created_at TIMESTAMP
 )
 """)
-print(f"Created {prefix}.redact_allow_list")
+print(f"Created {prefix}.redact_safe_list")
 
 # COMMAND ----------
 
 spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {prefix}.redact_corrections (
-    correction_id STRING NOT NULL,
+CREATE TABLE IF NOT EXISTS {prefix}.redact_annotations (
+    annotation_id STRING NOT NULL,
     doc_id STRING NOT NULL,
     source_table STRING NOT NULL,
+    workflow STRING,
     entity_text STRING,
     entity_type STRING,
     start INT,
-    end INT,
+    end_pos INT,
     action STRING,
     corrected_type STRING,
-    corrected_text STRING,
-    created_at TIMESTAMP,
-    created_by STRING
+    corrected_value STRING,
+    detection_method STRING,
+    created_at TIMESTAMP
 )
 """)
-print(f"Created {prefix}.redact_corrections")
+print(f"Created {prefix}.redact_annotations")
 
 # COMMAND ----------
 
@@ -96,6 +97,7 @@ CREATE TABLE IF NOT EXISTS {prefix}.redact_job_history (
     source_table STRING NOT NULL,
     output_table STRING NOT NULL,
     status STRING,
+    cost_estimate_usd DOUBLE,
     started_at TIMESTAMP,
     completed_at TIMESTAMP
 )

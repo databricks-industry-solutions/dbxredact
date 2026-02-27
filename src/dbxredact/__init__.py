@@ -98,8 +98,8 @@ from .entity_filter import (
     EntityFilter,
     load_filter_from_yaml,
     load_filter_from_table,
-    apply_deny_filter,
-    apply_allow_filter,
+    apply_safe_filter,
+    apply_block_filter,
 )
 
 from .pipeline import (
@@ -184,8 +184,8 @@ __all__ = [
     "EntityFilter",
     "load_filter_from_yaml",
     "load_filter_from_table",
-    "apply_deny_filter",
-    "apply_allow_filter",
+    "apply_safe_filter",
+    "apply_block_filter",
     # Pipeline
     "run_detection_pipeline",
     "run_redaction_pipeline",

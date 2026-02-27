@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
+import HomePage from "./pages/HomePage";
 import ConfigPage from "./pages/ConfigPage";
 import RunPage from "./pages/RunPage";
 import BenchmarkPage from "./pages/BenchmarkPage";
@@ -14,7 +15,8 @@ export default function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<ConfigPage />} />
+        <Route index element={<HomePage />} />
+        <Route path="config" element={<ConfigPage />} />
         <Route path="run" element={<RunPage />} />
         <Route path="benchmark" element={<BenchmarkPage />} />
         <Route path="review" element={<ReviewPage />} />

@@ -1,10 +1,25 @@
 import { useState, useEffect, useRef } from "react";
 import { useGet, apiPost } from "../hooks/useApi";
+import TablePicker from "../components/TablePicker";
+import ErrorBanner from "../components/ErrorBanner";
 import type { Config, RunStatus, JobHistoryItem } from "../types";
 
 interface TableInfo {
   columns: string[];
   row_count: number;
+}
+
+interface CostEstimate {
+  row_count: number;
+  total_chars: number;
+  estimated_input_tokens: number;
+  estimated_output_tokens: number;
+  ai_query_cost_usd: number;
+  compute_cost_usd: number;
+  estimated_cost_usd: number;
+  estimated_minutes: number;
+  endpoint: string;
+  cluster_profile: string;
 }
 
 const TERMINAL_STATES = ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"];
@@ -18,17 +33,63 @@ export default function RunPage() {
   const [textCol, setTextCol] = useState("text");
   const [docIdCol, setDocIdCol] = useState("doc_id");
   const [maxRows, setMaxRows] = useState(10000);
+  const [clusterSize, setClusterSize] = useState<"small" | "medium" | "large">("small");
+  const [useGpu, setUseGpu] = useState(false);
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const [running, setRunning] = useState(false);
+  const [error, setError] = useState("");
 
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
   const [loadingTable, setLoadingTable] = useState(false);
-  const [tableError, setTableError] = useState("");
+  const [costEstimate, setCostEstimate] = useState<CostEstimate | null>(null);
+  const [loadingCost, setLoadingCost] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const parts = sourceTable.split(".");
+  const hasTable = parts.length === 3 && parts[2] !== "";
 
   useEffect(() => {
     if (!configId && configs?.length) setConfigId(configs[0].config_id);
   }, [configs, configId]);
+
+  useEffect(() => {
+    if (!hasTable) { setTableInfo(null); return; }
+    setLoadingTable(true);
+    fetch(`/api/pipeline/table-info?table=${encodeURIComponent(sourceTable)}`)
+      .then((r) => r.json())
+      .then((info: TableInfo) => {
+        setTableInfo(info);
+        if (info.columns.includes("text")) setTextCol("text");
+        else if (info.columns.length) setTextCol(info.columns[0]);
+        if (info.columns.includes("doc_id")) setDocIdCol("doc_id");
+        else if (info.columns.length) setDocIdCol(info.columns[0]);
+      })
+      .catch((e: any) => { setError(e.message || "Failed to load table info"); setTableInfo(null); })
+      .finally(() => setLoadingTable(false));
+  }, [sourceTable, hasTable]);
+
+  const selectedConfig = configs?.find((c) => c.config_id === configId);
+  const usesAiQuery = selectedConfig?.use_ai_query ?? false;
+  const usesGliner = selectedConfig?.use_gliner ?? false;
+  const clusterProfile = `${useGpu ? "gpu" : "cpu"}_${clusterSize}`;
+
+  useEffect(() => {
+    if (!hasTable || !usesAiQuery || !selectedConfig) { setCostEstimate(null); return; }
+    setLoadingCost(true);
+    const params = new URLSearchParams({
+      table: sourceTable,
+      text_column: textCol,
+      endpoint: selectedConfig.endpoint || "databricks-gpt-oss-120b",
+      max_rows: String(maxRows),
+      cluster_profile: clusterProfile,
+      use_gliner: String(usesGliner),
+    });
+    fetch(`/api/pipeline/cost-estimate?${params}`)
+      .then((r) => r.json())
+      .then(setCostEstimate)
+      .catch((e: any) => { setError(e.message || "Failed to load cost estimate"); setCostEstimate(null); })
+      .finally(() => setLoadingCost(false));
+  }, [sourceTable, hasTable, usesAiQuery, selectedConfig?.endpoint, textCol, maxRows, clusterProfile, usesGliner]);
 
   useEffect(() => {
     if (runStatus && runStatus.state && !TERMINAL_STATES.includes(runStatus.state)) {
@@ -50,30 +111,6 @@ export default function RunPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [runStatus?.run_id, runStatus?.state]);
 
-  async function fetchTableInfo() {
-    if (!sourceTable.includes(".")) return;
-    setLoadingTable(true);
-    setTableError("");
-    setTableInfo(null);
-    try {
-      const res = await fetch(`/api/pipeline/table-info?table=${encodeURIComponent(sourceTable)}`);
-      if (res.ok) {
-        const info: TableInfo = await res.json();
-        setTableInfo(info);
-        if (info.columns.includes("text")) setTextCol("text");
-        else if (info.columns.length) setTextCol(info.columns[0]);
-        if (info.columns.includes("doc_id")) setDocIdCol("doc_id");
-        else if (info.columns.length) setDocIdCol(info.columns[0]);
-      } else {
-        const body = await res.json().catch(() => ({ error: "Table not found" }));
-        setTableError(body.error || `Error ${res.status}`);
-      }
-    } catch {
-      setTableError("Failed to connect");
-    }
-    setLoadingTable(false);
-  }
-
   async function launch() {
     setRunning(true);
     try {
@@ -84,11 +121,12 @@ export default function RunPage() {
         text_column: textCol,
         doc_id_column: docIdCol,
         max_rows: maxRows,
+        cluster_profile: clusterProfile,
       });
       setRunStatus(status);
       refetchHistory();
     } catch (e: any) {
-      alert(e.message || "Failed to launch pipeline");
+      setError(e.message || "Failed to launch pipeline");
     }
     setRunning(false);
   }
@@ -100,6 +138,7 @@ export default function RunPage() {
     <div>
       <h2 className="page-title">Run Pipeline</h2>
       <p className="page-desc">Execute the PII redaction pipeline on a Unity Catalog table.</p>
+      <ErrorBanner message={error} onDismiss={() => setError("")} />
 
       <div className="card p-5 mb-6 grid grid-cols-2 gap-4 max-w-2xl">
         <div className="col-span-2">
@@ -112,20 +151,14 @@ export default function RunPage() {
           </select>
         </div>
         <div className="col-span-2">
-          <label className="block text-sm font-medium mb-1.5">Source Table</label>
-          <div className="flex gap-2">
-            <input className="input-field flex-1" value={sourceTable}
-              onChange={(e) => setSourceTable(e.target.value)} placeholder="catalog.schema.table"
-              onBlur={fetchTableInfo} />
-            <button className="btn-ghost border border-gray-200 dark:border-gray-600"
-              onClick={fetchTableInfo} disabled={loadingTable}>
-              {loadingTable ? "..." : "Load"}
-            </button>
-          </div>
+          <TablePicker value={sourceTable} onChange={setSourceTable} label="Source Table" />
+          {loadingTable && <p className="text-xs text-gray-400 mt-1 animate-pulse">Loading table info...</p>}
+          {tableInfo && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {tableInfo.row_count.toLocaleString()} rows, {tableInfo.columns.length} columns
+            </p>
+          )}
         </div>
-        {tableError && (
-          <div className="col-span-2 text-red-600 dark:text-red-400 text-sm">{tableError}</div>
-        )}
         <div className="col-span-2">
           <label className="block text-sm font-medium mb-1.5">
             Output Table <span className="text-gray-400 font-normal">(defaults to source_table_redacted)</span>
@@ -165,8 +198,52 @@ export default function RunPage() {
           <input type="number" className="input-field" value={maxRows}
             onChange={(e) => setMaxRows(parseInt(e.target.value))} />
         </div>
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Cluster Size</label>
+          <select className="input-field" value={clusterSize}
+            onChange={(e) => setClusterSize(e.target.value as "small" | "medium" | "large")}>
+            <option value="small">Small (2 workers)</option>
+            <option value="medium">Medium (5 workers)</option>
+            <option value="large">Large (10 workers)</option>
+          </select>
+        </div>
+        <div className="col-span-2 flex items-center gap-3">
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" className="sr-only peer" checked={useGpu}
+              onChange={(e) => setUseGpu(e.target.checked)} />
+            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600
+              peer-checked:after:translate-x-full peer-checked:after:border-white after:content-['']
+              after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300
+              after:border after:rounded-full after:h-4 after:w-4 after:transition-all
+              peer-checked:bg-blue-600" />
+          </label>
+          <span className="text-sm font-medium">GPU cluster</span>
+          {usesGliner && !useGpu && (
+            <span className="text-xs text-amber-600 dark:text-amber-400">GPU recommended when GLiNER is enabled</span>
+          )}
+        </div>
+        {usesAiQuery && hasTable && (
+          <div className="col-span-2 border border-blue-200 dark:border-blue-800 rounded-lg p-3 bg-blue-50/50 dark:bg-blue-900/10">
+            <h4 className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-2">Cost Estimate</h4>
+            {loadingCost && <p className="text-xs text-gray-400 animate-pulse">Calculating...</p>}
+            {costEstimate && !loadingCost && (
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div><span className="text-gray-500">Rows:</span> <span className="font-medium">{costEstimate.row_count.toLocaleString()}</span></div>
+                <div><span className="text-gray-500">Characters:</span> <span className="font-medium">{costEstimate.total_chars.toLocaleString()}</span></div>
+                <div><span className="text-gray-500">Endpoint:</span> <span className="font-medium">{costEstimate.endpoint}</span></div>
+                <div><span className="text-gray-500">Input tokens:</span> <span className="font-medium">{costEstimate.estimated_input_tokens.toLocaleString()}</span></div>
+                <div><span className="text-gray-500">Output tokens:</span> <span className="font-medium">{costEstimate.estimated_output_tokens.toLocaleString()}</span></div>
+                <div><span className="text-gray-500">Est. runtime:</span> <span className="font-medium">{costEstimate.estimated_minutes} min</span></div>
+                <div><span className="text-gray-500">AI Query cost:</span> <span className="font-medium">${costEstimate.ai_query_cost_usd.toFixed(4)}</span></div>
+                <div><span className="text-gray-500">Compute cost:</span> <span className="font-medium">${costEstimate.compute_cost_usd.toFixed(4)}</span></div>
+                <div><span className="text-gray-500">Total est.:</span> <span className="font-bold text-blue-700 dark:text-blue-300">${costEstimate.estimated_cost_usd.toFixed(4)}</span></div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="col-span-2 pt-2">
-          <button className="btn-success" disabled={running || !configId || !sourceTable} onClick={launch}>
+          <button className="btn-success" disabled={running || !configId || !hasTable} onClick={launch}>
             {running ? "Launching..." : "Run Pipeline"}
           </button>
         </div>

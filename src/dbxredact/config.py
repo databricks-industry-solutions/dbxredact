@@ -40,6 +40,9 @@ LABEL_ENUMS = [
     "DRIVER_LICENSE",
     "BIRTH_DATE",
     "APPOINTMENT_DATE_TIME",
+    "HOSPITAL_NAME",
+    "ORGANIZATION",
+    "ID_NUMBER",
 ]
 
 # Prompt template for AI-based PHI detection
@@ -181,7 +184,7 @@ GLINER_LABEL_MAP = {
     "ip_address": "IP_ADDRESS",
     "mac_address": "MAC_ADDRESS",
     "company_name": "ORGANIZATION",
-    "hospital_or_medical_facility": "LOCATION",
+    "hospital_or_medical_facility": "HOSPITAL_NAME",
     "bank": "ORGANIZATION",
     "customer_id": "CUSTOMER_ID",
     "pin": "PIN",
@@ -189,24 +192,33 @@ GLINER_LABEL_MAP = {
 DEFAULT_GLINER_THRESHOLD = 0.2
 
 DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
-    "person": 0.15,
+    # Keys must match DEFAULT_GLINER_LABELS exactly
     "first_name": 0.15,
     "last_name": 0.15,
-    "phone number": 0.3,
+    "phone_number": 0.3,
     "email": 0.3,
-    "social security number": 0.4,
-    "date of birth": 0.25,
-    "address": 0.2,
-    "medical record number": 0.35,
-    "credit card number": 0.4,
-    "health plan beneficiary number": 0.35,
-    "account number": 0.35,
-    "license number": 0.35,
-    "vehicle identifier": 0.35,
+    "ssn": 0.4,
+    "date": 0.2,
+    "date_of_birth": 0.25,
+    "street_address": 0.2,
+    "city": 0.2,
+    "state": 0.25,
+    "county": 0.25,
+    "country": 0.25,
+    "medical_record_number": 0.35,
+    "health_plan_beneficiary_number": 0.35,
+    "credit_debit_card": 0.4,
+    "account_number": 0.35,
+    "bank_routing_number": 0.35,
+    "certificate_license_number": 0.35,
+    "vehicle_identifier": 0.35,
     "url": 0.3,
-    "ip address": 0.3,
-    "biometric identifier": 0.3,
-    "full face photograph": 0.3,
+    "ip_address": 0.3,
+    "mac_address": 0.3,
+    "company_name": 0.3,
+    "hospital_or_medical_facility": 0.25,
+    "bank": 0.3,
+    "customer_id": 0.35,
     "pin": 0.4,
 }
 
@@ -258,9 +270,9 @@ ENTITY_TEXT_IGNORE_PATTERNS = _re.compile(
     r"|(?:post)?operative\s+day\s+\w+"                   # "postoperative day two"
     # Relative time durations -- not identifying dates under Safe Harbor
     r"|daily|weekly|monthly|annually|hourly|nightly|quarterly|biweekly|bimonthly"
-    r"|\d+\s*(?:min(?:ute)?s?|hrs?|hours?|days?|weeks?|months?|years?|nights?)"
+    r"|\d+\s*(?:min(?:ute)?s?|hrs?|hours?|days?|weeks?|months?|years?|nights?)(?:\s*old)?"
     r"|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
-    r"\s+(?:days?|weeks?|months?|years?|hours?|minutes?|nights?)"
+    r"\s+(?:days?|weeks?|months?|years?|hours?|minutes?|nights?)(?:\s*old)?"
     r"|past\s+\d+\s+(?:months?|years?|days?|weeks?)"
     r")$",
     _re.IGNORECASE,
@@ -318,6 +330,9 @@ Important grading context:
 - Short abbreviations for hospitals (e.g., FIH, MGH) are borderline -- do not
   penalize for missing these unless the full hospital name is also missed.
 - Gender terms (male, female) alone are NOT one of the 18 HIPAA identifiers.
+- Standalone 4-digit years (e.g. 1978, 2024) are NOT PHI under HIPAA Safe Harbor,
+  which explicitly permits year to remain. Only flag years when they appear as part
+  of a full date (e.g. "March 15, 1978").
 - Grade as PASS if only borderline/debatable items remain.
 
 If no PHI remains, return {{"grade": "PASS", "findings": []}}.

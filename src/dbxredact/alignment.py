@@ -1,5 +1,6 @@
 """Entity alignment functions for combining multiple PHI detection methods."""
 
+import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
@@ -13,6 +14,8 @@ from pyspark.sql.types import (
     IntegerType,
     DoubleType,
 )
+
+logger = logging.getLogger(__name__)
 
 from .utils import is_fuzzy_match, is_overlap
 from .config import (
@@ -370,6 +373,7 @@ class MultiSourceAligner:
             if len(entities) == 0:
                 return []
         except TypeError:
+            logger.debug("Entities not iterable for source=%s doc_id=%s", source, doc_id)
             return []
 
         normalized = []
@@ -381,7 +385,8 @@ class MultiSourceAligner:
 
                 entity = normalize_entity(entity_dict, source, doc_id)
                 normalized.append(entity)
-            except (ValueError, KeyError, TypeError):
+            except (ValueError, KeyError, TypeError) as exc:
+                logger.debug("Skipping malformed entity from %s: %s", source, exc)
                 continue
 
         return normalized

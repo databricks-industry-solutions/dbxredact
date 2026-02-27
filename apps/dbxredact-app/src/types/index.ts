@@ -34,17 +34,19 @@ export interface JobHistoryItem {
   completed_at?: string;
 }
 
-export interface Correction {
-  correction_id?: string;
+export interface Annotation {
+  annotation_id?: string;
   doc_id: string;
   source_table: string;
+  workflow: string;
   entity_text: string;
   entity_type: string;
   start: number;
-  end: number;
+  end_pos: number;
   action: string;
   corrected_type?: string;
-  corrected_text?: string;
+  corrected_value?: string;
+  detection_method?: string;
 }
 
 export interface ListEntry {

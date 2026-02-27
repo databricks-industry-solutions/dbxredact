@@ -8,10 +8,18 @@ from databricks.sdk import WorkspaceClient
 logger = logging.getLogger(__name__)
 
 _client: Optional[WorkspaceClient] = None
-_pipeline_job_id: Optional[int] = None
 
 PIPELINE_JOB_NAME = os.environ.get("PIPELINE_JOB_NAME", "dbxredact - Redaction Pipeline")
 BENCHMARK_JOB_NAME = os.environ.get("BENCHMARK_JOB_NAME", "dbxredact - Redaction Benchmark")
+
+PROFILE_SUFFIXES = {
+    "cpu_small": "(CPU Small)",
+    "cpu_medium": "(CPU Medium)",
+    "cpu_large": "(CPU Large)",
+    "gpu_small": "(GPU Small)",
+    "gpu_medium": "(GPU Medium)",
+    "gpu_large": "(GPU Large)",
+}
 
 
 def _get_client() -> WorkspaceClient:
@@ -21,20 +29,25 @@ def _get_client() -> WorkspaceClient:
     return _client
 
 
-def _get_pipeline_job_id() -> int:
-    """Find the pipeline job ID by partial name match. Cached after first lookup."""
-    global _pipeline_job_id
-    if _pipeline_job_id is not None:
-        return _pipeline_job_id
+_pipeline_job_cache: Dict[str, int] = {}
+
+
+def _get_pipeline_job_id(cluster_profile: str = "cpu_small") -> int:
+    """Find the pipeline job ID by profile suffix match. Cached per profile."""
+    if cluster_profile in _pipeline_job_cache:
+        return _pipeline_job_cache[cluster_profile]
+
+    suffix = PROFILE_SUFFIXES.get(cluster_profile, PROFILE_SUFFIXES["cpu_small"])
+    search = f"{PIPELINE_JOB_NAME} {suffix}"
 
     w = _get_client()
     for job in w.jobs.list():
-        if job.settings and job.settings.name and PIPELINE_JOB_NAME in job.settings.name:
-            _pipeline_job_id = job.job_id
-            logger.info("Found pipeline job: %s (id=%d)", job.settings.name, _pipeline_job_id)
-            return _pipeline_job_id
+        if job.settings and job.settings.name and suffix in job.settings.name and PIPELINE_JOB_NAME in job.settings.name:
+            _pipeline_job_cache[cluster_profile] = job.job_id
+            logger.info("Found pipeline job for profile %s: %s (id=%d)", cluster_profile, job.settings.name, job.job_id)
+            return job.job_id
 
-    raise RuntimeError(f"No job matching '{PIPELINE_JOB_NAME}' found")
+    raise RuntimeError(f"No job matching '{search}' found")
 
 
 _benchmark_job_id: Optional[int] = None
@@ -55,8 +68,8 @@ def _get_benchmark_job_id() -> int:
     raise RuntimeError(f"No job matching '{BENCHMARK_JOB_NAME}' found")
 
 
-def trigger_pipeline_run(notebook_params: Optional[Dict[str, str]] = None) -> int:
-    job_id = _get_pipeline_job_id()
+def trigger_pipeline_run(notebook_params: Optional[Dict[str, str]] = None, cluster_profile: str = "cpu_small") -> int:
+    job_id = _get_pipeline_job_id(cluster_profile)
     w = _get_client()
     response = w.jobs.run_now(job_id=job_id, notebook_params=notebook_params or {})
     return response.run_id

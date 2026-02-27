@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useGet, apiPost, apiDelete } from "../hooks/useApi";
+import ErrorBanner from "../components/ErrorBanner";
 import type { Config } from "../types";
 
 const DEFAULTS = {
@@ -16,27 +17,39 @@ const DEFAULTS = {
 };
 
 export default function ConfigPage() {
-  const { data: configs, loading, refetch } = useGet<Config[]>("/config/");
+  const { data: configs, loading, refetch, error: fetchError } = useGet<Config[]>("/config/");
   const [form, setForm] = useState(DEFAULTS);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => { if (fetchError) setError(fetchError); }, [fetchError]);
 
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
 
   async function save() {
     setSaving(true);
-    await apiPost("/config/", form);
-    setForm(DEFAULTS);
-    refetch();
+    try {
+      await apiPost("/config/", form);
+      setForm(DEFAULTS);
+      refetch();
+    } catch (e: any) {
+      setError(e.message || "Failed to save config");
+    }
     setSaving(false);
   }
 
   async function remove(id: string) {
-    await apiDelete(`/config/${id}`);
-    refetch();
+    try {
+      await apiDelete(`/config/${id}`);
+      refetch();
+    } catch (e: any) {
+      setError(e.message || "Failed to delete config");
+    }
   }
 
   return (
     <div>
+      <ErrorBanner message={error} onDismiss={() => setError("")} />
       <h2 className="page-title">Detection Configurations</h2>
       <p className="page-desc">Create and manage PII detection configurations for pipeline runs.</p>
 
