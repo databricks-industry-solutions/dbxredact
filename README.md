@@ -1,54 +1,194 @@
 # dbxredact
 
-PII/PHI detection and redaction solution accelerator for Databricks.
+PII/PHI detection and redaction for Databricks, with a management web app.
 
-> **Disclaimer**: This is a Databricks Solution Accelerator -- a starting point to accelerate your project. dbxredact is high quality and fully functioning end-to-end, but you should evaluate, test, and modify this code for your specific use case. Detection and redaction results will vary depending on your data and configuration. 
+> **Disclaimer**: This is a Databricks Solution Accelerator -- a starting point for your project. Evaluate, test, and customize for your use case. Detection accuracy depends on your data and configuration.
 
-## Overview
+## What It Does
 
-dbxredact provides tools for detecting, evaluating, and redacting Protected Health Information (PHI) and Personally Identifiable Information (PII) in text data on Databricks.
+dbxredact detects and redacts Protected Health Information (PHI) and Personally Identifiable Information (PII) in text data stored in Unity Catalog. It ships as:
 
-### Features
+1. **A Python library** (`src/dbxredact/`) with Spark UDFs for detection, alignment, redaction, and evaluation
+2. **Databricks notebooks** for running redaction and benchmarking pipelines
+3. **A web management app** (FastAPI + React, deployed as a Databricks App) for configuration, pipeline execution, review, and labeling
 
-- **Multiple Detection Methods**: Presidio (rule-based), AI Query (LLM-based), and GLiNER (NER-based)
-- **Multi-language Support**: AI Query and rule-based approaches support Spanish language
-- **Entity Alignment**: Combine results from multiple detection methods with configurable modes (union/consensus)
-- **Flexible Redaction**: Generic (`[REDACTED]`) or typed (`[PERSON]`, `[EMAIL]`) strategies
-- **Benchmarking Pipeline**: End-to-end evaluation with AI judge, audit trail, and automated recommendations
+### Key Capabilities
+
+- **Three detection methods**: Presidio (rule-based NLP), AI Query (LLM endpoints), GLiNER (`nvidia/gliner-PII` transformer NER)
+- **Multi-language support**: AI Query and rule-based approaches support Spanish language
+- **Entity alignment**: Union (recall-focused) or consensus (precision-focused) across detectors
+- **Typed or generic redaction**: `[PERSON]` / `[EMAIL]` or `[REDACTED]`
+- **Block / safe lists**: Deny lists (always flag) and allow lists (suppress false positives), stored in UC tables, applied uniformly across all detectors
+- **Benchmarking**: Automated evaluation (precision, recall, F1), AI judge grading, and improvement recommendations
+- **Streaming**: Incremental processing via Structured Streaming with checkpoint-based deduplication
+- **GPU acceleration**: GPU cluster profiles for GLiNER inference
+- **Cost estimation**: Pre-run token and compute cost estimates in the management app
+
+## Prerequisites
+
+- [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html) >= 0.283.0
+- [Poetry](https://python-poetry.org/docs/#installation) >= 2.0
+- [Node.js / npm](https://nodejs.org/) >= 18 (for the web app frontend build)
+- Python >= 3.10
+- A Databricks workspace with Unity Catalog enabled
+- A SQL Warehouse -- set the ID in `variables.yml` (`sql_warehouse_id`) and in your `dev.env` / `prod.env` as `WAREHOUSE_ID`
+
+## Quickstart
+
+### 1. Configure Environment
+
+```bash
+cp example.env dev.env
+```
+
+Edit `dev.env`:
+```
+DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+CATALOG=your_catalog
+SCHEMA=redaction
+WAREHOUSE_ID=your_warehouse_id
+```
+
+### 2. Deploy
+
+```bash
+./deploy.sh dev
+```
+
+This builds the Python wheel, builds the React frontend, generates `databricks.yml` from the template, and deploys the Databricks Asset Bundle (jobs, app, and artifacts).
+
+### 3. Run a Pipeline
+
+**From the app**: Open the deployed Databricks App, go to "Run Pipeline", select your source table, choose a cluster profile, and click "Launch".
+
+**From CLI**:
+```bash
+databricks bundle run redaction_pipeline_cpu_small -t dev \
+  --params source_table=catalog.schema.source,text_column=text,output_table=catalog.schema.redacted
+```
+
+### 4. Alternative: Git Folder (No CLI)
+
+Clone to a Databricks Git Folder, install the library, and run notebooks directly:
+```python
+# From GitHub directly
+%pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
+
+# Or download wheel from releases, upload to a volume, then:
+%pip install /Volumes/your_catalog/your_schema/wheels/dbxredact-<version>-py3-none-any.whl
+```
+
+Open `notebooks/4_redaction_pipeline.py`, configure widgets, and run.
+
+### Unity Catalog Volumes
+
+Create these volumes before deploying:
+```sql
+CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.wheels;
+CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.cluster_logs;
+CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.checkpoints;
+```
+
+`deploy.sh` uploads the wheel to `wheels`. `cluster_logs` is used by the benchmark job for cluster log delivery. `checkpoints` is used by the streaming pipeline.
+
+## Detection Methods
+
+| Method | Model | When to Use |
+|--------|-------|-------------|
+| **Presidio** | spaCy `en_core_web_trf` (auto-falls back to `_lg`/`_sm`) | Fast, deterministic, no API calls |
+| **AI Query** | Databricks LLM endpoints (default: `databricks-gpt-oss-120b`) | Context-aware detection of complex patterns |
+| **GLiNER** | `nvidia/gliner-PII` (55+ entity types) | Transformer NER, GPU-accelerated, no API calls |
+
+Detection methods can be used individually or in ensemble. Ensemble results are merged via configurable alignment (union or consensus).
+
+## Cluster Profiles
+
+Six pre-configured job variants ship with the bundle:
+
+| Profile | Workers | Instance | Use Case |
+|---------|---------|----------|----------|
+| CPU Small | 2 | i3.xlarge | Development, small datasets |
+| CPU Medium | 5 | i3.xlarge | Medium workloads |
+| CPU Large | 10 | i3.xlarge | Production scale |
+| GPU Small | 2 | g5.xlarge | GLiNER, small datasets |
+| GPU Medium | 5 | g5.xlarge | GLiNER, medium datasets |
+| GPU Large | 10 | g5.xlarge | GLiNER at scale |
+
+GPU profiles use Databricks Runtime `17.3.x-gpu-ml-scala2.13`.
+
+## Management App
+
+dbxredact includes a web application deployed as a [Databricks App](https://docs.databricks.com/en/dev-tools/databricks-apps/index.html). The app provides:
+
+- **Configuration**: Create and manage detection configurations (enable/disable detectors, set thresholds, choose endpoints)
+- **Block / Safe Lists**: Add terms to block lists (always flag) or safe lists (suppress false positives) via the UI
+- **Run Pipeline**: Select a source table, choose a cluster profile (CPU/GPU, Small/Medium/Large), view cost estimates, and trigger redaction jobs
+- **Job History**: Monitor pipeline runs with status tracking, cost estimates, and links to Databricks job runs
+- **Review**: Side-by-side comparison of original and redacted text
+- **Labeling**: Annotate entities by highlighting text to build ground-truth datasets for evaluation
+
+The app is defined in `apps/dbxredact-app/` and deployed via the Databricks Asset Bundle (`resources/app.yml`).
 
 ## Architecture
 
-### Production Redaction Pipeline
+### Detection Pipeline
 
 ```mermaid
 flowchart LR
-    subgraph Input
-        SRC[(Source Table)]
+    SRC[(Source Table)] --> P["Presidio\nRule-based + NLP"]
+    SRC --> AI["AI Query\nLLM Endpoint"]
+    SRC --> GL["GLiNER\nnvidia/gliner-PII"]
+    P & AI & GL --> ALN["Alignment\nunion | consensus"]
+    ALN --> FILT["Block/Safe\nList Filter"]
+    FILT --> RED["Redaction\ngeneric | typed"]
+    RED --> OUT[(Redacted Table)]
+```
+
+### Management App
+
+```mermaid
+flowchart TB
+    subgraph app [Management App]
+        CONFIG[Configure] --> RUN[Run Pipeline]
+        RUN --> HISTORY[Job History]
+        REVIEW[Review Results]
+        LABEL[Label Entities]
+        LISTS[Block/Safe Lists]
+    end
+    RUN -->|triggers| JOB[Databricks Job]
+    JOB -->|writes| OUT[(Redacted Table)]
+    LABEL -->|writes| GT[(Ground Truths Table)]
+    LISTS -->|read by| JOB
+```
+
+### Pipeline Module Structure
+
+```mermaid
+flowchart TB
+    subgraph lib["src/dbxredact/"]
+        config["config.py\nPrompts, thresholds, labels"]
+        analyzer["analyzer.py\nPresidio analyzer setup"]
+        presidio["presidio.py\nBatch UDF formatting"]
+        ai_det["ai_detector.py\nAI Query prompt + UDF"]
+        gliner_det["gliner_detector.py\nChunking, caching, offset remap"]
+        detection["detection.py\nOrchestrator for all detectors"]
+        alignment["alignment.py\nMulti-source entity merge"]
+        entity_filter["entity_filter.py\nBlock/safe list filtering"]
+        redaction["redaction.py\nText replacement UDFs"]
+        evaluation["evaluation.py\nMetrics, error analysis"]
+        judge["judge.py\nAI judge + next actions"]
+        pipeline["pipeline.py\nEnd-to-end orchestration"]
     end
 
-    subgraph Detection["Detection (Spark UDFs)"]
-        direction TB
-        P["Presidio\nen_core_web_trf\nRule-based + NLP"]
-        AI["AI Query\nLLM Endpoint\nContext-aware"]
-        GL["GLiNER\nnvidia/gliner-PII\nTransformer NER"]
-    end
-
-    subgraph Alignment
-        ALN["Entity Alignment\nmode: union | consensus"]
-    end
-
-    subgraph Redaction
-        RED["Redact Text\ngeneric | typed"]
-    end
-
-    subgraph Output
-        OUT[(Redacted Table)]
-    end
-
-    SRC --> P & AI & GL
-    P & AI & GL --> ALN
-    ALN --> RED
-    RED --> OUT
+    config --> analyzer & ai_det & gliner_det & judge
+    analyzer --> presidio
+    presidio & ai_det & gliner_det --> detection
+    detection --> pipeline
+    alignment --> pipeline
+    entity_filter --> pipeline
+    redaction --> pipeline
+    evaluation -.->|"benchmarking only"| pipeline
+    judge -.->|"benchmarking only"| pipeline
 ```
 
 ### Benchmarking & Development Feedback Loop
@@ -95,141 +235,19 @@ flowchart TB
     LOGS -->|"review & iterate"| DEV
 ```
 
-### Pipeline Module Structure
-
-```mermaid
-flowchart TB
-    subgraph lib["src/dbxredact/"]
-        config["config.py\nPrompts, thresholds, labels"]
-        analyzer["analyzer.py\nPresidio analyzer setup"]
-        presidio["presidio.py\nBatch UDF formatting"]
-        ai_det["ai_detector.py\nAI Query prompt + UDF"]
-        gliner_det["gliner_detector.py\nChunking, caching, offset remap"]
-        detection["detection.py\nOrchestrator for all detectors"]
-        alignment["alignment.py\nMulti-source entity merge"]
-        redaction["redaction.py\nText replacement UDFs"]
-        evaluation["evaluation.py\nMetrics, error analysis"]
-        judge["judge.py\nAI judge + next actions"]
-        pipeline["pipeline.py\nEnd-to-end orchestration"]
-    end
-
-    config --> analyzer & ai_det & gliner_det & judge
-    analyzer --> presidio
-    presidio & ai_det & gliner_det --> detection
-    detection --> pipeline
-    alignment --> pipeline
-    redaction --> pipeline
-    evaluation -.->|"benchmarking only"| pipeline
-    judge -.->|"benchmarking only"| pipeline
-```
-
-## Prerequisites
-
-| Tool | Minimum Version | Purpose |
-|------|----------------|---------|
-| [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html) | >= 0.283.0 | Bundle deployment and job management |
-| [Poetry](https://python-poetry.org/docs/#installation) | >= 1.5 | Python dependency management and wheel build |
-| [Node.js / npm](https://nodejs.org/) | >= 18 | Frontend build for the management app |
-| Python | >= 3.10 | Core library and notebooks |
-
-You also need:
-- A **Databricks workspace** with Unity Catalog enabled
-- A **SQL Warehouse** -- set the ID in `variables.yml` (`sql_warehouse_id`) for the app and deploy grants
-- **Unity Catalog Volumes** for the target schema (created automatically by `deploy.sh` for `wheels`; you may need to create `cluster_logs` and `checkpoints` manually for benchmarking)
-
-## Quickstart
-
-### Option 1: CLI Deployment
-
-1. **Configure environment**:
-   ```bash
-   cp example.env dev.env
-   ```
-   Edit `dev.env`:
-   ```
-   DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
-   CATALOG=your_catalog
-   SCHEMA=redaction
-   ```
-
-2. **Deploy**:
-   ```bash
-   ./deploy.sh dev
-   ```
-   This builds the wheel, uploads it to a volume, and deploys the Databricks Asset Bundle.
-
-3. **Run the redaction pipeline**:
-   ```bash
-   databricks bundle run redaction_pipeline -t dev \
-     --params source_table=catalog.schema.source_table,text_column=text,output_table=catalog.schema.redacted_output
-   ```
-
-### Option 2: Git Folder (No CLI)
-
-1. Clone to a Databricks Git Folder
-
-2. Install dbxredact (choose one):
-   ```python
-   # From GitHub directly
-   %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
-   
-   # Or download wheel from releases, upload to a volume, then:
-   %pip install /Volumes/your_catalog/your_schema/wheels/dbxredact-<version>-py3-none-any.whl
-   ```
-
-3. Open `notebooks/4_redaction_pipeline.py`, configure widgets, and run
-
-### Unity Catalog Volumes
-
-The bundle and benchmark jobs require these volumes in your target schema. Create them before running jobs:
-
-```sql
-CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.wheels;
-CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.cluster_logs;
-CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.checkpoints;
-```
-
-`deploy.sh` uploads the wheel to `wheels`. `cluster_logs` is used by the benchmark job for cluster log delivery. `checkpoints` is used by the streaming pipeline.
-
-### Deploying to Production
-
-The `prod` target in `databricks.yml.template` uses two variables that must be configured in `variables.yml`:
-
-- `current_user`: The service principal or user email for `run_as` permissions (e.g. `deployer@company.com`)
-- `current_working_directory`: The workspace path for artifact deployment (e.g. `/Workspace/Shared/dbxredact`)
-
-Without these, the prod target will fail. Set them before running `./deploy.sh prod`.
-
-### SQL Warehouse Configuration
-
-The management app and the `deploy.sh` permission grants require a SQL Warehouse ID. Set it in `variables.yml`:
-
-```yaml
-sql_warehouse_id:
-  default: "your_warehouse_id_here"
-```
-
-This is also needed in your `dev.env` / `prod.env` as `WAREHOUSE_ID` for the deploy script to execute SQL grants.
-
-## Detection Methods
-
-| Method | Description | Use Case |
-|--------|-------------|----------|
-| **Presidio** | Rule-based with spaCy NLP (default: `en_core_web_trf`, falls back to `_lg`/`_sm`) | Fast, deterministic, no API calls |
-| **AI Query** | LLM-based via Databricks endpoints (default confidence: 0.8, reasoning effort: medium) | Context-aware, complex patterns |
-| **GLiNER** | NER with `nvidia/gliner-PII` (PII/PHI-focused, 55+ entity types) | Transformer-based NER, GPU acceleration |
-
 ## Notebooks
 
-| Notebook | Description |
-|----------|-------------|
-| `4_redaction_pipeline.py` | End-to-end detection and redaction (production use) |
-| `1_benchmarking_detection.py` | Run detection with all methods |
-| `2_benchmarking_evaluation.py` | Calculate metrics (precision, recall, F1) with strict/overlap matching |
+| Notebook | Purpose |
+|----------|---------|
+| `4_redaction_pipeline.py` | Production redaction (full or incremental) |
+| `0_load_benchmark_data.py` | Upload benchmark CSVs to Unity Catalog |
+| `1_benchmarking_detection.py` | Run all detection methods |
+| `2_benchmarking_evaluation.py` | Precision, recall, F1 (strict + overlap matching) |
 | `3_benchmarking_redaction.py` | Apply redaction to detection results |
-| `5_benchmarking_judge.py` | AI judge grades redacted text (PASS/PARTIAL/FAIL) |
-| `6_benchmarking_audit.py` | Consolidate metrics and judge grades into audit table |
+| `5_benchmarking_judge.py` | AI judge grades redacted output |
+| `6_benchmarking_audit.py` | Consolidate metrics into audit table |
 | `7_benchmarking_next_actions.py` | AI-generated improvement recommendations |
+| `9_gliner_fine_tuning.py` | Fine-tune GLiNER on custom labeled data |
 
 > **Synthetic benchmark data** is included in `data/` with ground-truth PII annotations (NAME, DATE, LOCATION, IDNUM, CONTACT):
 >
@@ -251,7 +269,24 @@ This is also needed in your `dev.env` / `prod.env` as `WAREHOUSE_ID` for the dep
 
 ## API Reference
 
-### Detection
+### Full Pipeline
+
+```python
+from dbxredact import run_redaction_pipeline
+
+result_df = run_redaction_pipeline(
+    spark=spark,
+    source_table="catalog.schema.medical_notes",
+    text_column="note_text",
+    output_table="catalog.schema.medical_notes_redacted",
+    use_presidio=True,
+    use_ai_query=True,
+    use_gliner=False,
+    redaction_strategy="typed",
+)
+```
+
+### Detection Only
 
 ```python
 from dbxredact import run_detection_pipeline
@@ -263,21 +298,7 @@ result_df = run_detection_pipeline(
     text_column="text",
     use_presidio=True,
     use_ai_query=True,
-    endpoint="databricks-gpt-oss-120b"
-)
-```
-
-### Redaction
-
-```python
-from dbxredact import run_redaction_pipeline
-
-result_df = run_redaction_pipeline(
-    spark=spark,
-    source_table="catalog.schema.medical_notes",
-    text_column="note_text",
-    output_table="catalog.schema.medical_notes_redacted",
-    redaction_strategy="typed"  # or "generic"
+    endpoint="databricks-gpt-oss-120b",
 )
 ```
 
@@ -291,10 +312,15 @@ entities = [
     {"entity": "John Smith", "start": 8, "end": 18, "entity_type": "PERSON"},
     {"entity": "123-45-6789", "start": 25, "end": 36, "entity_type": "US_SSN"},
 ]
-
 result = redact_text(text, entities, strategy="typed")
 # "Patient [PERSON] (SSN: [US_SSN]) visited on 2024-01-15."
 ```
+
+## Block / Safe Lists
+
+Block and safe lists are applied as post-processing filters after detection and alignment, not as Presidio custom recognizers. This means they work uniformly across all three detection methods. **Block lists** force specific terms to always be flagged as PII. **Safe lists** suppress false positives by removing matches. They are stored as Unity Catalog tables (`redact_block_list`, `redact_safe_list`) and can be managed through the app UI or SQL.
+
+See `src/dbxredact/entity_filter.py` for the `EntityFilter` API and `load_filter_from_table` to load lists from Unity Catalog tables.
 
 ## Streaming (Incremental) Mode
 
@@ -339,31 +365,56 @@ for col in ["notes", "address", "comments"]:
 
 ### Document Length
 
-dbxredact does not impose an explicit document length limit. Practical limits depend on the detection method:
+No explicit limit. Practical limits depend on the detection method:
 
 - **GLiNER**: Handles long texts internally via word-boundary chunking with automatic offset correction (`_chunk_and_predict`). No user-side chunking needed.
 - **AI Query**: Subject to the LLM endpoint's context window / token limit. Documents exceeding the limit will be truncated by the endpoint.
 - **Presidio**: Processes text in-memory via spaCy. No hard cap, but very large documents may be slow.
 
-### Block / Safe Lists
-
-Block and safe lists are applied as post-processing filters after detection and alignment, not as Presidio custom recognizers. This means they work uniformly across all three detection methods. **Block lists** force specific terms to always be flagged as PII. **Safe lists** suppress false positives by removing matches. See `src/dbxredact/entity_filter.py` for the `EntityFilter` API and `load_filter_from_table` to load lists from Unity Catalog tables.
-
 ## Project Structure
 
 ```
 dbxredact/
-  databricks.yml.template  # DAB config template
-  deploy.sh                # Build and deploy script
-  pyproject.toml           # Poetry dependencies
-  src/dbxredact/           # Core library
-  notebooks/               # Databricks notebooks
-  tests/                   # Unit and integration tests
+  databricks.yml.template    # DAB config template (deploy.sh generates databricks.yml)
+  deploy.sh                  # Build, configure, and deploy script
+  pyproject.toml             # Poetry dependencies and build config
+  variables.yml              # Bundle variables (catalog, schema, etc.)
+  example.env                # Template for dev.env / prod.env
+  src/dbxredact/             # Core Python library
+    config.py                #   Prompts, thresholds, entity labels
+    detection.py             #   Orchestrator for all detectors
+    gliner_detector.py       #   GLiNER batch UDF with worker-level model cache
+    presidio.py              #   Presidio batch UDF
+    ai_detector.py           #   AI Query prompt construction + UDF
+    alignment.py             #   Multi-source entity merge (union/consensus)
+    redaction.py             #   Text replacement UDFs
+    entity_filter.py         #   Block/safe list filtering
+    pipeline.py              #   End-to-end orchestration
+    evaluation.py            #   Metrics (precision, recall, F1)
+    judge.py                 #   AI judge + next actions
+    cost.py                  #   Token cost estimation constants
+  notebooks/                 # Databricks notebooks
+    4_redaction_pipeline.py  #   Production redaction pipeline
+    0_load_benchmark_data.py #   Upload benchmark CSVs to UC
+    1-7_benchmarking_*.py    #   Benchmarking pipeline steps
+    9_gliner_fine_tuning.py  #   GLiNER fine-tuning notebook
+  apps/dbxredact-app/        # Management web app
+    app.py                   #   FastAPI entry point + SPA serving
+    api/                     #   Backend API routes and services
+    src/                     #   React frontend source
+    package.json             #   Node.js dependencies
+  resources/                 # DAB resource definitions
+    jobs.yml                 #   Job definitions (CPU/GPU x Small/Medium/Large)
+    app.yml                  #   App resource definition
+  scripts/                   # Utility scripts
+  data/                      # Synthetic benchmark datasets
+  tests/                     # Unit tests
 ```
 
 ## Testing
 
 ```bash
+poetry install
 pytest tests/ -v
 ```
 
@@ -376,7 +427,7 @@ pytest tests/ -v
 | presidio-analyzer | 2.2.358 | MIT | Microsoft Presidio PII detection engine | [PyPI](https://pypi.org/project/presidio-analyzer/) |
 | presidio-anonymizer | 2.2.358 | MIT | Microsoft Presidio anonymization engine | [PyPI](https://pypi.org/project/presidio-anonymizer/) |
 | spacy | 3.8.7 | MIT | Industrial-strength NLP library | [PyPI](https://pypi.org/project/spacy/) |
-| gliner | >=0.1.0 | Apache 2.0 | Generalist NER using bidirectional transformers | [PyPI](https://pypi.org/project/gliner/) |
+| gliner | >=0.2.0 | Apache 2.0 | Generalist NER using bidirectional transformers | [PyPI](https://pypi.org/project/gliner/) |
 | rapidfuzz | >=3.0.0 | MIT | Fast fuzzy string matching | [PyPI](https://pypi.org/project/rapidfuzz/) |
 | pydantic | >=2.0.0 | MIT | Data validation using Python type hints | [PyPI](https://pypi.org/project/pydantic/) |
 | pyyaml | >=6.0.1 | MIT | YAML parser and emitter | [PyPI](https://pypi.org/project/PyYAML/) |
@@ -409,6 +460,15 @@ The default is `en_core_web_trf` (RoBERTa transformer, NER F1 ~90.2%). The code 
 | pyarrow | Apache 2.0 | Apache Arrow Python bindings |
 
 **All dependencies use permissive open-source licenses** (MIT, Apache 2.0, BSD-3-Clause). No copyleft (GPL) dependencies.
+
+## Deploying to Production
+
+Set these variables in `variables.yml` before running `./deploy.sh prod`:
+
+- `current_user`: Service principal or user email for `run_as` permissions (e.g. `deployer@company.com`)
+- `current_working_directory`: Workspace path for artifact deployment (e.g. `/Workspace/Shared/dbxredact`)
+
+The `prod` target enforces `run_as` permissions and requires explicit user configuration.
 
 ## Compliance and Responsibility
 

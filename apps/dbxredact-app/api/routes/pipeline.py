@@ -4,7 +4,7 @@ import logging
 from typing import List
 from fastapi import APIRouter, HTTPException
 from api.models.schemas import PipelineRunRequest, RunStatusResponse, JobHistoryItem
-from api.services.db import fetch_all, fetch_one, execute, _table, quote_table
+from api.services.db import fetch_all, fetch_one, execute, _table, quote_table, validate_identifier, CATALOG, SCHEMA
 from api.services.jobs import trigger_pipeline_run, get_run_status, cancel_run
 
 logger = logging.getLogger(__name__)
@@ -40,13 +40,19 @@ async def run_pipeline(body: PipelineRunRequest):
         "text_column": body.text_column,
         "doc_id_column": body.doc_id_column,
         "output_table": output_table,
+        "detection_profile": config.get("detection_profile", "fast"),
         "use_presidio": str(config.get("use_presidio", True)),
         "use_ai_query": str(config.get("use_ai_query", True)),
         "use_gliner": str(config.get("use_gliner", False)),
         "endpoint": config.get("endpoint", ""),
         "score_threshold": str(config.get("score_threshold", 0.5)),
         "redaction_strategy": config.get("redaction_strategy", "typed"),
+        "reasoning_effort": config.get("reasoning_effort", "low"),
+        "gliner_max_words": str(config.get("gliner_max_words", 512)),
+        "presidio_model_size": config.get("presidio_model_size", "trf"),
         "max_rows": str(body.max_rows or 10000),
+        "safe_list_table": f"{CATALOG}.{SCHEMA}.redact_safe_list",
+        "block_list_table": f"{CATALOG}.{SCHEMA}.redact_block_list",
     }
 
     run_id = trigger_pipeline_run(notebook_params, cluster_profile=body.cluster_profile)
@@ -81,7 +87,22 @@ def _compute_post_run_cost(run_id: int) -> float | None:
         return 0.0
     try:
         qualified = quote_table(row["source_table"])
-        chars_row = fetch_one(f"SELECT COALESCE(sum(length(*)), 0) as total_chars, count(*) as cnt FROM {qualified}")
+        cols = fetch_all(f"DESCRIBE TABLE {qualified}")
+        text_col = next(
+            (c["col_name"] for c in cols
+             if c.get("data_type", "").upper() == "STRING"
+             and c["col_name"] in ("text", "note", "content", "body", "message")),
+            None,
+        )
+        if not text_col:
+            text_col = next(
+                (c["col_name"] for c in cols if c.get("data_type", "").upper() == "STRING"),
+                None,
+            )
+        if not text_col:
+            return None
+        validate_identifier(text_col)
+        chars_row = fetch_one(f"SELECT COALESCE(sum(length(`{text_col}`)), 0) as total_chars, count(*) as cnt FROM {qualified}")
         total_chars = int(chars_row.get("total_chars") or 0) if chars_row else 0
         row_count = int(chars_row.get("cnt") or 0) if chars_row else 0
         endpoint = cfg.get("endpoint", "databricks-gpt-oss-120b")
@@ -145,18 +166,28 @@ _COST_OUTPUT = {
 }
 _COST_PROMPT_OVERHEAD = 5500
 _COST_OUTPUT_RATIO = 0.3
-_CLUSTER_STARTUP_MINUTES = 5
 
-# Compute cost profiles: DBU/hr rate and estimated rows/min throughput.
-# Throughput values are initial heuristics -- calibrate with real benchmarks.
+# Empirical cost model: est_min = startup + overhead + total_chars / chars_per_min
+# Derived from real benchmark runs with ensemble detection (Presidio + AI Query + GLiNER).
+# Benchmarks: en_core_web_trf, reasoning_effort=medium, spark.task.resource.gpu.amount=0.25.
+# Doc sizes: 48+ rows at ~7.5k chars/doc, 1-10 rows at ~13k chars/doc.
+# gpu_small (2x A10, 8 slots): 96r/7.5kc=13.4m, 192r/7.5kc=25.1m -> cpm=62k, overhead=1.7m.
+# cpu_medium (5x i3.xlarge, 20 slots): 48r/7.5kc=11.3m, 96r/7.5kc=16.1m -> cpm=75k, overhead=6.5m.
+# Medium/large extrapolated by worker ratio with 0.8x/0.6x sub-linear scaling
+# (AI_QUERY throughput is bounded by endpoint capacity at high concurrency).
+# Re-calibrate after switching to en_core_web_lg + reasoning_effort=low.
 COMPUTE_PROFILES = {
-    "cpu_small":  {"instance": "i3.xlarge",  "workers": 2,  "dbu_per_hr": 1.5,  "rows_per_min_ai": 15,  "rows_per_min_all": 5},
-    "cpu_medium": {"instance": "i3.xlarge",  "workers": 5,  "dbu_per_hr": 3.0,  "rows_per_min_ai": 35,  "rows_per_min_all": 12},
-    "cpu_large":  {"instance": "i3.xlarge",  "workers": 10, "dbu_per_hr": 5.5,  "rows_per_min_ai": 60,  "rows_per_min_all": 20},
-    "gpu_small":  {"instance": "g5.xlarge",  "workers": 2,  "dbu_per_hr": 4.0,  "rows_per_min_ai": 15,  "rows_per_min_all": 30},
-    "gpu_medium": {"instance": "g5.xlarge",  "workers": 5,  "dbu_per_hr": 9.0,  "rows_per_min_ai": 35,  "rows_per_min_all": 70},
-    "gpu_large":  {"instance": "g5.xlarge",  "workers": 10, "dbu_per_hr": 17.0, "rows_per_min_ai": 60,  "rows_per_min_all": 130},
+    "cpu_small":  {"dbu_per_hr": 1.5,  "startup": 8,  "overhead": 6.5, "chars_per_min": 30_000},
+    "cpu_medium": {"dbu_per_hr": 3.0,  "startup": 8,  "overhead": 2.5, "chars_per_min": 75_000},
+    "cpu_large":  {"dbu_per_hr": 5.5,  "startup": 8,  "overhead": 1.5, "chars_per_min": 135_000},
+    "gpu_small":  {"dbu_per_hr": 4.0,  "startup": 11, "overhead": 1.7, "chars_per_min": 62_000},
+    "gpu_medium": {"dbu_per_hr": 9.0,  "startup": 11, "overhead": 1.0, "chars_per_min": 124_000},
+    "gpu_large":  {"dbu_per_hr": 17.0, "startup": 11, "overhead": 0.5, "chars_per_min": 186_000},
 }
+
+
+# Fast mode skips Presidio and uses low reasoning -- ~1.4x faster from benchmarks.
+_PROFILE_SPEED_FACTOR = {"fast": 1.4, "deep": 1.0, "custom": 1.0}
 
 
 @router.get("/cost-estimate")
@@ -167,24 +198,34 @@ async def cost_estimate(
     max_rows: int = 10000,
     cluster_profile: str = "cpu_small",
     use_gliner: bool = False,
+    use_ai_query: bool = True,
+    detection_profile: str = "fast",
 ):
+    validate_identifier(text_column)
     qualified = quote_table(table)
     row = fetch_one(
-        f"SELECT sum(length({text_column})) as total_chars, count(*) as cnt "
-        f"FROM (SELECT {text_column} FROM {qualified} LIMIT {int(max_rows)})"
+        f"SELECT sum(length(`{text_column}`)) as total_chars, count(*) as cnt "
+        f"FROM (SELECT `{text_column}` FROM {qualified} LIMIT {int(max_rows)})"
     )
     total_chars = int(row.get("total_chars") or 0) if row else 0
     row_count = int(row.get("cnt") or 0) if row else 0
-    input_chars = total_chars + (row_count * _COST_PROMPT_OVERHEAD)
-    input_tokens = int(input_chars * _COST_TOKENS_PER_CHAR)
-    output_tokens = int(input_tokens * _COST_OUTPUT_RATIO)
-    in_cost = _COST_INPUT.get(endpoint, 0.001)
-    out_cost = _COST_OUTPUT.get(endpoint, 0.002)
-    ai_query_cost = (input_tokens / 1000 * in_cost) + (output_tokens / 1000 * out_cost)
 
+    if use_ai_query:
+        input_chars = total_chars + (row_count * _COST_PROMPT_OVERHEAD)
+        input_tokens = int(input_chars * _COST_TOKENS_PER_CHAR)
+        output_tokens = int(input_tokens * _COST_OUTPUT_RATIO)
+        in_cost = _COST_INPUT.get(endpoint, 0.001)
+        out_cost = _COST_OUTPUT.get(endpoint, 0.002)
+        ai_query_cost = (input_tokens / 1000 * in_cost) + (output_tokens / 1000 * out_cost)
+    else:
+        input_tokens = 0
+        output_tokens = 0
+        ai_query_cost = 0.0
+
+    speed_factor = _PROFILE_SPEED_FACTOR.get(detection_profile, 1.0)
     profile = COMPUTE_PROFILES.get(cluster_profile, COMPUTE_PROFILES["cpu_small"])
-    throughput = profile["rows_per_min_all"] if use_gliner else profile["rows_per_min_ai"]
-    est_minutes = (row_count / max(throughput, 1)) + _CLUSTER_STARTUP_MINUTES
+    effective_cpm = profile["chars_per_min"] * speed_factor
+    est_minutes = profile["startup"] + profile["overhead"] + total_chars / max(effective_cpm, 1)
     compute_cost = profile["dbu_per_hr"] * (est_minutes / 60)
 
     return {
@@ -198,6 +239,8 @@ async def cost_estimate(
         "estimated_minutes": round(est_minutes, 1),
         "endpoint": endpoint,
         "cluster_profile": cluster_profile,
+        "detection_profile": detection_profile,
+        "use_ai_query": use_ai_query,
     }
 
 

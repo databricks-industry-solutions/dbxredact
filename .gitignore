@@ -51,3 +51,6 @@ ROADMAP.md
 apps/dbxredact-app/node_modules/
 apps/dbxredact-app/dist/
 apps/dbxredact-app/package-lock.json
+
+.ai-dev-kit/
+.github/skills/

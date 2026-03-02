@@ -28,7 +28,7 @@
 # COMMAND ----------
 
 # MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl
-# MAGIC # Fallback if GPU/trf not available:
+# MAGIC # For faster CPU inference at the cost of lower NER accuracy:
 # MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
 # MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_lg-3.8.0/es_core_news_lg-3.8.0-py3-none-any.whl
 # MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
@@ -57,120 +57,138 @@ from dbxredact import (
 # COMMAND ----------
 
 dbutils.widgets.dropdown(
+    name="detection_profile",
+    defaultValue="fast",
+    choices=["fast", "deep", "custom"],
+    label="0. Detection Profile",
+)
+dbutils.widgets.dropdown(
     name="input_mode",
     defaultValue="table_column",
     choices=["table_column", "table_tag"],
-    label="0. Input Mode",
+    label="1. Input Mode",
 )
 dbutils.widgets.text(
     name="source_table",
     defaultValue="your_catalog.your_schema.jsl_benchmark_source",
-    label="1. Source Table (fully qualified)",
+    label="2. Source Table (fully qualified)",
 )
 dbutils.widgets.text(
     name="text_column",
     defaultValue="text",
-    label="2a. Text Column (for table_column mode)",
+    label="3a. Text Column (for table_column mode)",
 )
 dbutils.widgets.text(
     name="tag_name",
     defaultValue="data_classification",
-    label="2b. Tag Name (for table_tag mode)",
+    label="3b. Tag Name (for table_tag mode)",
 )
 dbutils.widgets.text(
     name="tag_value",
     defaultValue="protected",
-    label="2c. Tag Value (for table_tag mode)",
+    label="3c. Tag Value (for table_tag mode)",
 )
 dbutils.widgets.text(
-    name="doc_id_column", defaultValue="doc_id", label="3. Document ID Column"
+    name="doc_id_column", defaultValue="doc_id", label="4. Document ID Column"
 )
 dbutils.widgets.dropdown(
     name="use_presidio",
     defaultValue="true",
     choices=["true", "false"],
-    label="4. Use Presidio Detection",
+    label="5. Use Presidio Detection",
 )
 dbutils.widgets.dropdown(
     name="use_ai_query",
     defaultValue="true",
     choices=["true", "false"],
-    label="5. Use AI Query Detection",
+    label="6. Use AI Query Detection",
 )
 dbutils.widgets.dropdown(
     name="use_gliner",
-    defaultValue="false",
+    defaultValue="true",
     choices=["true", "false"],
-    label="6. Use GLiNER Detection",
+    label="7. Use GLiNER Detection",
 )
 dbutils.widgets.dropdown(
     name="redaction_strategy",
     defaultValue="typed",
     choices=["generic", "typed"],
-    label="7. Redaction Strategy",
+    label="8. Redaction Strategy",
 )
 dbutils.widgets.text(
     name="endpoint",
     defaultValue="databricks-gpt-oss-120b",
-    label="8. AI Endpoint (for AI Query method)",
+    label="9. AI Endpoint (for AI Query method)",
 )
 dbutils.widgets.text(
     name="presidio_score_threshold",
     defaultValue="0.5",
-    label="9. Presidio Score Threshold",
+    label="10. Presidio Score Threshold",
 )
-dbutils.widgets.text(name="num_cores", defaultValue="10", label="10. Number of Cores")
+dbutils.widgets.text(name="num_cores", defaultValue="0", label="11. Number of Cores (0=auto)")
 dbutils.widgets.text(
     name="output_table",
     defaultValue="",
-    label="11. Output Table (leave blank for auto-suffix)",
+    label="12. Output Table (leave blank for auto-suffix)",
 )
 dbutils.widgets.dropdown(
     name="refresh_approach",
     defaultValue="full",
     choices=["full", "incremental"],
-    label="12. Refresh Approach",
+    label="13. Refresh Approach",
 )
 dbutils.widgets.dropdown(
     name="output_strategy",
     defaultValue="production",
     choices=["validation", "production"],
-    label="13. Output Strategy",
+    label="14. Output Strategy",
 )
 dbutils.widgets.text(
     name="checkpoint_path",
     defaultValue="",
-    label="14. Checkpoint Path (for incremental, leave blank for auto)",
+    label="15. Checkpoint Path (for incremental, leave blank for auto)",
 )
 dbutils.widgets.text(
     name="max_rows",
     defaultValue="10000",
-    label="15. Max Rows (0 for unlimited)",
+    label="16. Max Rows (0 for unlimited)",
 )
 dbutils.widgets.dropdown(
     name="alignment_mode",
     defaultValue="union",
     choices=["union", "consensus"],
-    label="16. Alignment Mode (union=recall, consensus=precision)",
+    label="17. Alignment Mode (union=recall, consensus=precision)",
 )
 dbutils.widgets.text(
     name="max_files_per_trigger",
     defaultValue="10",
-    label="17. Max Files Per Trigger (incremental only, 0 for unlimited)",
+    label="18. Max Files Per Trigger (incremental only, 0 for unlimited)",
+)
+dbutils.widgets.dropdown(
+    name="reasoning_effort",
+    defaultValue="low",
+    choices=["low", "medium", "high"],
+    label="19. Reasoning Effort (AI Query)",
+)
+dbutils.widgets.text(
+    name="gliner_max_words",
+    defaultValue="512",
+    label="20. GLiNER Max Words (chunk size)",
 )
 dbutils.widgets.text(
     name="safe_list_table",
     defaultValue="",
-    label="18. Safe List Table (optional, fully qualified)",
+    label="21. Safe List Table (optional, fully qualified)",
 )
 dbutils.widgets.text(
     name="block_list_table",
     defaultValue="",
-    label="19. Block List Table (optional, fully qualified)",
+    label="22. Block List Table (optional, fully qualified)",
 )
 
 # COMMAND ----------
 
+detection_profile = dbutils.widgets.get("detection_profile")
 input_mode = dbutils.widgets.get("input_mode")
 source_table = dbutils.widgets.get("source_table")
 
@@ -190,6 +208,12 @@ redaction_strategy = dbutils.widgets.get("redaction_strategy")
 endpoint = dbutils.widgets.get("endpoint")
 score_threshold = float(dbutils.widgets.get("presidio_score_threshold"))
 num_cores = int(dbutils.widgets.get("num_cores"))
+if num_cores <= 0:
+    try:
+        num_cores = sc.defaultParallelism
+    except Exception:
+        num_cores = 8
+    print(f"Auto-detected {num_cores} task slots")
 output_table = dbutils.widgets.get("output_table")
 refresh_approach = dbutils.widgets.get("refresh_approach")
 output_strategy = dbutils.widgets.get("output_strategy")
@@ -199,8 +223,20 @@ max_rows = None if max_rows_str == "0" else int(max_rows_str)
 alignment_mode = dbutils.widgets.get("alignment_mode")
 max_files_str = dbutils.widgets.get("max_files_per_trigger")
 max_files_per_trigger = None if max_files_str == "0" else int(max_files_str)
+reasoning_effort = dbutils.widgets.get("reasoning_effort")
+gliner_max_words = int(dbutils.widgets.get("gliner_max_words"))
 safe_list_table = dbutils.widgets.get("safe_list_table").strip()
 block_list_table = dbutils.widgets.get("block_list_table").strip()
+
+# Profile overrides
+if detection_profile == "fast":
+    use_presidio, use_ai_query, use_gliner = False, True, True
+    reasoning_effort, gliner_max_words = "low", 512
+    print("Profile: Fast Mode -- AI Query + GLiNER, reasoning=low, max_words=512")
+elif detection_profile == "deep":
+    use_presidio, use_ai_query, use_gliner = True, True, True
+    reasoning_effort, gliner_max_words = "medium", 256
+    print("Profile: Deep Search -- all detectors, reasoning=medium, max_words=256")
 
 entity_filter = None
 if safe_list_table or block_list_table:
@@ -293,11 +329,14 @@ else:
 print("=" * 80)
 print("STARTING REDACTION PIPELINE")
 print("=" * 80)
+print(f"Detection Profile: {detection_profile}")
 print(f"Source Table: {source_table}")
 print(f"Text Column: {text_column}")
 print(f"Use Presidio: {use_presidio}")
 print(f"Use AI Query: {use_ai_query}")
 print(f"Use GLiNER: {use_gliner}")
+print(f"Reasoning Effort: {reasoning_effort}")
+print(f"GLiNER Max Words: {gliner_max_words}")
 print(f"Redaction Strategy: {redaction_strategy}")
 print(f"Output Table: {output_table}")
 print(f"Refresh Approach: {refresh_approach}")
@@ -315,46 +354,27 @@ if refresh_approach == "incremental":
     # Streaming approach - incremental processing
     print("Using INCREMENTAL (streaming) approach...")
 
-    if input_mode == "table_tag":
-        query = run_redaction_pipeline_streaming(
-            spark=spark,
-            source_table=source_table,
-            text_column=text_column,
-            output_table=output_table,
-            checkpoint_path=checkpoint_path,
-            doc_id_column=doc_id_column,
-            use_presidio=use_presidio,
-            use_ai_query=use_ai_query,
-            use_gliner=use_gliner,
-            redaction_strategy=redaction_strategy,
-            endpoint=endpoint if use_ai_query else None,
-            score_threshold=score_threshold,
-            num_cores=num_cores,
-            use_aligned=True,
-            output_strategy=output_strategy,
-            alignment_mode=alignment_mode,
-            max_files_per_trigger=max_files_per_trigger,
-        )
-    else:
-        query = run_redaction_pipeline_streaming(
-            spark=spark,
-            source_table=source_table,
-            text_column=text_column,
-            output_table=output_table,
-            checkpoint_path=checkpoint_path,
-            doc_id_column=doc_id_column,
-            use_presidio=use_presidio,
-            use_ai_query=use_ai_query,
-            use_gliner=use_gliner,
-            redaction_strategy=redaction_strategy,
-            endpoint=endpoint if use_ai_query else None,
-            score_threshold=score_threshold,
-            num_cores=num_cores,
-            use_aligned=True,
-            output_strategy=output_strategy,
-            alignment_mode=alignment_mode,
-            max_files_per_trigger=max_files_per_trigger,
-        )
+    query = run_redaction_pipeline_streaming(
+        spark=spark,
+        source_table=source_table,
+        text_column=text_column,
+        output_table=output_table,
+        checkpoint_path=checkpoint_path,
+        doc_id_column=doc_id_column,
+        use_presidio=use_presidio,
+        use_ai_query=use_ai_query,
+        use_gliner=use_gliner,
+        redaction_strategy=redaction_strategy,
+        endpoint=endpoint if use_ai_query else None,
+        score_threshold=score_threshold,
+        num_cores=num_cores,
+        use_aligned=True,
+        output_strategy=output_strategy,
+        alignment_mode=alignment_mode,
+        max_files_per_trigger=max_files_per_trigger,
+        reasoning_effort=reasoning_effort,
+        gliner_max_words=gliner_max_words,
+    )
 
     # Wait for completion (availableNow trigger processes all then stops)
     query.awaitTermination()
@@ -384,6 +404,8 @@ else:
             output_strategy=output_strategy,
             max_rows=max_rows,
             alignment_mode=alignment_mode,
+            reasoning_effort=reasoning_effort,
+            gliner_max_words=gliner_max_words,
         )
     else:
         result_df = run_redaction_pipeline(
@@ -404,6 +426,8 @@ else:
             max_rows=max_rows,
             alignment_mode=alignment_mode,
             entity_filter=entity_filter,
+            reasoning_effort=reasoning_effort,
+            gliner_max_words=gliner_max_words,
         )
 
 # COMMAND ----------
@@ -412,6 +436,11 @@ print("=" * 80)
 print("PIPELINE COMPLETE")
 print("=" * 80)
 print(f"Redacted table saved to: {output_table}")
+
+# COMMAND ----------
+
+# Read from saved table to avoid re-executing the lazy pipeline (which would re-run AI Query, doubling token costs)
+result_df = spark.table(output_table)
 
 # COMMAND ----------
 

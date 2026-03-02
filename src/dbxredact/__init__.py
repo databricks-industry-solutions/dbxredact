@@ -32,6 +32,7 @@ from .utils import (
     is_overlap,
     calculate_overlap,
     calculate_string_overlap,
+    build_offset_map,
 )
 
 from .analyzer import SpacyModelNotFoundError
@@ -135,6 +136,7 @@ __all__ = [
     "is_overlap",
     "calculate_overlap",
     "calculate_string_overlap",
+    "build_offset_map",
     # Errors
     "SpacyModelNotFoundError",
     # Presidio

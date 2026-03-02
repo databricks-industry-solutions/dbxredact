@@ -144,6 +144,9 @@ all_judge_df.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(
 )
 print(f"Judge results saved to {output_table}")
 
+# Read from saved table to avoid re-executing lazy AI Query calls
+all_judge_df = spark.table(output_table)
+
 # COMMAND ----------
 
 # MAGIC %md

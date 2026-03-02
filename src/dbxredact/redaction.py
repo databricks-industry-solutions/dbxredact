@@ -29,25 +29,20 @@ def redact_text(
     if not entities:
         return text
 
-    sorted_entities = sorted(entities, key=lambda e: e.get("start", 0), reverse=True)
+    valid = [(e["start"], e["end"], e.get("entity_type", "REDACTED"))
+             for e in entities if e.get("start") is not None and e.get("end") is not None]
+    valid.sort(key=lambda t: t[0])
 
-    redacted = text
-    for entity in sorted_entities:
-        start = entity.get("start")
-        end = entity.get("end")
-        entity_type = entity.get("entity_type", "REDACTED")
-
-        if start is None or end is None:
+    parts = []
+    prev_end = 0
+    for start, end, entity_type in valid:
+        if start < prev_end:
             continue
-
-        if strategy == "typed":
-            replacement = f"[{entity_type}]"
-        else:
-            replacement = "[REDACTED]"
-
-        redacted = redacted[:start] + replacement + redacted[end:]
-
-    return redacted
+        parts.append(text[prev_end:start])
+        parts.append(f"[{entity_type}]" if strategy == "typed" else "[REDACTED]")
+        prev_end = end
+    parts.append(text[prev_end:])
+    return "".join(parts)
 
 
 def create_redaction_udf(strategy: RedactionStrategy = "generic"):

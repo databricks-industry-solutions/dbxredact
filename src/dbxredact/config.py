@@ -93,7 +93,9 @@ You will identify all PHI with the following enums as the "label":
 
 Respond with a list of dictionaries such as [{{"entity": "Alice Anderson", "entity_type": "PERSON"}}, {{"entity": "123-45-6789", "entity_type": "US_SSN"}}]
 
-Note that if there are multiple of the same entities, you should list them multiple times. For example, if the text suggests "The patient, Brennan, notes that is feeling unwell. Brennan presents with a moderate fever of 100.5F," you should list the entity "brennan" twice. 
+IMPORTANT: Return each entity EXACTLY as it appears in the original text. Copy the text character-for-character -- do not normalize whitespace, fix spelling, or rephrase. If the text contains "John\nSmith", return "John\nSmith", not "John Smith".
+
+List every occurrence of each entity separately. For example, if the text says "The patient, Brennan, notes that is feeling unwell. Brennan presents with a moderate fever of 100.5F," list the entity "Brennan" twice. Do not skip repeated mentions.
 
 The text is listed here: 
 <MedicalText>
@@ -122,25 +124,32 @@ DEFAULT_OVERLAP_TOLERANCE = 0
 # AI Query defaults
 # AI entities get a default confidence of 0.8 since the LLM does not provide a per-entity score
 DEFAULT_AI_CONFIDENCE_SCORE = 0.8
-DEFAULT_AI_REASONING_EFFORT = "medium"  # Valid: "low", "medium", "high"
+DEFAULT_AI_REASONING_EFFORT = "low"  # Valid: "low", "medium", "high"
 
 # GLiNER defaults
 # Labels must match the nvidia/nemotron-pii training data (lowercase with underscores).
 # The model uses these as zero-shot prompts, so exact label text matters.
 DEFAULT_GLINER_MODEL = "nvidia/gliner-PII"
 DEFAULT_GLINER_LABELS = [
+    "name",
     "first_name",
     "last_name",
     "email",
     "phone_number",
+    "fax_number",
     "street_address",
     "city",
     "state",
     "county",
     "country",
+    "postcode",
     "ssn",
+    "national_id",
+    "tax_id",
     "date",
     "date_of_birth",
+    "date_time",
+    "age",
     "medical_record_number",
     "health_plan_beneficiary_number",
     "credit_debit_card",
@@ -148,6 +157,7 @@ DEFAULT_GLINER_LABELS = [
     "bank_routing_number",
     "certificate_license_number",
     "vehicle_identifier",
+    "license_plate",
     "url",
     "ip_address",
     "mac_address",
@@ -155,24 +165,33 @@ DEFAULT_GLINER_LABELS = [
     "hospital_or_medical_facility",
     "bank",
     "customer_id",
+    "unique_identifier",
+    "employee_id",
     "pin",
 ]
 
 # Maps nemotron-pii training labels -> standardized output entity types.
 # Multiple input labels can map to the same output type.
 GLINER_LABEL_MAP = {
+    "name": "PERSON",
     "first_name": "PERSON",
     "last_name": "PERSON",
     "email": "EMAIL_ADDRESS",
     "phone_number": "PHONE_NUMBER",
+    "fax_number": "PHONE_NUMBER",
     "street_address": "LOCATION",
     "city": "LOCATION",
     "state": "LOCATION",
     "county": "LOCATION",
     "country": "LOCATION",
+    "postcode": "LOCATION",
     "ssn": "US_SSN",
+    "national_id": "ID_NUMBER",
+    "tax_id": "ID_NUMBER",
     "date": "DATE_TIME",
     "date_of_birth": "DATE_TIME",
+    "date_time": "DATE_TIME",
+    "age": "AGE",
     "medical_record_number": "MEDICAL_RECORD_NUMBER",
     "health_plan_beneficiary_number": "HEALTH_PLAN_NUMBER",
     "credit_debit_card": "CREDIT_CARD",
@@ -180,6 +199,7 @@ GLINER_LABEL_MAP = {
     "bank_routing_number": "BANK_ROUTING_NUMBER",
     "certificate_license_number": "LICENSE_NUMBER",
     "vehicle_identifier": "VEHICLE_IDENTIFIER",
+    "license_plate": "VEHICLE_IDENTIFIER",
     "url": "URL",
     "ip_address": "IP_ADDRESS",
     "mac_address": "MAC_ADDRESS",
@@ -187,24 +207,34 @@ GLINER_LABEL_MAP = {
     "hospital_or_medical_facility": "HOSPITAL_NAME",
     "bank": "ORGANIZATION",
     "customer_id": "CUSTOMER_ID",
+    "unique_identifier": "ID_NUMBER",
+    "employee_id": "ID_NUMBER",
     "pin": "PIN",
 }
 DEFAULT_GLINER_THRESHOLD = 0.2
+DEFAULT_GLINER_MAX_WORDS = 512
 
 DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
     # Keys must match DEFAULT_GLINER_LABELS exactly
+    "name": 0.15,
     "first_name": 0.15,
     "last_name": 0.15,
     "phone_number": 0.3,
+    "fax_number": 0.3,
     "email": 0.3,
     "ssn": 0.4,
+    "national_id": 0.35,
+    "tax_id": 0.35,
     "date": 0.2,
     "date_of_birth": 0.25,
+    "date_time": 0.2,
+    "age": 0.3,
     "street_address": 0.2,
     "city": 0.2,
     "state": 0.25,
     "county": 0.25,
     "country": 0.25,
+    "postcode": 0.3,
     "medical_record_number": 0.35,
     "health_plan_beneficiary_number": 0.35,
     "credit_debit_card": 0.4,
@@ -212,6 +242,7 @@ DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
     "bank_routing_number": 0.35,
     "certificate_license_number": 0.35,
     "vehicle_identifier": 0.35,
+    "license_plate": 0.35,
     "url": 0.3,
     "ip_address": 0.3,
     "mac_address": 0.3,
@@ -219,6 +250,8 @@ DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
     "hospital_or_medical_facility": 0.25,
     "bank": 0.3,
     "customer_id": 0.35,
+    "unique_identifier": 0.35,
+    "employee_id": 0.35,
     "pin": 0.4,
 }
 

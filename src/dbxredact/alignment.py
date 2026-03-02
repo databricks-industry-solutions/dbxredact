@@ -1,5 +1,6 @@
 """Entity alignment functions for combining multiple PHI detection methods."""
 
+import bisect
 import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
@@ -117,15 +118,28 @@ def find_best_match(
     entity: Entity,
     candidates: List[Entity],
     fuzzy_threshold: int = DEFAULT_FUZZY_MATCH_THRESHOLD,
+    _sorted_starts: Optional[List[int]] = None,
 ) -> Tuple[Optional[Entity], float, MatchType]:
-    """Find the best matching entity from a list of candidates."""
+    """Find the best matching entity from a list of candidates.
+
+    If _sorted_starts is provided (a list of candidate start positions, parallel
+    to candidates), narrows the search to entities whose spans could overlap,
+    reducing from O(n) to O(k) where k is the number of nearby candidates.
+    """
+    if _sorted_starts is not None and len(candidates) > 20:
+        max_entity_len = max(len(entity.entity), entity.end - entity.start, 1)
+        lo = bisect.bisect_left(_sorted_starts, entity.start - max_entity_len * 2)
+        hi = bisect.bisect_right(_sorted_starts, entity.end + max_entity_len * 2)
+        search_range = candidates[lo:hi]
+    else:
+        search_range = candidates
+
     best_match = None
     best_score = 0.0
     best_type = MatchType.NO_MATCH
 
-    for candidate in candidates:
+    for candidate in search_range:
         score, match_type = calculate_match_score(entity, candidate, fuzzy_threshold)
-
         if match_type == MatchType.EXACT:
             return candidate, score, match_type
         elif score > best_score:
@@ -282,6 +296,21 @@ class MultiSourceAligner:
             "ai": self._normalize_entities(ai_entities, "ai", doc_id),
         }
 
+        # Build id -> original-index lookup for O(1) marking (replaces list.index)
+        id_to_idx = {}
+        for src, ents in normalized_entities.items():
+            id_to_idx[src] = {id(e): i for i, e in enumerate(ents)}
+
+        # Pre-sort each source by start for bisect-based narrowing
+        sorted_by_src = {}
+        for src, ents in normalized_entities.items():
+            order = sorted(range(len(ents)), key=lambda i: ents[i].start)
+            sorted_by_src[src] = {
+                "order": order,
+                "sorted": [ents[i] for i in order],
+                "starts": [ents[i].start for i in order],
+            }
+
         used_entities = {"presidio": set(), "gliner": set(), "ai": set()}
 
         results = []
@@ -301,21 +330,23 @@ class MultiSourceAligner:
                 if other_source == primary_source:
                     continue
 
+                src_data = sorted_by_src[other_source]
                 candidates = [
-                    entity
-                    for idx, entity in enumerate(normalized_entities[other_source])
-                    if idx not in used_entities[other_source]
+                    e for i, e in zip(src_data["order"], src_data["sorted"])
+                    if i not in used_entities[other_source]
                 ]
+                cand_starts = [e.start for e in candidates]
 
                 if candidates:
                     best_match, _score, match_type = find_best_match(
-                        primary_entity, candidates, self.fuzzy_threshold
+                        primary_entity, candidates, self.fuzzy_threshold,
+                        _sorted_starts=cand_starts,
                     )
 
                     if best_match and match_type != MatchType.NO_MATCH:
                         matches.append(best_match)
                         match_types.append(match_type)
-                        idx = normalized_entities[other_source].index(best_match)
+                        idx = id_to_idx[other_source][id(best_match)]
                         used_entities[other_source].add(idx)
 
             overall_match_type = (

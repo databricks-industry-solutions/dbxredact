@@ -24,7 +24,7 @@
 # COMMAND ----------
 
 # MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl
-# MAGIC # Fallback if GPU/trf not available:
+# MAGIC # For faster CPU inference at the cost of lower NER accuracy:
 # MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
 # MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_lg-3.8.0/es_core_news_lg-3.8.0-py3-none-any.whl
 # MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
@@ -46,71 +46,89 @@ from dbxredact import run_detection_pipeline, load_filter_from_table, EntityFilt
 
 # COMMAND ----------
 
+dbutils.widgets.dropdown(
+    name="detection_profile",
+    defaultValue="fast",
+    choices=["fast", "deep", "custom"],
+    label="0. Detection Profile",
+)
 dbutils.widgets.text(
     name="source_table",
     defaultValue="your_catalog.your_schema.jsl_benchmark_source",
-    label="0. Source Table",
+    label="1. Source Table",
 )
 dbutils.widgets.text(
-    name="doc_id_column", defaultValue="doc_id", label="1. Document ID Column"
+    name="doc_id_column", defaultValue="doc_id", label="2. Document ID Column"
 )
-dbutils.widgets.text(name="text_column", defaultValue="text", label="2. Text Column")
+dbutils.widgets.text(name="text_column", defaultValue="text", label="3. Text Column")
 dbutils.widgets.dropdown(
     name="use_presidio",
     defaultValue="true",
     choices=["true", "false"],
-    label="3. Use Presidio Detection",
+    label="4. Use Presidio Detection",
 )
 dbutils.widgets.dropdown(
     name="use_ai_query",
     defaultValue="true",
     choices=["true", "false"],
-    label="4. Use AI Query Detection",
+    label="5. Use AI Query Detection",
 )
 dbutils.widgets.dropdown(
     name="use_gliner",
-    defaultValue="false",
+    defaultValue="true",
     choices=["true", "false"],
-    label="5. Use GLiNER Detection",
+    label="6. Use GLiNER Detection",
 )
 dbutils.widgets.text(
     name="endpoint",
     defaultValue="databricks-gpt-oss-120b",
-    label="6. AI Endpoint (for AI Query method)",
+    label="7. AI Endpoint (for AI Query method)",
 )
 dbutils.widgets.text(
     name="presidio_score_threshold",
     defaultValue="0.5",
-    label="7. Presidio Score Threshold",
+    label="8. Presidio Score Threshold",
 )
-dbutils.widgets.text(name="num_cores", defaultValue="10", label="8. Number of Cores")
+dbutils.widgets.text(name="num_cores", defaultValue="0", label="9. Number of Cores (0=auto)")
 dbutils.widgets.text(
     name="output_table",
     defaultValue="",
-    label="9. Output Table (leave blank for auto-suffix)",
+    label="10. Output Table (leave blank for auto-suffix)",
 )
 dbutils.widgets.dropdown(
     name="alignment_mode",
     defaultValue="union",
     choices=["union", "consensus"],
-    label="10. Alignment Mode (union=recall, consensus=precision)",
+    label="11. Alignment Mode (union=recall, consensus=precision)",
 )
 dbutils.widgets.text(
     name="max_rows",
     defaultValue="10000",
-    label="11. Max Rows (0 for unlimited)",
+    label="12. Max Rows (0 for unlimited)",
+)
+dbutils.widgets.dropdown(
+    name="reasoning_effort",
+    defaultValue="low",
+    choices=["low", "medium", "high"],
+    label="13. Reasoning Effort (AI Query)",
+)
+dbutils.widgets.text(
+    name="gliner_max_words",
+    defaultValue="512",
+    label="14. GLiNER Max Words (chunk size)",
 )
 dbutils.widgets.text(
     name="safe_list_table",
     defaultValue="",
-    label="12. Safe List Table (optional, fully qualified)",
+    label="15. Safe List Table (optional, fully qualified)",
 )
 dbutils.widgets.text(
     name="block_list_table",
     defaultValue="",
-    label="13. Block List Table (optional, fully qualified)",
+    label="16. Block List Table (optional, fully qualified)",
 )
 
+detection_profile = dbutils.widgets.get("detection_profile")
 source_table = dbutils.widgets.get("source_table")
 doc_id_column = dbutils.widgets.get("doc_id_column")
 text_column = dbutils.widgets.get("text_column")
@@ -126,12 +144,30 @@ use_gliner = dbutils.widgets.get("use_gliner") == "true"
 endpoint = dbutils.widgets.get("endpoint")
 score_threshold = float(dbutils.widgets.get("presidio_score_threshold"))
 num_cores = int(dbutils.widgets.get("num_cores"))
+if num_cores <= 0:
+    try:
+        num_cores = sc.defaultParallelism
+    except Exception:
+        num_cores = 8
+    print(f"Auto-detected {num_cores} task slots")
 output_table = dbutils.widgets.get("output_table")
 alignment_mode = dbutils.widgets.get("alignment_mode")
 max_rows_str = dbutils.widgets.get("max_rows")
 max_rows = None if max_rows_str == "0" else int(max_rows_str)
+reasoning_effort = dbutils.widgets.get("reasoning_effort")
+gliner_max_words = int(dbutils.widgets.get("gliner_max_words"))
 safe_list_table = dbutils.widgets.get("safe_list_table").strip()
 block_list_table = dbutils.widgets.get("block_list_table").strip()
+
+# Profile overrides
+if detection_profile == "fast":
+    use_presidio, use_ai_query, use_gliner = False, True, True
+    reasoning_effort, gliner_max_words = "low", 512
+    print("Profile: Fast Mode -- AI Query + GLiNER, reasoning=low, max_words=512")
+elif detection_profile == "deep":
+    use_presidio, use_ai_query, use_gliner = True, True, True
+    reasoning_effort, gliner_max_words = "medium", 256
+    print("Profile: Deep Search -- all detectors, reasoning=medium, max_words=256")
 
 entity_filter = None
 if safe_list_table or block_list_table:
@@ -210,6 +246,8 @@ results_df = run_detection_pipeline(
     align_results=True,
     alignment_mode=alignment_mode,
     entity_filter=entity_filter,
+    reasoning_effort=reasoning_effort,
+    gliner_max_words=gliner_max_words,
 )
 
 # COMMAND ----------

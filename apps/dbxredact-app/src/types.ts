@@ -1,19 +1,19 @@
 export interface Config {
   config_id: string;
   name: string;
-  detection_profile: string;
+  detection_profile?: string;
   use_presidio: boolean;
   use_ai_query: boolean;
   use_gliner: boolean;
-  endpoint?: string;
+  endpoint: string;
   score_threshold: number;
   gliner_model: string;
   gliner_threshold: number;
   redaction_strategy: string;
   alignment_mode: string;
-  reasoning_effort: string;
-  gliner_max_words: number;
-  presidio_model_size: string;
+  reasoning_effort?: string;
+  gliner_max_words?: number;
+  presidio_model_size?: string;
   extra_params?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -34,32 +34,19 @@ export interface JobHistoryItem {
   source_table: string;
   output_table: string;
   status: string;
+  cost_estimate_usd?: number;
   started_at?: string;
   completed_at?: string;
 }
 
-export interface Annotation {
-  annotation_id?: string;
-  doc_id: string;
-  source_table: string;
-  workflow: string;
-  entity_text: string;
-  entity_type: string;
-  start: number;
-  end_pos: number;
-  action: string;
-  corrected_type?: string;
-  corrected_value?: string;
-  detection_method?: string;
-}
-
 export interface ListEntry {
-  entry_id?: string;
+  entry_id: string;
+  list_type: string;
   value: string;
   is_pattern: boolean;
   entity_type?: string;
   notes?: string;
-  list_type?: string;
+  created_at?: string;
 }
 
 export interface ABTest {

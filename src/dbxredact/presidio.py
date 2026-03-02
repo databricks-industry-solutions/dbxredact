@@ -107,7 +107,7 @@ def make_presidio_batch_udf(
                 keys_to_skip=["doc_id"],
                 score_threshold=score_threshold,
                 entities=entity_list,
-                batch_size=20,
+                batch_size=100,
                 n_process=1,
             )
 

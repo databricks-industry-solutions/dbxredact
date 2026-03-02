@@ -9,6 +9,7 @@ from pyspark.sql.functions import pandas_udf
 from pyspark.sql.types import StringType
 
 from .config import PHI_PROMPT_SKELETON, LABEL_ENUMS, DEFAULT_AI_CONFIDENCE_SCORE, should_ignore_entity
+from .utils import build_offset_map
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,8 @@ def _find_entity_positions(
     if positions:
         return positions
 
-    # Whitespace-normalized: collapse runs of whitespace in both entity and text
+    # Whitespace-normalized: collapse runs of whitespace in both entity and text,
+    # then map positions back to original via a character-level offset map.
     norm_entity = _WHITESPACE_RE.sub(" ", entity_text).strip()
     norm_sentence = _WHITESPACE_RE.sub(" ", sentence).strip()
     if norm_entity != entity_text or norm_sentence != sentence:
@@ -60,26 +62,55 @@ def _find_entity_positions(
             for m in re.finditer(re.escape(norm_entity), norm_sentence, re.IGNORECASE)
         ]
         if norm_positions:
-            # Map normalized offsets back to original text (approximate: use ratio)
-            ratio = len(sentence) / max(len(norm_sentence), 1)
-            return [(int(s * ratio), int(e * ratio)) for s, e in norm_positions]
+            offset_map = build_offset_map(sentence)
+            mapped = []
+            for ns, ne in norm_positions:
+                orig_start = offset_map[ns] if ns < len(offset_map) else ns
+                orig_end = (offset_map[ne - 1] + 1) if 0 < ne <= len(offset_map) else ne
+                mapped.append((orig_start, orig_end))
+            return mapped
 
-    # Fuzzy sliding-window fallback
+    # Fuzzy match: prefer rapidfuzz.partial_ratio_alignment (fast), fall back to
+    # brute-force sliding window if the function isn't available in this version.
+    from rapidfuzz import fuzz
     try:
-        from rapidfuzz import fuzz
+        from rapidfuzz.fuzz import partial_ratio_alignment
+        result = partial_ratio_alignment(entity_text.lower(), sentence.lower())
+        if result is not None and result.score >= _FUZZY_MATCH_THRESHOLD:
+            return [(result.dest_start, result.dest_end)]
+    except (ImportError, AttributeError):
+        # Sliding-window fallback for older rapidfuzz versions
         window_len = len(entity_text)
-        best_score, best_start = 0.0, -1
-        for i in range(len(sentence) - window_len + 1):
-            candidate = sentence[i : i + window_len]
-            score = fuzz.ratio(entity_text.lower(), candidate.lower())
-            if score > best_score:
-                best_score = score
-                best_start = i
-        if best_score >= _FUZZY_MATCH_THRESHOLD and best_start >= 0:
-            return [(best_start, best_start + window_len)]
-    except ImportError:
-        pass
+        if window_len > 0 and window_len <= len(sentence):
+            best_score, best_start = 0, 0
+            for i in range(len(sentence) - window_len + 1):
+                candidate = sentence[i : i + window_len]
+                score = fuzz.ratio(entity_text.lower(), candidate.lower())
+                if score > best_score:
+                    best_score = score
+                    best_start = i
+            if best_score >= _FUZZY_MATCH_THRESHOLD:
+                return [(best_start, best_start + window_len)]
 
+    return []
+
+
+def _parse_entity_list(raw) -> list:
+    """Parse an entity list from either a JSON string or a list of Row/dict objects."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return []
+        if isinstance(parsed, dict) and "result" in parsed:
+            parsed = parsed["result"]
+        if isinstance(parsed, list):
+            return parsed
+        return []
+    if isinstance(raw, list):
+        return [r.asDict() if hasattr(r, "asDict") else dict(r) for r in raw]
     return []
 
 
@@ -89,25 +120,19 @@ def format_entity_response_object_udf(
 ) -> pd.Series:
     """Format AI-detected entities with position information.
 
-    This UDF takes the entity list from AI responses and enhances it with
-    precise position information (start/end indices) by finding all occurrences
-    in the original text.
+    Accepts either a JSON string (external model) or a list of Row objects
+    (foundation model with returnType) and enhances each entity with precise
+    start/end indices by locating all occurrences in the original text.
     """
     new_entity_series = []
 
     for entity_list, sentence in zip(identified_entities_series, sentences):
-        try:
-            entities = json.loads(entity_list)
-        except (json.JSONDecodeError, TypeError):
-            new_entity_series.append(json.dumps([]))
-            continue
+        entities = _parse_entity_list(entity_list)
 
         unique_entities_set = set(
-            [
-                (entity["entity"], entity["entity_type"])
-                for entity in entities
-                if "entity" in entity and "entity_type" in entity
-            ]
+            (entity["entity"], entity["entity_type"])
+            for entity in entities
+            if "entity" in entity and "entity_type" in entity
         )
 
         new_entity_list = []

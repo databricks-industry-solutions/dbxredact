@@ -13,14 +13,16 @@ from .config import (
     DEFAULT_GLINER_MODEL,
     DEFAULT_GLINER_LABELS,
     DEFAULT_GLINER_THRESHOLD,
+    DEFAULT_GLINER_MAX_WORDS,
     DEFAULT_GLINER_THRESHOLDS_BY_TYPE,
     GLINER_LABEL_MAP,
     should_ignore_entity,
 )
+from .utils import build_offset_map
 
 logger = logging.getLogger(__name__)
 
-MAX_WORDS = 256
+MAX_WORDS = DEFAULT_GLINER_MAX_WORDS
 OVERLAP_WORDS = 50
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -32,8 +34,13 @@ _gliner_model_cache = {}
 def _get_cached_gliner_model(model_name: str):
     """Get or create cached GLiNER model instance (singleton per worker)."""
     if model_name not in _gliner_model_cache:
+        import torch
         from gliner import GLiNER
-        _gliner_model_cache[model_name] = GLiNER.from_pretrained(model_name)
+        model = GLiNER.from_pretrained(model_name)
+        if torch.cuda.is_available():
+            model = model.to("cuda")
+            logger.info("GLiNER model loaded on CUDA")
+        _gliner_model_cache[model_name] = model
     return _gliner_model_cache[model_name]
 
 
@@ -42,43 +49,22 @@ def _find_word_boundaries(text: str) -> List[Tuple[int, int]]:
     return [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
 
 
-def _build_offset_map(original: str) -> List[int]:
-    """Map each character position in normalized text to its position in original.
-
-    Mirrors the behaviour of ``_WHITESPACE_RE.sub(" ", original).strip()``:
-    leading/trailing whitespace is dropped and interior runs of whitespace
-    collapse to a single space.
-    """
-    mapping: List[int] = []
-    oi = 0
-    # skip leading whitespace (mirrors .strip())
-    while oi < len(original) and original[oi] in " \t\n\r":
-        oi += 1
-    in_ws = False
-    for oi_scan in range(oi, len(original)):
-        ch = original[oi_scan]
-        if ch in " \t\n\r":
-            if not in_ws:
-                mapping.append(oi_scan)  # single space in normalized text
-                in_ws = True
-        else:
-            mapping.append(oi_scan)
-            in_ws = False
-    # strip trailing (the last entry might be a space from a trailing ws run)
-    while mapping and original[mapping[-1]] in " \t\n\r":
-        mapping.pop()
-    return mapping
+_build_offset_map = build_offset_map
 
 
 _NAME_LABELS = {"first_name", "last_name"}
+_ALL_NAME_LABELS = {"name", "first_name", "last_name"}
 
 
 def _merge_adjacent_names(entities: list) -> list:
-    """Merge consecutive first_name + last_name (or vice-versa) into one entity."""
-    if len(entities) < 2:
+    """Merge consecutive first_name + last_name (or vice-versa) into one entity,
+    then deduplicate against any overlapping ``name`` entity (full-name detection)."""
+    if not entities:
         return entities
     entities = sorted(entities, key=lambda e: e["start"])
-    merged: list = []
+
+    # Step 1: stitch adjacent first_name + last_name pairs
+    stitched: list = []
     i = 0
     while i < len(entities):
         cur = entities[i]
@@ -90,23 +76,36 @@ def _merge_adjacent_names(entities: list) -> list:
             and 0 <= entities[i + 1]["start"] - cur["end"] <= 2
         ):
             nxt = entities[i + 1]
-            merged.append({
+            stitched.append({
                 "text": cur["text"] + " " + nxt["text"]
                 if nxt["start"] > cur["end"] else cur["text"] + nxt["text"],
-                "label": "first_name",
+                "label": "name",
                 "start": cur["start"],
                 "end": nxt["end"],
                 "score": min(cur.get("score", 0), nxt.get("score", 0)),
             })
             i += 2
         else:
-            merged.append(cur)
+            stitched.append(cur)
             i += 1
-    return merged
+
+    # Step 2: when a ``name`` entity fully contains a first_name/last_name, drop the part
+    name_spans = [(e["start"], e["end"]) for e in stitched if e["label"] == "name"]
+    if not name_spans:
+        return stitched
+
+    result = []
+    for ent in stitched:
+        if ent["label"] in _NAME_LABELS:
+            contained = any(ns <= ent["start"] and ent["end"] <= ne for ns, ne in name_spans)
+            if contained:
+                continue
+        result.append(ent)
+    return result
 
 
 def _chunk_and_predict(
-    model, text: str, labels: List[str], threshold: float
+    model, text: str, labels: List[str], threshold: float, max_words: int = MAX_WORDS
 ) -> list:
     """Run GLiNER prediction with chunking for long texts.
 
@@ -119,14 +118,14 @@ def _chunk_and_predict(
     text = _WHITESPACE_RE.sub(" ", text).strip()
 
     word_spans = _find_word_boundaries(text)
-    if len(word_spans) <= MAX_WORDS:
+    if len(word_spans) <= max_words:
         return model.predict_entities(text, labels, threshold=threshold)
 
     all_entities = []
     wi = 0  # word index
 
     while wi < len(word_spans):
-        wi_end = min(wi + MAX_WORDS, len(word_spans))
+        wi_end = min(wi + max_words, len(word_spans))
         char_start = word_spans[wi][0]
         char_end = word_spans[wi_end - 1][1]
         chunk_text = text[char_start:char_end]
@@ -144,7 +143,7 @@ def _chunk_and_predict(
 
         if wi_end >= len(word_spans):
             break
-        wi += MAX_WORDS - OVERLAP_WORDS
+        wi += max_words - OVERLAP_WORDS
 
     # Deduplicate: for entities with same (start, end, label), keep highest score
     seen = {}
@@ -165,6 +164,7 @@ def make_gliner_udf(
     model_name: str = DEFAULT_GLINER_MODEL,
     labels: List[str] = None,
     threshold: float = DEFAULT_GLINER_THRESHOLD,
+    max_words: int = MAX_WORDS,
 ):
     """Create iterator-based Pandas UDF for GLiNER detection.
 
@@ -189,7 +189,7 @@ def make_gliner_udf(
                 try:
                     norm_text = _WHITESPACE_RE.sub(" ", text).strip()
                     offset_map = _build_offset_map(text)
-                    entities = _chunk_and_predict(model, norm_text, labels_list, threshold)
+                    entities = _chunk_and_predict(model, norm_text, labels_list, threshold, max_words=max_words)
                     entities = [
                         e for e in entities
                         if e.get("score", 0) >= DEFAULT_GLINER_THRESHOLDS_BY_TYPE.get(
@@ -197,8 +197,6 @@ def make_gliner_udf(
                         )
                     ]
                     entities = _merge_adjacent_names(entities)
-                    # Remap offsets from normalized text back to original text
-                    # and re-derive entity text from original to fix merged-name mismatches
                     for ent in entities:
                         s, e = ent["start"], ent["end"]
                         ent["start"] = offset_map[s] if s < len(offset_map) else s
@@ -234,6 +232,7 @@ def run_gliner_detection(
     num_cores: int = 10,
     labels: List[str] = None,
     threshold: float = DEFAULT_GLINER_THRESHOLD,
+    max_words: int = MAX_WORDS,
     _repartition: bool = True,
 ) -> DataFrame:
     """Run GLiNER-based PHI detection on a DataFrame.
@@ -248,7 +247,7 @@ def run_gliner_detection(
         threshold: Minimum confidence threshold
         _repartition: Whether to repartition. Set False when caller already did.
     """
-    gliner_udf = make_gliner_udf(model_name=model_name, labels=labels, threshold=threshold)
+    gliner_udf = make_gliner_udf(model_name=model_name, labels=labels, threshold=threshold, max_words=max_words)
 
     base_df = df.repartition(num_cores) if _repartition else df
     result_df = base_df.withColumn(

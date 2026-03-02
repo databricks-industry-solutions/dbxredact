@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import TablePicker from "../components/TablePicker";
 import EntityHighlighter from "../components/EntityHighlighter";
 import ErrorBanner from "../components/ErrorBanner";
@@ -56,6 +56,8 @@ export default function LabelPage() {
   const [preIdx, setPreIdx] = useState(0);
   const [editLabels, setEditLabels] = useState<LabelEntry[]>([]);
   const [preLoading, setPreLoading] = useState(false);
+
+  const textContainerRef = useRef<HTMLDivElement>(null);
 
   const parts = table.split(".");
   const hasTable = parts.length === 3 && parts[2] !== "";
@@ -125,17 +127,31 @@ export default function LabelPage() {
     }
   }, [preIdx, preDocs, mode]);
 
+  function getTextOffsetInContainer(container: Node, targetNode: Node, targetOffset: number): number {
+    let offset = 0;
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      if (node === targetNode) return offset + targetOffset;
+      offset += (node.textContent?.length ?? 0);
+    }
+    return offset + targetOffset;
+  }
+
   function handleTextSelect() {
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) return;
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
     const text = sel.toString().trim();
     if (!text) return;
-    const fullText = mode === "unlabeled"
-      ? String(docs[currentIdx]?.text || "")
-      : String(preDocs[preIdx]?.text || "");
-    const start = fullText.indexOf(text);
-    if (start === -1) return;
-    const entry: LabelEntry = { entity_text: text, entity_type: entityType, start, end: start + text.length };
+    const container = textContainerRef.current;
+    if (!container) return;
+
+    const range = sel.getRangeAt(0);
+    const start = getTextOffsetInContainer(container, range.startContainer, range.startOffset);
+    const end = getTextOffsetInContainer(container, range.endContainer, range.endOffset);
+    if (start === end) return;
+
+    const entry: LabelEntry = { entity_text: text, entity_type: entityType, start, end };
     if (mode === "unlabeled") setLabels((prev) => [...prev, entry]);
     else setEditLabels((prev) => [...prev, entry]);
     sel.removeAllRanges();
@@ -264,7 +280,7 @@ export default function LabelPage() {
             </div>
           </div>
 
-          <div className="card p-5 mb-4 cursor-text select-text" onMouseUp={handleTextSelect}>
+          <div ref={textContainerRef} className="card p-5 mb-4 cursor-text select-text" onMouseUp={handleTextSelect}>
             <EntityHighlighter
               text={String(unlabeledDoc.text || "")}
               entities={labels.map((l) => ({
@@ -302,7 +318,7 @@ export default function LabelPage() {
             </div>
           </div>
 
-          <div className="card p-5 mb-4 cursor-text select-text" onMouseUp={handleTextSelect}>
+          <div ref={textContainerRef} className="card p-5 mb-4 cursor-text select-text" onMouseUp={handleTextSelect}>
             <EntityHighlighter
               text={preDoc.text}
               entities={editLabels.map((l) => ({

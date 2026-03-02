@@ -2,7 +2,9 @@
 
 import logging
 import math
+import time
 from typing import Optional, Literal
+import pandas as pd
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.streaming import StreamingQuery
 from pyspark.sql.functions import col, array
@@ -19,7 +21,7 @@ from .detection import run_detection
 from .alignment import align_entities_udf
 from .redaction import create_redaction_udf, RedactionStrategy
 from .metadata import get_columns_by_tag
-from .config import DEFAULT_GLINER_MODEL, DEFAULT_GLINER_THRESHOLD, DEFAULT_AI_REASONING_EFFORT
+from .config import DEFAULT_GLINER_MODEL, DEFAULT_GLINER_THRESHOLD, DEFAULT_GLINER_MAX_WORDS, DEFAULT_AI_REASONING_EFFORT
 from .entity_filter import EntityFilter, apply_safe_filter, apply_block_filter
 
 logger = logging.getLogger(__name__)
@@ -171,14 +173,17 @@ def run_detection_pipeline(
     score_threshold: float = 0.5,
     gliner_model: str = DEFAULT_GLINER_MODEL,
     gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
+    gliner_max_words: int = None,
     num_cores: int = 10,
     align_results: bool = True,
     fail_on_presidio_error: bool = True,
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
     presidio_model_size: str = None,
+    ai_model_type: str = "foundation",
     alignment_mode: AlignmentMode = "union",
     fuzzy_threshold: int = 50,
     entity_filter: Optional[EntityFilter] = None,
+    row_count: Optional[int] = None,
 ) -> DataFrame:
     """
     Run complete detection pipeline with optional alignment.
@@ -207,7 +212,8 @@ def run_detection_pipeline(
     if not any([use_presidio, use_ai_query, use_gliner]):
         raise ValueError("At least one detection method must be enabled.")
 
-    logger.info("1. Run detection pipeline.")
+    t0 = time.time()
+    print("1. Run detection pipeline.")
     result_df = run_detection(
         spark=spark,
         df=source_df,
@@ -220,25 +226,33 @@ def run_detection_pipeline(
         score_threshold=score_threshold,
         gliner_model=gliner_model,
         gliner_threshold=gliner_threshold,
+        gliner_max_words=gliner_max_words,
         num_cores=num_cores,
         fail_on_presidio_error=fail_on_presidio_error,
         reasoning_effort=reasoning_effort,
         presidio_model_size=presidio_model_size,
+        ai_model_type=ai_model_type,
+        row_count=row_count,
     )
+    t1 = time.time()
+    print(f"   Detection total [{t1 - t0:.1f}s]")
 
     methods_used = sum([use_presidio, use_ai_query, use_gliner])
 
     if align_results and methods_used >= 1:
-        logger.info(f"2. Aligning entity results from multiple sources (mode={alignment_mode})...")
+        print(f"2. Aligning entity results from multiple sources (mode={alignment_mode})...")
         result_df = _apply_alignment(
             result_df, doc_id_column, use_presidio, use_ai_query, use_gliner,
             alignment_mode=alignment_mode,
             fuzzy_threshold=fuzzy_threshold,
         )
-        logger.info("Alignment complete")
+        result_df = result_df.cache()
+        result_df.count()
+        t2 = time.time()
+        print(f"   Alignment materialized [{t2 - t1:.1f}s]")
 
     if entity_filter is not None:
-        from pyspark.sql.functions import udf
+        from pyspark.sql.functions import pandas_udf as _pandas_udf
         from pyspark.sql.types import ArrayType, StructType, StructField, StringType, IntegerType, DoubleType
 
         entity_struct = ArrayType(StructType([
@@ -253,15 +267,20 @@ def run_detection_pipeline(
         has_block = bool(ef._block_set or ef._block_re)
         has_safe = bool(ef._safe_set or ef._safe_re)
 
-        @udf(entity_struct)
-        def _apply_entity_filter(entities, text):
-            ents = [e.asDict() for e in entities] if entities else []
-            if has_safe:
-                ents = apply_safe_filter(ents, ef)
-            if has_block and text:
-                forced = apply_block_filter(text, ef)
-                ents.extend(forced)
-            return ents
+        @_pandas_udf(entity_struct)
+        def _apply_entity_filter(entities_col: pd.Series, text_col: pd.Series) -> pd.Series:
+            out = []
+            for entities, text in zip(entities_col, text_col):
+                if entities is not None and len(entities) > 0:
+                    ents = [e.asDict() if hasattr(e, 'asDict') else dict(e) for e in entities]
+                else:
+                    ents = []
+                if has_safe:
+                    ents = apply_safe_filter(ents, ef)
+                if has_block and text:
+                    ents.extend(apply_block_filter(text, ef))
+                out.append(ents)
+            return pd.Series(out)
 
         ent_col = "aligned_entities" if "aligned_entities" in result_df.columns else _get_entities_column(result_df, True)
         result_df = result_df.withColumn(ent_col, _apply_entity_filter(col(ent_col), col(text_column)))
@@ -284,6 +303,7 @@ def run_redaction_pipeline(
     score_threshold: float = 0.5,
     gliner_model: str = DEFAULT_GLINER_MODEL,
     gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
+    gliner_max_words: int = None,
     num_cores: int = 10,
     use_aligned: bool = True,
     fail_on_presidio_error: bool = True,
@@ -291,6 +311,7 @@ def run_redaction_pipeline(
     max_rows: Optional[int] = 10000,
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
     presidio_model_size: str = None,
+    ai_model_type: str = "foundation",
     alignment_mode: AlignmentMode = "union",
     fuzzy_threshold: int = 50,
     entity_filter: Optional[EntityFilter] = None,
@@ -317,6 +338,7 @@ def run_redaction_pipeline(
         output_strategy: 'validation' (all columns) or 'production' (doc_id + redacted only)
         max_rows: Maximum rows to process after dedup. Set to None or 0 to process all rows. Default: 10000
         presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg')
+        ai_model_type: "foundation" or "external" (for Claude, etc.)
         fuzzy_threshold: Fuzzy matching threshold for alignment (0-100, default 50)
         entity_filter: Optional EntityFilter for deny/allow list processing
 
@@ -326,6 +348,10 @@ def run_redaction_pipeline(
     if not any([use_presidio, use_ai_query, use_gliner]):
         raise ValueError("At least one detection method must be enabled.")
 
+    t_pipeline_start = time.time()
+
+    # DO NOT remove .distinct() -- prevents redundant processing of duplicate rows
+    # (e.g. ground-truth tables with many repeated rows).
     source_df = spark.table(source_table).select(doc_id_column, text_column).distinct()
 
     if max_rows:
@@ -333,6 +359,12 @@ def run_redaction_pipeline(
         if row_count > max_rows:
             logger.warning(f"Source has {row_count:,} rows (after dedup). Limiting to {max_rows:,}.")
             source_df = source_df.limit(max_rows)
+
+    # Cache and materialize once so downstream detectors never re-scan the source
+    source_df = source_df.cache()
+    cached_count = source_df.count()
+    t_cache = time.time()
+    print(f"Cached {cached_count:,} rows for detection. [{t_cache - t_pipeline_start:.1f}s]")
 
     detection_df = run_detection_pipeline(
         spark=spark,
@@ -346,31 +378,40 @@ def run_redaction_pipeline(
         score_threshold=score_threshold,
         gliner_model=gliner_model,
         gliner_threshold=gliner_threshold,
+        gliner_max_words=gliner_max_words,
         num_cores=num_cores,
         align_results=True,
         fail_on_presidio_error=fail_on_presidio_error,
         reasoning_effort=reasoning_effort,
         presidio_model_size=presidio_model_size,
+        ai_model_type=ai_model_type,
         alignment_mode=alignment_mode,
         fuzzy_threshold=fuzzy_threshold,
         entity_filter=entity_filter,
+        row_count=cached_count,
     )
+
+    detection_df = detection_df.cache()
+    detection_df.count()
+    t_detect_done = time.time()
+    print(f"   Detection pipeline complete [{t_detect_done - t_cache:.1f}s]")
 
     entities_column = _get_entities_column(detection_df, use_aligned)
 
-    logger.info("3. Applying redaction...")
+    t_redact_start = time.time()
+    print("3. Applying redaction...")
     result_df = _apply_redaction(
         detection_df, text_column, entities_column, redaction_strategy
     )
 
-    # Select output columns
     output_df = _select_output_columns(result_df, doc_id_column, text_column, output_strategy)
 
-    # Write to table
-    logger.info(f"4. Writing to {output_table}...")
+    print(f"4. Writing to {output_table}...")
     output_df.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(output_table)
+    t_write_done = time.time()
+    print(f"   Redaction + write: {t_write_done - t_redact_start:.1f}s  |  Total pipeline: {t_write_done - t_pipeline_start:.1f}s")
 
-    return result_df  # Return full df for display/analysis
+    return result_df
 
 
 def _ensure_checkpoint_volume_exists(spark: SparkSession, checkpoint_path: str) -> None:
@@ -429,14 +470,17 @@ def run_redaction_pipeline_streaming(
     score_threshold: float = 0.5,
     gliner_model: str = DEFAULT_GLINER_MODEL,
     gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
+    gliner_max_words: int = None,
     num_cores: int = 10,
     use_aligned: bool = True,
     fail_on_presidio_error: bool = True,
     output_strategy: OutputStrategy = "production",
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
     presidio_model_size: str = None,
+    ai_model_type: str = "foundation",
     alignment_mode: AlignmentMode = "union",
     max_files_per_trigger: Optional[int] = 10,
+    entity_filter=None,
 ) -> StreamingQuery:
     """
     Run streaming redaction pipeline with incremental processing.
@@ -539,6 +583,7 @@ def run_redaction_pipeline_streaming(
             endpoint=endpoint or "databricks-gpt-oss-120b",
             num_cores=num_cores,
             reasoning_effort=reasoning_effort,
+            ai_model_type=ai_model_type,
             _repartition=False,
         )
         # Flag rows where AI endpoint returned an error instead of results.
@@ -551,11 +596,18 @@ def run_redaction_pipeline_streaming(
 
     if use_gliner:
         from .gliner_detector import run_gliner_detection
-        stream_df = run_gliner_detection(
-            stream_df, doc_id_column, text_column, gliner_model, num_cores,
+        gliner_kwargs = dict(
+            df=stream_df,
+            doc_id_column=doc_id_column,
+            text_column=text_column,
+            model_name=gliner_model,
+            num_cores=num_cores,
             threshold=gliner_threshold,
             _repartition=False,
         )
+        if gliner_max_words is not None:
+            gliner_kwargs["max_words"] = gliner_max_words
+        stream_df = run_gliner_detection(**gliner_kwargs)
 
     # Apply alignment
     methods_used = sum([use_presidio, use_ai_query, use_gliner])
@@ -576,6 +628,44 @@ def run_redaction_pipeline_streaming(
         entities_column = "gliner_results_struct"
     else:
         raise ValueError("At least one detection method must be enabled")
+
+    # Apply entity filter (block/safe lists) if provided
+    if entity_filter is not None:
+        from .entity_filter import apply_safe_filter, apply_block_filter
+        from pyspark.sql.functions import pandas_udf as _pandas_udf
+        from pyspark.sql.types import ArrayType, StructType, StructField, StringType, IntegerType, DoubleType
+
+        _ef_struct = ArrayType(StructType([
+            StructField("entity", StringType()),
+            StructField("entity_type", StringType()),
+            StructField("start", IntegerType()),
+            StructField("end", IntegerType()),
+            StructField("score", DoubleType()),
+            StructField("source", StringType()),
+        ]))
+        ef = entity_filter
+        _has_block = bool(ef._block_set or ef._block_re)
+        _has_safe = bool(ef._safe_set or ef._safe_re)
+
+        @_pandas_udf(_ef_struct)
+        def _stream_entity_filter(entities_col: pd.Series, text_col: pd.Series) -> pd.Series:
+            out = []
+            for entities, text in zip(entities_col, text_col):
+                if entities is not None and len(entities) > 0:
+                    ents = [e.asDict() if hasattr(e, 'asDict') else dict(e) for e in entities]
+                else:
+                    ents = []
+                if _has_safe:
+                    ents = apply_safe_filter(ents, ef)
+                if _has_block and text:
+                    ents.extend(apply_block_filter(text, ef))
+                out.append(ents)
+            return pd.Series(out)
+
+        stream_df = stream_df.withColumn(
+            entities_column, _stream_entity_filter(col(entities_column), col(text_column))
+        )
+        logger.info("Entity filter applied in streaming pipeline")
 
     # Apply redaction
     stream_df = _apply_redaction(stream_df, text_column, entities_column, redaction_strategy)
@@ -641,11 +731,13 @@ def run_redaction_pipeline_by_tag(
     score_threshold: float = 0.5,
     gliner_model: str = DEFAULT_GLINER_MODEL,
     gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
+    gliner_max_words: int = None,
     num_cores: int = 10,
     output_strategy: OutputStrategy = "production",
     max_rows: Optional[int] = 10000,
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
     presidio_model_size: str = None,
+    ai_model_type: str = "foundation",
     alignment_mode: AlignmentMode = "union",
     fuzzy_threshold: int = 50,
 ) -> DataFrame:
@@ -670,6 +762,7 @@ def run_redaction_pipeline_by_tag(
         output_strategy: 'validation' (all columns) or 'production' (doc_id + redacted only)
         max_rows: Maximum rows to process after dedup. Set to None or 0 to process all rows. Default: 10000
         presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg', 'trf')
+        ai_model_type: "foundation" or "external" (for Claude, etc.)
 
     Returns:
         DataFrame with redacted columns
@@ -704,11 +797,13 @@ def run_redaction_pipeline_by_tag(
             score_threshold=score_threshold,
             gliner_model=gliner_model,
             gliner_threshold=gliner_threshold,
+            gliner_max_words=gliner_max_words,
             num_cores=num_cores,
             output_strategy=output_strategy,
             max_rows=max_rows,
             reasoning_effort=reasoning_effort,
             presidio_model_size=presidio_model_size,
+            ai_model_type=ai_model_type,
             alignment_mode=alignment_mode,
             fuzzy_threshold=fuzzy_threshold,
         )

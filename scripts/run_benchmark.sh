@@ -101,11 +101,11 @@ FOUND_LOGS=false
 for ATTEMPT in 1 2 3 4 5 6 7 8 9 10; do
     echo "Waiting for logs (attempt $ATTEMPT/10)..."
 
-    NEWEST=$(databricks fs ls "dbfs:${VOLUME_PATH}" 2>/dev/null \
+    NEWEST=$(databricks fs ls "${VOLUME_PATH}" 2>/dev/null \
         | awk '{print $NF}' | grep -E '^[0-9]' | sort -r | head -1)
 
     if [ -n "$NEWEST" ]; then
-        if databricks fs ls "dbfs:${VOLUME_PATH}/${NEWEST}/driver" &>/dev/null; then
+        if databricks fs ls "${VOLUME_PATH}/${NEWEST}/driver" &>/dev/null; then
             FOUND_LOGS=true
             break
         fi
@@ -133,8 +133,8 @@ CLUSTER_PATH="${VOLUME_PATH}/${NEWEST}"
 echo "Cluster: ${NEWEST}"
 
 mkdir -p "${RAW_DIR}/driver"
-databricks fs cp "dbfs:${CLUSTER_PATH}/driver/stdout" "${RAW_DIR}/driver/stdout" 2>/dev/null || true
-databricks fs cp "dbfs:${CLUSTER_PATH}/driver/stderr" "${RAW_DIR}/driver/stderr" 2>/dev/null || true
+databricks fs cp "${CLUSTER_PATH}/driver/stdout" "${RAW_DIR}/driver/stdout" 2>/dev/null || true
+databricks fs cp "${CLUSTER_PATH}/driver/stderr" "${RAW_DIR}/driver/stderr" 2>/dev/null || true
 
 echo ""
 echo "=== Step 5: Extract benchmark results ==="

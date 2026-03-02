@@ -9,7 +9,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`${res.status}: ${body}`);
+    let message = `${res.status}: ${body}`;
+    try {
+      const json = JSON.parse(body);
+      if (json.error) message = json.error;
+    } catch { /* body wasn't JSON */ }
+    throw new Error(message);
   }
   if (res.status === 204) return undefined as unknown as T;
   return res.json();

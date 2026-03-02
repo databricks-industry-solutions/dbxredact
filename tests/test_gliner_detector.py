@@ -95,7 +95,7 @@ class TestChunkAndPredict:
 
     def test_long_text_triggers_chunking(self):
         """Verify chunking is triggered when text exceeds MAX_WORDS."""
-        words = ["word"] * 300
+        words = ["word"] * 600
         text = " ".join(words)
         call_count = 0
 
@@ -110,7 +110,7 @@ class TestChunkAndPredict:
 
     def test_chunk_offset_adjustment(self):
         """Entities from later chunks should have adjusted offsets."""
-        words = ["word"] * 300
+        words = ["word"] * 600
         text = " ".join(words)
 
         class MockModel:
@@ -146,4 +146,8 @@ class TestOffsetMapRoundTrip:
         normalized = re.sub(r"\s+", " ", original).strip()
         for ni, oi in enumerate(mapping):
             if ni < len(normalized):
-                assert normalized[ni] == original[oi]
+                nc, oc = normalized[ni], original[oi]
+                if nc == " ":
+                    assert oc in " \t\n\r", f"pos {ni}: expected whitespace, got {oc!r}"
+                else:
+                    assert nc == oc, f"pos {ni}: {nc!r} != {oc!r}"

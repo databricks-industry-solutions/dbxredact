@@ -1,6 +1,7 @@
 """Unified PHI/PII detection interface."""
 
 import logging
+import time
 from typing import Optional
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import col, from_json, expr
@@ -14,10 +15,24 @@ from .config import (
     DEFAULT_PRESIDIO_SCORE_THRESHOLD,
     DEFAULT_GLINER_MODEL,
     DEFAULT_GLINER_THRESHOLD,
+    DEFAULT_GLINER_MAX_WORDS,
     DEFAULT_AI_REASONING_EFFORT,
 )
 
 logger = logging.getLogger(__name__)
+
+# Minimum rows per partition to avoid excessive overhead (model loading, task startup)
+_MIN_ROWS_PER_PARTITION = 5
+
+
+def _smart_partitions(df: DataFrame, num_cores: int, row_count: Optional[int] = None) -> int:
+    """Cap partitions so each has at least _MIN_ROWS_PER_PARTITION rows."""
+    if row_count is None:
+        try:
+            row_count = df.count()
+        except Exception:
+            return num_cores
+    return max(1, min(num_cores, row_count // _MIN_ROWS_PER_PARTITION))
 
 
 def check_presidio_available() -> tuple:
@@ -74,7 +89,7 @@ def run_presidio_detection(
         score_threshold=score_threshold, model_size=model_size
     )
 
-    base_df = df.repartition(num_cores) if _repartition else df
+    base_df = df.repartition(_smart_partitions(df, num_cores)) if _repartition else df
     result_df = (
         base_df
         .withColumn(
@@ -102,6 +117,7 @@ def run_ai_query_detection(
     prompt_skeleton: str = PHI_PROMPT_SKELETON,
     labels: str = LABEL_ENUMS,
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
+    ai_model_type: str = "foundation",
     _repartition: bool = True,
 ) -> DataFrame:
     """
@@ -119,6 +135,8 @@ def run_ai_query_detection(
         prompt_skeleton: Template prompt for AI detection
         labels: Entity type labels for detection
         reasoning_effort: Reasoning effort level ("low", "medium", "high")
+        ai_model_type: "foundation" uses returnType + reasoning_effort;
+            "external" sends plain STRING request (for Claude, etc.)
         _repartition: Whether to repartition. Set False when caller already did.
 
     Returns:
@@ -128,36 +146,64 @@ def run_ai_query_detection(
     
     # Split prompt at {med_text} placeholder for concat
     prompt_parts = prompt.split("{med_text}")
-    prompt_prefix = prompt_parts[0].replace("'", "''")  # Escape single quotes for SQL
+    prompt_prefix = prompt_parts[0].replace("'", "''")
     prompt_suffix = prompt_parts[1].replace("'", "''") if len(prompt_parts) > 1 else ""
-    
-    # Build ai_query expression using DataFrame API (streaming compatible)
-    ai_query_expr = f"""
-        ai_query(
-            '{endpoint}',
-            concat('{prompt_prefix}', CAST({text_column} AS STRING), '{prompt_suffix}'),
-            failOnError => false,
-            returnType => 'STRUCT<result: ARRAY<STRUCT<entity: STRING, entity_type: STRING>>>',
-            modelParameters => named_struct('reasoning_effort', '{reasoning_effort}')
-        )
-    """
 
-    base_df = df.repartition(num_cores) if _repartition else df
-    result_df = (
-        base_df
-        .withColumn("response", expr(ai_query_expr))
-        .withColumn(
-            "ai_query_results",
-            format_entity_response_object_udf(col("response.result"), col(text_column)),
-        )
-        .withColumn(
-            "ai_results_struct",
-            from_json(
+    prompt_concat = f"concat('{prompt_prefix}', CAST({text_column} AS STRING), '{prompt_suffix}')"
+
+    if ai_model_type == "external":
+        ai_query_expr = f"""
+            ai_query(
+                '{endpoint}',
+                {prompt_concat},
+                failOnError => false
+            )
+        """
+    else:
+        ai_query_expr = f"""
+            ai_query(
+                '{endpoint}',
+                {prompt_concat},
+                failOnError => false,
+                returnType => 'STRUCT<result: ARRAY<STRUCT<entity: STRING, entity_type: STRING>>>',
+                modelParameters => named_struct('reasoning_effort', '{reasoning_effort}')
+            )
+        """
+
+    base_df = df.repartition(_smart_partitions(df, num_cores)) if _repartition else df
+
+    if ai_model_type == "external":
+        result_df = (
+            base_df
+            .withColumn("raw_response", expr(ai_query_expr))
+            .withColumn(
                 "ai_query_results",
-                "array<struct<entity:string, entity_type:string, score:double, start:integer, end:integer, doc_id:string>>",
-            ),
+                format_entity_response_object_udf(col("raw_response"), col(text_column)),
+            )
+            .withColumn(
+                "ai_results_struct",
+                from_json(
+                    "ai_query_results",
+                    "array<struct<entity:string, entity_type:string, score:double, start:integer, end:integer, doc_id:string>>",
+                ),
+            )
         )
-    )
+    else:
+        result_df = (
+            base_df
+            .withColumn("response", expr(ai_query_expr))
+            .withColumn(
+                "ai_query_results",
+                format_entity_response_object_udf(col("response.result"), col(text_column)),
+            )
+            .withColumn(
+                "ai_results_struct",
+                from_json(
+                    "ai_query_results",
+                    "array<struct<entity:string, entity_type:string, score:double, start:integer, end:integer, doc_id:string>>",
+                ),
+            )
+        )
 
     return result_df
 
@@ -170,6 +216,7 @@ def run_gliner_detection(
     num_cores: int = 10,
     labels=None,
     threshold: float = DEFAULT_GLINER_THRESHOLD,
+    gliner_max_words: int = None,
     _repartition: bool = True,
 ) -> DataFrame:
     """
@@ -189,7 +236,7 @@ def run_gliner_detection(
         DataFrame with 'gliner_results' and 'gliner_results_struct' columns
     """
     from .gliner_detector import run_gliner_detection as _run_gliner_detection
-    return _run_gliner_detection(
+    kwargs = dict(
         df=df,
         doc_id_column=doc_id_column,
         text_column=text_column,
@@ -199,6 +246,9 @@ def run_gliner_detection(
         threshold=threshold,
         _repartition=_repartition,
     )
+    if gliner_max_words is not None:
+        kwargs["max_words"] = gliner_max_words
+    return _run_gliner_detection(**kwargs)
 
 
 def run_detection(
@@ -213,37 +263,29 @@ def run_detection(
     score_threshold: float = DEFAULT_PRESIDIO_SCORE_THRESHOLD,
     gliner_model: str = DEFAULT_GLINER_MODEL,
     gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
+    gliner_max_words: int = None,
     num_cores: int = 10,
     fail_on_presidio_error: bool = True,
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
     presidio_model_size: str = None,
+    ai_model_type: str = "foundation",
+    row_count: Optional[int] = None,
 ) -> DataFrame:
     """
     Run PHI/PII detection using selected method(s).
 
-    Args:
-        spark: Active SparkSession
-        df: Input DataFrame with text to analyze
-        doc_id_column: Name of document ID column
-        text_column: Name of text column to analyze
-        use_presidio: Whether to run Presidio detection
-        use_ai_query: Whether to run AI Query detection
-        use_gliner: Whether to run GLiNER NER detection
-        endpoint: Databricks endpoint for AI detection
-        score_threshold: Minimum confidence score for Presidio
-        gliner_model: HuggingFace model name for GLiNER
-        num_cores: Number of cores for repartitioning
-        fail_on_presidio_error: If False, continue without Presidio if models unavailable
-        reasoning_effort: AI Query reasoning effort ("low", "medium", "high")
-        presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg')
-
-    Returns:
-        DataFrame with detection results from enabled method(s)
+    Repartitions once up-front so individual detectors skip their own
+    count()/repartition, avoiding redundant Spark actions on the lazy DAG.
     """
-    result_df = df
+    # Repartition once; all detectors will use _repartition=False
+    n_parts = _smart_partitions(df, num_cores, row_count=row_count)
+    result_df = df.repartition(n_parts)
+    print(f"Repartitioned to {n_parts} partitions (row_count={row_count}).")
+
     presidio_skipped = False
 
     if use_presidio:
+        t_presidio = time.time()
         try:
             result_df = run_presidio_detection(
                 result_df,
@@ -252,7 +294,11 @@ def run_detection(
                 score_threshold=score_threshold,
                 num_cores=num_cores,
                 model_size=presidio_model_size,
+                _repartition=False,
             )
+            result_df = result_df.cache()
+            result_df.count()
+            print(f"   Presidio detection: {time.time() - t_presidio:.1f}s")
         except SpacyModelNotFoundError as e:
             if fail_on_presidio_error:
                 raise
@@ -264,6 +310,7 @@ def run_detection(
         if endpoint is None:
             endpoint = "databricks-gpt-oss-120b"
 
+        t_ai = time.time()
         result_df = run_ai_query_detection(
             spark,
             result_df,
@@ -272,16 +319,29 @@ def run_detection(
             endpoint=endpoint,
             num_cores=num_cores,
             reasoning_effort=reasoning_effort,
+            ai_model_type=ai_model_type,
+            _repartition=False,
         )
+        result_df = result_df.cache()
+        result_df.count()
+        print(f"   AI Query detection: {time.time() - t_ai:.1f}s")
 
     if use_gliner:
-        result_df = run_gliner_detection(
-            result_df,
+        t_gliner = time.time()
+        gliner_kwargs = dict(
+            df=result_df,
             doc_id_column=doc_id_column,
             text_column=text_column,
             model_name=gliner_model,
             num_cores=num_cores,
             threshold=gliner_threshold,
+            _repartition=False,
         )
+        if gliner_max_words is not None:
+            gliner_kwargs["gliner_max_words"] = gliner_max_words
+        result_df = run_gliner_detection(**gliner_kwargs)
+        result_df = result_df.cache()
+        result_df.count()
+        print(f"   GLiNER detection: {time.time() - t_gliner:.1f}s")
 
     return result_df

@@ -8,6 +8,7 @@ from pydantic import BaseModel, field_validator
 
 class ConfigCreate(BaseModel):
     name: str
+    detection_profile: Optional[str] = "fast"
     use_presidio: bool = True
     use_ai_query: bool = True
     use_gliner: bool = False
@@ -17,6 +18,9 @@ class ConfigCreate(BaseModel):
     gliner_threshold: float = 0.2
     redaction_strategy: str = "typed"
     alignment_mode: str = "union"
+    reasoning_effort: Optional[str] = "low"
+    gliner_max_words: Optional[int] = 512
+    presidio_model_size: Optional[str] = "trf"
     extra_params: Optional[Dict[str, Any]] = None
 
 
@@ -42,6 +46,7 @@ class PipelineRunRequest(BaseModel):
     max_rows: Optional[int] = 10000
     max_cost_usd: Optional[float] = None
     cluster_profile: str = "cpu_small"
+    refresh_approach: str = "full"
 
 
 class RunStatusResponse(BaseModel):

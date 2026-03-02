@@ -10,8 +10,8 @@ const ENTITY_TYPES = [
 ];
 
 export default function ListsPage() {
-  const { data: blockList, refetch: refetchBlock } = useGet<ListEntry[]>("/lists/block");
-  const { data: safeList, refetch: refetchSafe } = useGet<ListEntry[]>("/lists/safe");
+  const { data: blockList, refetch: refetchBlock, error: blockError } = useGet<ListEntry[]>("/lists/block");
+  const { data: safeList, refetch: refetchSafe, error: safeError } = useGet<ListEntry[]>("/lists/safe");
 
   const [value, setValue] = useState("");
   const [isPattern, setIsPattern] = useState(false);
@@ -19,17 +19,27 @@ export default function ListsPage() {
   const [tab, setTab] = useState<"block" | "safe">("block");
   const [error, setError] = useState("");
 
+  const displayError = error || blockError || safeError || "";
+
   async function add() {
-    await apiPost(`/lists/${tab}`, { value, is_pattern: isPattern, entity_type: entityType || null });
-    setValue("");
-    setEntityType("");
-    setIsPattern(false);
-    tab === "block" ? refetchBlock() : refetchSafe();
+    try {
+      await apiPost(`/lists/${tab}`, { value, is_pattern: isPattern, entity_type: entityType || null });
+      setValue("");
+      setEntityType("");
+      setIsPattern(false);
+      tab === "block" ? refetchBlock() : refetchSafe();
+    } catch (e: any) {
+      setError(e.message || "Failed to add entry");
+    }
   }
 
   async function remove(id: string, type: "block" | "safe") {
-    await apiDelete(`/lists/${type}/${id}`);
-    type === "block" ? refetchBlock() : refetchSafe();
+    try {
+      await apiDelete(`/lists/${type}/${id}`);
+      type === "block" ? refetchBlock() : refetchSafe();
+    } catch (e: any) {
+      setError(e.message || "Failed to remove entry");
+    }
   }
 
   const list = tab === "block" ? blockList : safeList;
@@ -37,7 +47,7 @@ export default function ListsPage() {
   return (
     <div>
       <h2 className="page-title">Block / Safe Lists</h2>
-      <ErrorBanner message={error} onDismiss={() => setError("")} />
+      <ErrorBanner message={displayError} onDismiss={() => setError("")} />
       <p className="page-desc">
         Control detection behavior with static lists. <b>Block list</b> entries force the pipeline to always
         flag matching text as PII, even if detectors miss it. <b>Safe list</b> entries suppress false positives --

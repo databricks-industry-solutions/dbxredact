@@ -20,13 +20,14 @@ interface CostEstimate {
   estimated_minutes: number;
   endpoint: string;
   cluster_profile: string;
+  use_ai_query: boolean;
 }
 
 const TERMINAL_STATES = ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"];
 
 export default function RunPage() {
-  const { data: configs, loading: configsLoading } = useGet<Config[]>("/config/");
-  const { data: history, refetch: refetchHistory } = useGet<JobHistoryItem[]>("/pipeline/history");
+  const { data: configs, loading: configsLoading, error: configsError } = useGet<Config[]>("/config/");
+  const { data: history, refetch: refetchHistory, error: historyError } = useGet<JobHistoryItem[]>("/pipeline/history");
   const [configId, setConfigId] = useState("");
   const [sourceTable, setSourceTable] = useState("");
   const [outputTable, setOutputTable] = useState("");
@@ -35,9 +36,12 @@ export default function RunPage() {
   const [maxRows, setMaxRows] = useState(10000);
   const [clusterSize, setClusterSize] = useState<"small" | "medium" | "large">("small");
   const [useGpu, setUseGpu] = useState(false);
+  const [refreshApproach, setRefreshApproach] = useState<"full" | "incremental">("full");
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
+
+  const displayError = error || configsError || historyError || "";
 
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
   const [loadingTable, setLoadingTable] = useState(false);
@@ -73,8 +77,10 @@ export default function RunPage() {
   const usesGliner = selectedConfig?.use_gliner ?? false;
   const clusterProfile = `${useGpu ? "gpu" : "cpu"}_${clusterSize}`;
 
+  const showCostPanel = usesAiQuery || usesGliner;
+
   useEffect(() => {
-    if (!hasTable || !usesAiQuery || !selectedConfig) { setCostEstimate(null); return; }
+    if (!hasTable || !showCostPanel || !selectedConfig) { setCostEstimate(null); return; }
     setLoadingCost(true);
     const params = new URLSearchParams({
       table: sourceTable,
@@ -83,13 +89,15 @@ export default function RunPage() {
       max_rows: String(maxRows),
       cluster_profile: clusterProfile,
       use_gliner: String(usesGliner),
+      use_ai_query: String(usesAiQuery),
+      detection_profile: selectedConfig.detection_profile || "fast",
     });
     fetch(`/api/pipeline/cost-estimate?${params}`)
       .then((r) => r.json())
       .then(setCostEstimate)
       .catch((e: any) => { setError(e.message || "Failed to load cost estimate"); setCostEstimate(null); })
       .finally(() => setLoadingCost(false));
-  }, [sourceTable, hasTable, usesAiQuery, selectedConfig?.endpoint, textCol, maxRows, clusterProfile, usesGliner]);
+  }, [sourceTable, hasTable, showCostPanel, usesAiQuery, selectedConfig?.endpoint, textCol, maxRows, clusterProfile, usesGliner, selectedConfig?.detection_profile]);
 
   useEffect(() => {
     if (runStatus && runStatus.state && !TERMINAL_STATES.includes(runStatus.state)) {
@@ -122,6 +130,7 @@ export default function RunPage() {
         doc_id_column: docIdCol,
         max_rows: maxRows,
         cluster_profile: clusterProfile,
+        refresh_approach: refreshApproach,
       });
       setRunStatus(status);
       refetchHistory();
@@ -138,7 +147,7 @@ export default function RunPage() {
     <div>
       <h2 className="page-title">Run Pipeline</h2>
       <p className="page-desc">Execute the PII redaction pipeline on a Unity Catalog table.</p>
-      <ErrorBanner message={error} onDismiss={() => setError("")} />
+      <ErrorBanner message={displayError} onDismiss={() => setError("")} />
 
       <div className="card p-5 mb-6 grid grid-cols-2 gap-4 max-w-2xl">
         <div className="col-span-2">
@@ -222,19 +231,37 @@ export default function RunPage() {
             <span className="text-xs text-amber-600 dark:text-amber-400">GPU recommended when GLiNER is enabled</span>
           )}
         </div>
-        {usesAiQuery && hasTable && (
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Refresh Mode</label>
+          <select className="input-field" value={refreshApproach}
+            onChange={(e) => setRefreshApproach(e.target.value as "full" | "incremental")}>
+            <option value="full">Full (overwrite)</option>
+            <option value="incremental">Incremental (append)</option>
+          </select>
+        </div>
+        {refreshApproach === "full" && outputTable && (
+          <div className="col-span-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+            Full refresh will overwrite the existing output table if it exists.
+          </div>
+        )}
+        {showCostPanel && hasTable && (
           <div className="col-span-2 border border-blue-200 dark:border-blue-800 rounded-lg p-3 bg-blue-50/50 dark:bg-blue-900/10">
-            <h4 className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-2">Cost Estimate</h4>
+            <h4
+              className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-2 cursor-help"
+              title="Estimates are directional, based on observed benchmarks with ensemble detection. Actual costs vary with data shape, cluster load, and model endpoint."
+            >Cost Estimate <span className="font-normal opacity-60">(approx.)</span></h4>
             {loadingCost && <p className="text-xs text-gray-400 animate-pulse">Calculating...</p>}
             {costEstimate && !loadingCost && (
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div><span className="text-gray-500">Rows:</span> <span className="font-medium">{costEstimate.row_count.toLocaleString()}</span></div>
                 <div><span className="text-gray-500">Characters:</span> <span className="font-medium">{costEstimate.total_chars.toLocaleString()}</span></div>
-                <div><span className="text-gray-500">Endpoint:</span> <span className="font-medium">{costEstimate.endpoint}</span></div>
-                <div><span className="text-gray-500">Input tokens:</span> <span className="font-medium">{costEstimate.estimated_input_tokens.toLocaleString()}</span></div>
-                <div><span className="text-gray-500">Output tokens:</span> <span className="font-medium">{costEstimate.estimated_output_tokens.toLocaleString()}</span></div>
                 <div><span className="text-gray-500">Est. runtime:</span> <span className="font-medium">{costEstimate.estimated_minutes} min</span></div>
-                <div><span className="text-gray-500">AI Query cost:</span> <span className="font-medium">${costEstimate.ai_query_cost_usd.toFixed(4)}</span></div>
+                {costEstimate.use_ai_query && <>
+                  <div><span className="text-gray-500">Endpoint:</span> <span className="font-medium">{costEstimate.endpoint}</span></div>
+                  <div><span className="text-gray-500">Input tokens:</span> <span className="font-medium">{costEstimate.estimated_input_tokens.toLocaleString()}</span></div>
+                  <div><span className="text-gray-500">Output tokens:</span> <span className="font-medium">{costEstimate.estimated_output_tokens.toLocaleString()}</span></div>
+                  <div><span className="text-gray-500">AI Query cost:</span> <span className="font-medium">${costEstimate.ai_query_cost_usd.toFixed(4)}</span></div>
+                </>}
                 <div><span className="text-gray-500">Compute cost:</span> <span className="font-medium">${costEstimate.compute_cost_usd.toFixed(4)}</span></div>
                 <div><span className="text-gray-500">Total est.:</span> <span className="font-bold text-blue-700 dark:text-blue-300">${costEstimate.estimated_cost_usd.toFixed(4)}</span></div>
               </div>

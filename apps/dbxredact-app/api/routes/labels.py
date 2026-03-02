@@ -1,6 +1,5 @@
 """Labeling/annotation routes for ground truth creation."""
 
-import uuid
 from typing import List
 from fastapi import APIRouter, Query
 from api.services.db import fetch_all, fetch_one, execute, _table, quote_table, validate_identifier
@@ -20,9 +19,8 @@ async def list_unlabeled_documents(
     rows = fetch_all(
         f"""SELECT s.`{doc_id_column}` AS doc_id, s.`{text_column}` AS text
         FROM {quote_table(source_table)} s
-        LEFT ANTI JOIN {_table('redact_annotations')} a
-            ON CAST(s.`{doc_id_column}` AS STRING) = a.doc_id AND a.source_table = %(source_table)s
-                AND a.workflow = 'label'
+        LEFT ANTI JOIN {_table('redact_ground_truths')} g
+            ON CAST(s.`{doc_id_column}` AS STRING) = g.doc_id AND g.source_table = %(source_table)s
         LIMIT %(limit)s""",
         {"source_table": source_table, "limit": limit},
     )
@@ -72,16 +70,13 @@ async def list_documents_with_labels(
 @router.post("/batch")
 async def batch_label(doc_id: str, source_table: str, labels: List[dict]):
     for label in labels:
-        annotation_id = str(uuid.uuid4())
         execute(
-            f"""INSERT INTO {_table('redact_annotations')}
-            (annotation_id, doc_id, source_table, workflow, entity_text, entity_type,
-             start, end_pos, action, corrected_type, corrected_value, detection_method, created_at)
-            VALUES (%(annotation_id)s, %(doc_id)s, %(source_table)s, 'label',
+            f"""INSERT INTO {_table('redact_ground_truths')}
+            (doc_id, source_table, entity_text, entity_type, start, end_pos, created_at)
+            VALUES (%(doc_id)s, %(source_table)s,
                     %(entity_text)s, %(entity_type)s, %(start)s, %(end_pos)s,
-                    'label', %(entity_type)s, NULL, NULL, current_timestamp())""",
+                    current_timestamp())""",
             {
-                "annotation_id": annotation_id,
                 "doc_id": doc_id,
                 "source_table": source_table,
                 "entity_text": label["entity_text"],
@@ -98,8 +93,8 @@ async def labeling_stats(source_table: str = Query(...)):
     row = fetch_one(
         f"""SELECT
             (SELECT count(DISTINCT doc_id) FROM {quote_table(source_table)}) as total_docs,
-            (SELECT count(DISTINCT doc_id) FROM {_table('redact_annotations')}
-             WHERE source_table = %(source_table)s AND workflow = 'label') as labeled_docs""",
+            (SELECT count(DISTINCT doc_id) FROM {_table('redact_ground_truths')}
+             WHERE source_table = %(source_table)s) as labeled_docs""",
         {"source_table": source_table},
     )
     return row or {}
