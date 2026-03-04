@@ -314,6 +314,6 @@ class TestMergeOverlappingSpans:
         merged = _merge_overlapping_spans(entities)
         result = redact_text(text, merged, strategy="typed")
         assert "[LOCATION]" in result
-        assert "N]" not in result
+        assert result.replace("[LOCATION]", "").find("N]") == -1
         assert result.count("[LOCATION]") == 1
 

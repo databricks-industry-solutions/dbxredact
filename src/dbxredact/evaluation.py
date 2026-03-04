@@ -579,3 +579,68 @@ def summarize_method_strengths(
 
     return pd.DataFrame(rows)
 
+
+def diagnose_strict_failures(
+    ground_truth_df: DataFrame,
+    detection_df: DataFrame,
+    doc_id_column: str = "doc_id",
+    chunk_column: str = "chunk",
+    entity_column: str = "entity",
+    begin_column: str = "begin",
+    end_column: str = "end",
+    start_column: str = "start",
+) -> pd.DataFrame:
+    """Find entities that match in overlap mode but fail strict containment.
+
+    For each such pair, computes how many characters the detection span is
+    off at the start and end boundaries.  Positive ``start_delta`` means the
+    detection began *after* the GT span (front-clipped); positive ``end_delta``
+    means the detection ended *before* the GT span (back-clipped).
+
+    Returns:
+        Pandas DataFrame with columns: doc_id, gt_text, gt_start, gt_end,
+        det_text, det_start, det_end, start_delta, end_delta, boundary_type.
+    """
+    from pyspark.sql.functions import lit, when
+
+    gt = ground_truth_df.alias("gt")
+    det = detection_df.alias("det")
+
+    overlap_base = (
+        (col(f"det.{doc_id_column}") == col(f"gt.{doc_id_column}"))
+        & (
+            contains(lower(col(f"gt.{chunk_column}")), lower(col(f"det.{entity_column}")))
+            | contains(lower(col(f"det.{entity_column}")), lower(col(f"gt.{chunk_column}")))
+        )
+    )
+    overlap_pos = (
+        (col(f"det.{start_column}") < col(f"gt.{end_column}"))
+        & (col(f"det.{end_column}") > col(f"gt.{begin_column}"))
+    )
+
+    strict_ok = (
+        (col(f"det.{start_column}") <= col(f"gt.{begin_column}"))
+        & (col(f"det.{end_column}") >= col(f"gt.{end_column}") - 1)
+    )
+
+    joined = gt.join(det, overlap_base & overlap_pos, "inner").where(~strict_ok)
+
+    result = joined.select(
+        col(f"gt.{doc_id_column}").alias("doc_id"),
+        col(f"gt.{chunk_column}").alias("gt_text"),
+        col(f"gt.{begin_column}").alias("gt_start"),
+        col(f"gt.{end_column}").alias("gt_end"),
+        col(f"det.{entity_column}").alias("det_text"),
+        col(f"det.{start_column}").alias("det_start"),
+        col(f"det.{end_column}").alias("det_end"),
+        (col(f"det.{start_column}") - col(f"gt.{begin_column}")).alias("start_delta"),
+        (col(f"gt.{end_column}") - col(f"det.{end_column}")).alias("end_delta"),
+    ).withColumn(
+        "boundary_type",
+        when((col("start_delta") > 0) & (col("end_delta") > 0), lit("both"))
+        .when(col("start_delta") > 0, lit("start_clipped"))
+        .when(col("end_delta") > 0, lit("end_clipped"))
+        .otherwise(lit("extended")),
+    )
+
+    return result.toPandas()

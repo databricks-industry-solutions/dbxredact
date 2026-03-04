@@ -573,3 +573,46 @@ for method_name, errors in error_analyses.get("overlap", {}).items():
         print(f"[BENCHMARK_RESULTS] Recall by type:")
         for _, r in errors["recall_by_type"].iterrows():
             print(f"[BENCHMARK_RESULTS]   {r['gt_entity_type']}: {r['recall']:.3f} ({r['tp']}/{r['tp']+r['fn']})")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Strict vs Overlap Boundary Diagnostic
+# MAGIC
+# MAGIC For each detection method, find entities that match in **overlap** mode but fail **strict**
+# MAGIC containment.  Reports how many characters the detected span is off at the start / end,
+# MAGIC which reveals whether the detector systematically clips entity boundaries.
+
+# COMMAND ----------
+
+from dbxredact import diagnose_strict_failures
+
+for method_name, exploded_df in exploded_results.items():
+    diag = diagnose_strict_failures(ground_truth_df, exploded_df)
+    if diag.empty:
+        print(f"{method_name.upper()}: No overlap-only failures (strict matches everything overlap does).")
+        continue
+
+    print(f"\n{'='*80}")
+    print(f"BOUNDARY DIAGNOSTIC: {method_name.upper()}  ({len(diag)} overlap-only matches)")
+    print(f"{'='*80}")
+
+    # Distribution of boundary_type
+    type_dist = diag["boundary_type"].value_counts()
+    print(f"\nBoundary type distribution:")
+    for bt, cnt in type_dist.items():
+        print(f"  {bt}: {cnt}")
+
+    # Average deltas
+    print(f"\nMean start_delta: {diag['start_delta'].mean():.2f}  (positive = front-clipped)")
+    print(f"Mean end_delta:   {diag['end_delta'].mean():.2f}  (positive = back-clipped)")
+
+    # Show sample rows
+    print(f"\nSample boundary failures (up to 20):")
+    display(diag.head(20))
+
+    print(f"\n[BENCHMARK_RESULTS] BOUNDARY_DIAG {method_name}: "
+          f"total={len(diag)} "
+          + " ".join(f"{bt}={cnt}" for bt, cnt in type_dist.items())
+          + f" mean_start_delta={diag['start_delta'].mean():.2f}"
+          + f" mean_end_delta={diag['end_delta'].mean():.2f}")

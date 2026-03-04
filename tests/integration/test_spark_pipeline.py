@@ -85,7 +85,7 @@ class TestAlignmentUnionConsensus:
         gliner = []
         result = align_entities_multi_source(
             presidio_entities=presidio, gliner_entities=gliner,
-            ai_entities=ai, doc_id="d1", mode="consensus",
+            ai_entities=ai, doc_id="d1", min_sources=2,
         )
         assert len(result) >= 1
         assert result[0]["entity"] == "John"

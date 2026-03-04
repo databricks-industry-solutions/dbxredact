@@ -4,7 +4,11 @@ import json
 from typing import List
 
 import numpy as np
-from sklearn.isotonic import IsotonicRegression
+
+
+def _get_isotonic_regression():
+    from sklearn.isotonic import IsotonicRegression
+    return IsotonicRegression
 
 
 class CalibratedScorer:
@@ -14,7 +18,7 @@ class CalibratedScorer:
     """
 
     def __init__(self):
-        self._models: dict[str, IsotonicRegression] = {}
+        self._models: dict = {}
 
     def fit(self, source: str, scores: List[float], labels: List[int]) -> "CalibratedScorer":
         """Fit calibration for a single source.
@@ -24,7 +28,7 @@ class CalibratedScorer:
             scores: Raw confidence scores
             labels: Binary ground truth (1 = true entity, 0 = not)
         """
-        ir = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
+        ir = _get_isotonic_regression()(y_min=0.0, y_max=1.0, out_of_bounds="clip")
         ir.fit(np.array(scores), np.array(labels))
         self._models[source] = ir
         return self
@@ -62,7 +66,7 @@ class CalibratedScorer:
             data = json.load(f)
         scorer = cls()
         for source, params in data.items():
-            ir = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
+            ir = _get_isotonic_regression()(y_min=0.0, y_max=1.0, out_of_bounds="clip")
             ir.X_thresholds_ = np.array(params["X_thresholds_"])
             ir.y_thresholds_ = np.array(params["y_thresholds_"])
             ir.X_min_ = ir.X_thresholds_[0]
