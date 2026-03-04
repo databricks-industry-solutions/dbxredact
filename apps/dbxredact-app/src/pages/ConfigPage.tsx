@@ -5,8 +5,9 @@ import type { Config } from "../types";
 
 const PROFILE_PRESETS: Record<string, Partial<typeof DEFAULTS>> = {
   fast: {
-    use_presidio: false, use_ai_query: true, use_gliner: true,
-    reasoning_effort: "low", gliner_max_words: 512, presidio_model_size: "lg",
+    use_presidio: true, use_ai_query: true, use_gliner: true,
+    reasoning_effort: "low", gliner_max_words: 256, presidio_model_size: "lg",
+    presidio_pattern_only: true,
   },
   deep: {
     use_presidio: true, use_ai_query: true, use_gliner: true,
@@ -15,7 +16,7 @@ const PROFILE_PRESETS: Record<string, Partial<typeof DEFAULTS>> = {
 };
 
 const PROFILE_DESCRIPTIONS: Record<string, string> = {
-  fast: "AI Query + GLiNER. Highest accuracy (F1~0.86) and precision (P~0.92). Fastest processing -- skips Presidio entirely. Best for routine redaction and large-scale batch jobs.",
+  fast: "AI Query + GLiNER + Presidio (pattern-only). Highest accuracy (F1~0.86) and precision (P~0.92). Pattern-only Presidio adds deterministic regex backup (SSN, phone, MRN, dates) without spaCy. Best for routine redaction and large-scale batch jobs.",
   deep: "All three detectors with fine-grained GLiNER chunking and medium LLM reasoning. Maximum recall (R~0.95) for compliance-critical workloads. Slower and more expensive.",
   custom: "Configure detection methods and parameters manually.",
 };
@@ -23,7 +24,7 @@ const PROFILE_DESCRIPTIONS: Record<string, string> = {
 const DEFAULTS = {
   name: "default",
   detection_profile: "fast",
-  use_presidio: false,
+  use_presidio: true,
   use_ai_query: true,
   use_gliner: true,
   endpoint: "databricks-gpt-oss-120b",
@@ -33,8 +34,9 @@ const DEFAULTS = {
   redaction_strategy: "typed",
   alignment_mode: "union",
   reasoning_effort: "low",
-  gliner_max_words: 512,
+  gliner_max_words: 256,
   presidio_model_size: "trf",
+  presidio_pattern_only: true,
 };
 
 export default function ConfigPage() {

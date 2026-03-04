@@ -179,6 +179,7 @@ def run_detection_pipeline(
     fail_on_presidio_error: bool = True,
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
     presidio_model_size: str = None,
+    presidio_pattern_only: bool = False,
     ai_model_type: str = "foundation",
     alignment_mode: AlignmentMode = "union",
     fuzzy_threshold: int = 50,
@@ -203,6 +204,7 @@ def run_detection_pipeline(
         align_results: If True and multiple methods enabled, align results
         fail_on_presidio_error: If False, continue without Presidio if models unavailable
         reasoning_effort: AI Query reasoning effort ("low", "medium", "high")
+        presidio_pattern_only: If True, use only pattern recognizers (no spaCy).
         fuzzy_threshold: Fuzzy matching threshold for alignment (0-100, default 50)
         entity_filter: Optional EntityFilter for deny/allow list processing
 
@@ -231,6 +233,7 @@ def run_detection_pipeline(
         fail_on_presidio_error=fail_on_presidio_error,
         reasoning_effort=reasoning_effort,
         presidio_model_size=presidio_model_size,
+        presidio_pattern_only=presidio_pattern_only,
         ai_model_type=ai_model_type,
         row_count=row_count,
     )
@@ -311,6 +314,7 @@ def run_redaction_pipeline(
     max_rows: Optional[int] = 10000,
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
     presidio_model_size: str = None,
+    presidio_pattern_only: bool = False,
     ai_model_type: str = "foundation",
     alignment_mode: AlignmentMode = "union",
     fuzzy_threshold: int = 50,
@@ -338,6 +342,7 @@ def run_redaction_pipeline(
         output_strategy: 'validation' (all columns) or 'production' (doc_id + redacted only)
         max_rows: Maximum rows to process after dedup. Set to None or 0 to process all rows. Default: 10000
         presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg')
+        presidio_pattern_only: If True, use only pattern recognizers (no spaCy).
         ai_model_type: "foundation" or "external" (for Claude, etc.)
         fuzzy_threshold: Fuzzy matching threshold for alignment (0-100, default 50)
         entity_filter: Optional EntityFilter for deny/allow list processing
@@ -384,6 +389,7 @@ def run_redaction_pipeline(
         fail_on_presidio_error=fail_on_presidio_error,
         reasoning_effort=reasoning_effort,
         presidio_model_size=presidio_model_size,
+        presidio_pattern_only=presidio_pattern_only,
         ai_model_type=ai_model_type,
         alignment_mode=alignment_mode,
         fuzzy_threshold=fuzzy_threshold,
@@ -407,7 +413,7 @@ def run_redaction_pipeline(
     output_df = _select_output_columns(result_df, doc_id_column, text_column, output_strategy)
 
     print(f"4. Writing to {output_table}...")
-    output_df.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(output_table)
+    output_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(output_table)
     t_write_done = time.time()
     print(f"   Redaction + write: {t_write_done - t_redact_start:.1f}s  |  Total pipeline: {t_write_done - t_pipeline_start:.1f}s")
 
@@ -477,6 +483,7 @@ def run_redaction_pipeline_streaming(
     output_strategy: OutputStrategy = "production",
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
     presidio_model_size: str = None,
+    presidio_pattern_only: bool = False,
     ai_model_type: str = "foundation",
     alignment_mode: AlignmentMode = "union",
     max_files_per_trigger: Optional[int] = 10,
@@ -540,8 +547,8 @@ def run_redaction_pipeline_streaming(
     # Ensure checkpoint volume exists
     _ensure_checkpoint_volume_exists(spark, checkpoint_path)
 
-    # Pre-check Presidio availability if enabled
-    if use_presidio:
+    # Pre-check Presidio availability if enabled (skip check for pattern-only mode)
+    if use_presidio and not presidio_pattern_only:
         from .detection import check_presidio_available
         is_available, error_msg = check_presidio_available()
         if not is_available:
@@ -560,7 +567,8 @@ def run_redaction_pipeline_streaming(
         from .presidio import make_presidio_batch_udf
         from pyspark.sql.functions import from_json
         presidio_udf = make_presidio_batch_udf(
-            score_threshold=score_threshold, model_size=presidio_model_size
+            score_threshold=score_threshold, model_size=presidio_model_size,
+            pattern_only=presidio_pattern_only,
         )
         stream_df = stream_df.withColumn(
             "presidio_results", presidio_udf(col(doc_id_column), col(text_column))
@@ -740,6 +748,7 @@ def run_redaction_pipeline_by_tag(
     ai_model_type: str = "foundation",
     alignment_mode: AlignmentMode = "union",
     fuzzy_threshold: int = 50,
+    presidio_pattern_only: bool = False,
 ) -> DataFrame:
     """
     Run redaction pipeline on columns identified by Unity Catalog tags.
@@ -806,6 +815,7 @@ def run_redaction_pipeline_by_tag(
             ai_model_type=ai_model_type,
             alignment_mode=alignment_mode,
             fuzzy_threshold=fuzzy_threshold,
+            presidio_pattern_only=presidio_pattern_only,
         )
 
     return result_df

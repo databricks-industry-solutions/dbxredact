@@ -95,7 +95,7 @@ DEFAULT_CONFIG = {
     "config_id": str(uuid.uuid4()),
     "name": "default",
     "detection_profile": "fast",
-    "use_presidio": False,
+    "use_presidio": True,
     "use_ai_query": True,
     "use_gliner": True,
     "endpoint": "databricks-gpt-oss-120b",
@@ -105,8 +105,9 @@ DEFAULT_CONFIG = {
     "redaction_strategy": "typed",
     "alignment_mode": "union",
     "reasoning_effort": "low",
-    "gliner_max_words": 512,
+    "gliner_max_words": 256,
     "presidio_model_size": "trf",
+    "presidio_pattern_only": True,
 }
 
 

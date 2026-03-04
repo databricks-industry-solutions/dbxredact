@@ -19,8 +19,9 @@ class ConfigCreate(BaseModel):
     redaction_strategy: str = "typed"
     alignment_mode: str = "union"
     reasoning_effort: Optional[str] = "low"
-    gliner_max_words: Optional[int] = 512
+    gliner_max_words: Optional[int] = 256
     presidio_model_size: Optional[str] = "trf"
+    presidio_pattern_only: Optional[bool] = False
     extra_params: Optional[Dict[str, Any]] = None
 
 

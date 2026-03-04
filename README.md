@@ -101,6 +101,38 @@ CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.checkpoints;
 
 Detection methods can be used individually or in ensemble. Ensemble results are merged via configurable alignment (union or consensus).
 
+### Detection Profiles
+
+| Profile | Detectors | GLiNER Chunk | Presidio | Best For |
+|---------|-----------|-------------|----------|----------|
+| **Fast** (default) | AI Query (low) + GLiNER + Presidio (pattern-only) | 256 words | Pattern-only (no spaCy) | Routine redaction, large-scale batch |
+| **Deep** | All three | 256 words | spaCy trf | Compliance-critical, maximum recall |
+| **Custom** | Manual | Manual | Manual | Experimenting with specific configs |
+
+The **fast** profile achieves F1~0.89 (overlap) across benchmark datasets by combining AI Query with GLiNER and Presidio in pattern-only mode (deterministic regex for SSN, phone, MRN, dates -- no spaCy required).
+
+### Presidio Pattern-Only Mode
+
+When Presidio is enabled, it normally loads spaCy NER models (400+ MB). If you want deterministic pattern-based detection as a lightweight backup (SSN, phone, MRN, dates, reference IDs) without the spaCy dependency, pass `presidio_pattern_only=True`:
+
+```python
+result_df = run_detection_pipeline(
+    spark=spark, source_df=df, doc_id_column="doc_id", text_column="text",
+    use_presidio=True, use_ai_query=True, use_gliner=True,
+    presidio_pattern_only=True,  # regex-only, no spaCy
+)
+```
+
+Pattern-only mode uses Presidio's built-in regex recognizers (SSN, phone, email, credit card, IP) plus custom recognizers for MRN, reference IDs, age/gender, and DD/MM date formats. NER-based recognizers (PERSON, LOCATION) are skipped.
+
+### Benchmark Interpretation
+
+Ground-truth annotations may not be perfect -- some edge cases (3-letter hospital abbreviations, bare number sequences, standalone day names) represent a ceiling that no general model will fully reach. When evaluating benchmark results:
+
+- Focus on **aligned recall** (the aligned output is what drives redaction) and **precision** (false positives erode user trust).
+- Use **block lists** to force-flag known entities that detectors miss, and **safe lists** to suppress recurring false positives.
+- Re-run benchmarks after config changes to measure the actual impact.
+
 ## Cluster Profiles
 
 Six pre-configured job variants ship with the bundle:

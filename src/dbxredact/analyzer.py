@@ -2,12 +2,46 @@
 
 import spacy.util
 from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern
-from presidio_analyzer.nlp_engine import NlpEngineProvider
+from presidio_analyzer.nlp_engine import NlpEngineProvider, NlpEngine, NlpArtifacts
 
 
 class SpacyModelNotFoundError(Exception):
     """Raised when required spaCy models are not installed."""
     pass
+
+
+class _StubNlpEngine(NlpEngine):
+    """No-op NLP engine for pattern-only Presidio (skips spaCy entirely)."""
+
+    def __init__(self):
+        self.nlp = {}
+
+    def process_text(self, text, language):
+        return NlpArtifacts(
+            entities=[], tokens=[], lemmas=[], tokens_indices=[],
+            nlp_engine=self, language=language,
+        )
+
+    def process_batch(self, texts, language, **kwargs):
+        return [(t, self.process_text(t, language)) for t in texts]
+
+    def is_loaded(self):
+        return True
+
+    def load(self):
+        pass
+
+    def get_supported_languages(self):
+        return ["en"]
+
+    def get_supported_entities(self):
+        return []
+
+    def is_stopword(self, word, language):
+        return False
+
+    def is_punct(self, word, language):
+        return False
 
 
 # Custom recognizer for age/gender patterns common in clinical text (e.g. "65F", "32M")
@@ -19,6 +53,38 @@ AgeGenderRecognizer = PatternRecognizer(
     supported_entity="AGE_GENDER",
     patterns=[AGE_GENDER_PATTERN],
     context=["age", "sex", "gender"],
+)
+
+# DD/MM/YY and DD/MM/YYYY date patterns (not covered by Presidio built-ins)
+_DATE_DMY_PATTERNS = [
+    Pattern(name="dd_mm_yyyy", regex=r"\b\d{1,2}/\d{1,2}/\d{4}\b", score=0.7),
+    Pattern(name="dd_mm_yy", regex=r"\b\d{1,2}/\d{1,2}/\d{2}\b", score=0.6),
+    Pattern(name="dd-mm-yyyy", regex=r"\b\d{1,2}-\d{1,2}-\d{4}\b", score=0.7),
+    Pattern(name="dd-mm-yy", regex=r"\b\d{1,2}-\d{1,2}-\d{2}\b", score=0.6),
+]
+
+DateDMYRecognizer = PatternRecognizer(
+    supported_entity="DATE_TIME",
+    patterns=_DATE_DMY_PATTERNS,
+    context=["date", "dob", "born", "admission", "discharge", "appointment"],
+)
+
+DayOfWeekRecognizer = PatternRecognizer(
+    supported_entity="DATE_TIME",
+    patterns=[Pattern(
+        name="day_of_week",
+        regex=r"\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b",
+        score=0.85,
+    )],
+)
+
+AgeYearsOldRecognizer = PatternRecognizer(
+    supported_entity="AGE",
+    patterns=[Pattern(
+        name="age_years_old",
+        regex=r"\b\d{1,3}[\s-]?year[\s-]?(?:s[\s-]?)?old\b",
+        score=0.9,
+    )],
 )
 
 
@@ -200,5 +266,51 @@ def get_analyzer_engine(
     )
     analyzer.registry.add_recognizer(ref_recognizer)
 
+    analyzer.registry.add_recognizer(DateDMYRecognizer)
+    analyzer.registry.add_recognizer(DayOfWeekRecognizer)
+    analyzer.registry.add_recognizer(AgeYearsOldRecognizer)
     analyzer = add_recognizers_to_analyzer(analyzer)
+    return analyzer
+
+
+def get_pattern_only_analyzer(
+    default_score_threshold: float = 0.5,
+    **kwargs,
+) -> AnalyzerEngine:
+    """AnalyzerEngine using only pattern recognizers -- no spaCy required.
+
+    Loads Presidio's built-in pattern recognizers (SSN, phone, email, credit card,
+    IP, etc.) plus custom MRN, reference-ID, age/gender, and DD/MM date recognizers.
+    NER-based recognizers still load but return nothing because the NLP engine is a
+    no-op stub.
+    """
+    analyzer = AnalyzerEngine(
+        nlp_engine=_StubNlpEngine(),
+        supported_languages=["en"],
+        default_score_threshold=default_score_threshold,
+        **kwargs,
+    )
+
+    # Custom healthcare patterns
+    phi_patterns = [
+        Pattern(name="mrn", regex=r"\bMRN[:\s]*\d{6,10}\b", score=0.8),
+        Pattern(name="patient_id", regex=r"\b(?:PT|PAT|PATIENT)[:\s-]*\d{6,10}\b", score=0.8),
+    ]
+    analyzer.registry.add_recognizer(PatternRecognizer(
+        supported_entity="MEDICAL_RECORD_NUMBER",
+        patterns=phi_patterns,
+        context=["mrn", "medical", "record", "patient"],
+    ))
+
+    # Business reference / case IDs
+    analyzer.registry.add_recognizer(PatternRecognizer(
+        supported_entity="ID_NUMBER",
+        patterns=[Pattern(name="reference_number", regex=r"\b[A-Z]{2,4}-[\d-]{4,}\b", score=0.6)],
+        context=["reference", "case", "claim", "application", "wire", "dispute"],
+    ))
+
+    analyzer.registry.add_recognizer(AgeGenderRecognizer)
+    analyzer.registry.add_recognizer(DateDMYRecognizer)
+    analyzer.registry.add_recognizer(DayOfWeekRecognizer)
+    analyzer.registry.add_recognizer(AgeYearsOldRecognizer)
     return analyzer

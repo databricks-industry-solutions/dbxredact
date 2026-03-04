@@ -251,6 +251,7 @@ def _merge_overlapping_spans(results: List[Dict[str, Any]]) -> List[Dict[str, An
     for current in sorted_results[1:]:
         prev = merged[-1]
         if current["start"] < prev["end"]:
+            prev["start"] = min(prev["start"], current["start"])
             prev["end"] = max(prev["end"], current["end"])
             if len(current.get("entity", "")) > len(prev.get("entity", "")):
                 prev["entity"] = current["entity"]

@@ -172,7 +172,7 @@ dbutils.widgets.dropdown(
 )
 dbutils.widgets.text(
     name="gliner_max_words",
-    defaultValue="512",
+    defaultValue="256",
     label="20. GLiNER Max Words (chunk size)",
 )
 dbutils.widgets.text(
@@ -229,10 +229,12 @@ safe_list_table = dbutils.widgets.get("safe_list_table").strip()
 block_list_table = dbutils.widgets.get("block_list_table").strip()
 
 # Profile overrides
+presidio_pattern_only = False
 if detection_profile == "fast":
-    use_presidio, use_ai_query, use_gliner = False, True, True
-    reasoning_effort, gliner_max_words = "low", 512
-    print("Profile: Fast Mode -- AI Query + GLiNER, reasoning=low, max_words=512")
+    use_presidio, use_ai_query, use_gliner = True, True, True
+    reasoning_effort, gliner_max_words = "low", 256
+    presidio_pattern_only = True
+    print("Profile: Fast Mode -- AI Query + GLiNER + Presidio (pattern-only), reasoning=low, max_words=256")
 elif detection_profile == "deep":
     use_presidio, use_ai_query, use_gliner = True, True, True
     reasoning_effort, gliner_max_words = "medium", 256
@@ -374,6 +376,7 @@ if refresh_approach == "incremental":
         max_files_per_trigger=max_files_per_trigger,
         reasoning_effort=reasoning_effort,
         gliner_max_words=gliner_max_words,
+        presidio_pattern_only=presidio_pattern_only,
     )
 
     # Wait for completion (availableNow trigger processes all then stops)
@@ -406,6 +409,7 @@ else:
             alignment_mode=alignment_mode,
             reasoning_effort=reasoning_effort,
             gliner_max_words=gliner_max_words,
+            presidio_pattern_only=presidio_pattern_only,
         )
     else:
         result_df = run_redaction_pipeline(
@@ -428,6 +432,7 @@ else:
             entity_filter=entity_filter,
             reasoning_effort=reasoning_effort,
             gliner_max_words=gliner_max_words,
+            presidio_pattern_only=presidio_pattern_only,
         )
 
 # COMMAND ----------

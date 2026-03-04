@@ -52,16 +52,22 @@ def format_presidio_batch_results(
 _analyzer_cache = {}
 
 
-def _get_cached_analyzer(add_pci: bool, score_threshold: float, model_size: str = None):
+def _get_cached_analyzer(add_pci: bool, score_threshold: float, model_size: str = None, pattern_only: bool = False):
     """Get or create cached analyzer instance (singleton per worker)."""
-    cache_key = (add_pci, score_threshold, model_size)
+    cache_key = (add_pci, score_threshold, model_size, pattern_only)
 
     if cache_key not in _analyzer_cache:
-        from .analyzer import get_analyzer_engine
-        _analyzer_cache[cache_key] = get_analyzer_engine(
-            add_pci=add_pci, default_score_threshold=score_threshold,
-            model_size=model_size,
-        )
+        if pattern_only:
+            from .analyzer import get_pattern_only_analyzer
+            _analyzer_cache[cache_key] = get_pattern_only_analyzer(
+                default_score_threshold=score_threshold,
+            )
+        else:
+            from .analyzer import get_analyzer_engine
+            _analyzer_cache[cache_key] = get_analyzer_engine(
+                add_pci=add_pci, default_score_threshold=score_threshold,
+                model_size=model_size,
+            )
 
     return _analyzer_cache[cache_key]
 
@@ -71,6 +77,7 @@ def make_presidio_batch_udf(
     add_pci: bool = False,
     model_size: str = None,
     entities: list = None,
+    pattern_only: bool = False,
 ):
     """
     Create a Pandas UDF for batch PHI detection using Presidio.
@@ -80,12 +87,13 @@ def make_presidio_batch_udf(
         add_pci: Whether to add PCI (Payment Card Industry) recognizers
         model_size: spaCy model size ('sm', 'md', 'lg', 'trf')
         entities: Entity types to detect. Defaults to PRESIDIO_ENTITY_TYPES.
+        pattern_only: If True, use only pattern recognizers (no spaCy/NER).
 
     Returns:
         A Pandas UDF that takes (doc_ids, texts) and returns JSON-serialized results
 
     Raises:
-        SpacyModelNotFoundError: If required spaCy models are not installed
+        SpacyModelNotFoundError: If required spaCy models are not installed (unless pattern_only)
     """
     entity_list = list(entities or PRESIDIO_ENTITY_TYPES)
 
@@ -93,7 +101,7 @@ def make_presidio_batch_udf(
     def analyze_udf(
         batch_iter: Iterator[Tuple[pd.Series, pd.Series]],
     ) -> Iterator[pd.Series]:
-        analyzer = _get_cached_analyzer(add_pci, score_threshold, model_size)
+        analyzer = _get_cached_analyzer(add_pci, score_threshold, model_size, pattern_only=pattern_only)
         batch_analyzer = BatchAnalyzerEngine(analyzer_engine=analyzer)
 
         for doc_ids, texts in batch_iter:

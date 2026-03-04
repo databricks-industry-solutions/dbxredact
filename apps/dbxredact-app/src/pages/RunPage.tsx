@@ -48,6 +48,7 @@ export default function RunPage() {
   const [costEstimate, setCostEstimate] = useState<CostEstimate | null>(null);
   const [loadingCost, setLoadingCost] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const failCountRef = useRef(0);
 
   const parts = sourceTable.split(".");
   const hasTable = parts.length === 3 && parts[2] !== "";
@@ -101,10 +102,12 @@ export default function RunPage() {
 
   useEffect(() => {
     if (runStatus && runStatus.state && !TERMINAL_STATES.includes(runStatus.state)) {
+      failCountRef.current = 0;
       pollRef.current = setInterval(async () => {
         try {
           const res = await fetch(`/api/pipeline/status/${runStatus.run_id}`);
           if (res.ok) {
+            failCountRef.current = 0;
             const updated: RunStatus = await res.json();
             setRunStatus(updated);
             if (updated.state && TERMINAL_STATES.includes(updated.state)) {
@@ -112,8 +115,24 @@ export default function RunPage() {
               pollRef.current = null;
               refetchHistory();
             }
+          } else {
+            failCountRef.current++;
+            if (failCountRef.current >= 5) {
+              clearInterval(pollRef.current!);
+              pollRef.current = null;
+              setRunStatus((prev) => prev ? { ...prev, state: "TERMINATED", result_state: "UNKNOWN" } : prev);
+              refetchHistory();
+            }
           }
-        } catch { /* ignore transient */ }
+        } catch {
+          failCountRef.current++;
+          if (failCountRef.current >= 5) {
+            clearInterval(pollRef.current!);
+            pollRef.current = null;
+            setRunStatus((prev) => prev ? { ...prev, state: "TERMINATED", result_state: "UNKNOWN" } : prev);
+            refetchHistory();
+          }
+        }
       }, 5000);
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
@@ -293,7 +312,10 @@ export default function RunPage() {
         </div>
       )}
 
-      <h3 className="text-lg font-semibold mb-3">Recent Runs</h3>
+      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+        Recent Runs
+        <button type="button" onClick={() => refetchHistory()} className="btn-secondary text-sm">Refresh</button>
+      </h3>
       {history?.length ? (
         <table className="data-table">
           <thead>

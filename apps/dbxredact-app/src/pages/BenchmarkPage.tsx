@@ -13,6 +13,7 @@ export default function BenchmarkPage() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const failCountRef = useRef(0);
   const { data: configs, loading: loadingConfigs, error: configsError } = useGet<Config[]>("/config/");
 
   useEffect(() => {
@@ -25,18 +26,34 @@ export default function BenchmarkPage() {
 
   useEffect(() => {
     if (runStatus && runStatus.state && !TERMINAL_STATES.includes(runStatus.state)) {
+      failCountRef.current = 0;
       pollRef.current = setInterval(async () => {
         try {
           const res = await fetch(`/api/benchmark/status/${runStatus.run_id}`);
           if (res.ok) {
+            failCountRef.current = 0;
             const updated: RunStatus = await res.json();
             setRunStatus(updated);
             if (updated.state && TERMINAL_STATES.includes(updated.state)) {
               clearInterval(pollRef.current!);
               pollRef.current = null;
             }
+          } else {
+            failCountRef.current++;
+            if (failCountRef.current >= 5) {
+              clearInterval(pollRef.current!);
+              pollRef.current = null;
+              setRunStatus((prev) => prev ? { ...prev, state: "TERMINATED", result_state: "UNKNOWN" } : prev);
+            }
           }
-        } catch { /* ignore */ }
+        } catch {
+          failCountRef.current++;
+          if (failCountRef.current >= 5) {
+            clearInterval(pollRef.current!);
+            pollRef.current = null;
+            setRunStatus((prev) => prev ? { ...prev, state: "TERMINATED", result_state: "UNKNOWN" } : prev);
+          }
+        }
       }, 5000);
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };

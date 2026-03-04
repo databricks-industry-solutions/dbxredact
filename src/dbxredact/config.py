@@ -114,6 +114,9 @@ response: [{{"entity": "Elm Valley Cancer Center", "entity_type": "HOSPITAL_NAME
 
 MedicalText: "RE: WIRE-2024-081590 -- Wire transfer of $50,000 from account 8820-5567-1243 at Heritage Trust Bank. Contact: Lisa Chen, EIN 95-4281037."
 response: [{{"entity": "WIRE-2024-081590", "entity_type": "ID_NUMBER"}}, {{"entity": "8820-5567-1243", "entity_type": "ID_NUMBER"}}, {{"entity": "Heritage Trust Bank", "entity_type": "ORGANIZATION"}}, {{"entity": "Lisa Chen", "entity_type": "PERSON"}}, {{"entity": "95-4281037", "entity_type": "ID_NUMBER"}}]
+
+MedicalText: "SSN 123-45-6789. DOB: 24/07/1974. Phone: 608-555-7714. MRN: 0408267. Follow-up scheduled 15/03/25."
+response: [{{"entity": "123-45-6789", "entity_type": "US_SSN"}}, {{"entity": "24/07/1974", "entity_type": "DATE_TIME"}}, {{"entity": "608-555-7714", "entity_type": "PHONE_NUMBER"}}, {{"entity": "0408267", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{"entity": "15/03/25", "entity_type": "DATE_TIME"}}]
 """
 
 # Default thresholds
@@ -212,7 +215,7 @@ GLINER_LABEL_MAP = {
     "pin": "PIN",
 }
 DEFAULT_GLINER_THRESHOLD = 0.2
-DEFAULT_GLINER_MAX_WORDS = 512
+DEFAULT_GLINER_MAX_WORDS = 256
 
 DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
     # Keys must match DEFAULT_GLINER_LABELS exactly
@@ -318,11 +321,14 @@ _SHORT_LOCATION_RE = _re.compile(r"^[A-Z]{2,3}$")
 
 def should_ignore_entity(entity_text: str, entity_type: str) -> bool:
     """Return True if the entity should be dropped from results."""
+    stripped = entity_text.strip()
     if entity_type in ENTITY_TYPES_TO_IGNORE:
         return True
-    if ENTITY_TEXT_IGNORE_PATTERNS.match(entity_text.strip()):
+    if len(stripped) <= 2:
         return True
-    if entity_type == "LOCATION" and _SHORT_LOCATION_RE.match(entity_text.strip()):
+    if ENTITY_TEXT_IGNORE_PATTERNS.match(stripped):
+        return True
+    if entity_type == "LOCATION" and _SHORT_LOCATION_RE.match(stripped):
         return True
     return False
 

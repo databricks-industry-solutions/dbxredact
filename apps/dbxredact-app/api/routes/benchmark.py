@@ -25,6 +25,11 @@ def _config_to_job_params(config: dict) -> dict[str, str]:
         "use_ai_query": str(config.get("use_ai_query", "true")).lower(),
         "use_gliner": str(config.get("use_gliner", "false")).lower(),
         "score_threshold": str(config.get("score_threshold", "0.5")),
+        "detection_profile": config.get("detection_profile") or "fast",
+        "reasoning_effort": config.get("reasoning_effort") or "low",
+        "gliner_max_words": str(config.get("gliner_max_words", 256)),
+        "presidio_model_size": config.get("presidio_model_size") or "trf",
+        "presidio_pattern_only": str(config.get("presidio_pattern_only", "false")).lower(),
     }
 
 

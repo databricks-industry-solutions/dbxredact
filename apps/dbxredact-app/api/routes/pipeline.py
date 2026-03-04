@@ -48,8 +48,9 @@ async def run_pipeline(body: PipelineRunRequest):
         "score_threshold": str(config.get("score_threshold", 0.5)),
         "redaction_strategy": config.get("redaction_strategy", "typed"),
         "reasoning_effort": config.get("reasoning_effort", "low"),
-        "gliner_max_words": str(config.get("gliner_max_words", 512)),
+        "gliner_max_words": str(config.get("gliner_max_words", 256)),
         "presidio_model_size": config.get("presidio_model_size", "trf"),
+        "presidio_pattern_only": str(config.get("presidio_pattern_only", "false")).lower(),
         "max_rows": str(body.max_rows or 10000),
         "safe_list_table": f"{CATALOG}.{SCHEMA}.redact_safe_list",
         "block_list_table": f"{CATALOG}.{SCHEMA}.redact_block_list",
@@ -144,7 +145,7 @@ async def cancel_pipeline(run_id: int):
 
 @router.get("/history", response_model=List[JobHistoryItem])
 async def pipeline_history():
-    return fetch_all(f"SELECT * FROM {_table('redact_job_history')} ORDER BY started_at DESC LIMIT 50")
+    return fetch_all(f"SELECT * FROM {_table('redact_job_history')} ORDER BY started_at DESC LIMIT 10")
 
 
 # Cost constants -- canonical source is src/dbxredact/cost.py. Keep in sync.
@@ -186,7 +187,7 @@ COMPUTE_PROFILES = {
 }
 
 
-# Fast mode skips Presidio and uses low reasoning -- ~1.4x faster from benchmarks.
+# Fast mode uses pattern-only Presidio (no spaCy) and low reasoning -- ~1.4x faster from benchmarks.
 _PROFILE_SPEED_FACTOR = {"fast": 1.4, "deep": 1.0, "custom": 1.0}
 
 

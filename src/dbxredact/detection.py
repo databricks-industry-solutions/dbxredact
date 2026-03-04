@@ -61,6 +61,7 @@ def run_presidio_detection(
     score_threshold: float = DEFAULT_PRESIDIO_SCORE_THRESHOLD,
     num_cores: int = 10,
     model_size: str = None,
+    pattern_only: bool = False,
     _repartition: bool = True,
 ) -> DataFrame:
     """
@@ -73,20 +74,22 @@ def run_presidio_detection(
         score_threshold: Minimum confidence score (0.0-1.0)
         num_cores: Number of cores for repartitioning
         model_size: spaCy model size ('sm', 'md', 'lg'). Default 'lg'.
+        pattern_only: If True, use only pattern recognizers (no spaCy).
         _repartition: Whether to repartition. Set False when caller already did.
 
     Returns:
         DataFrame with 'presidio_results' and 'presidio_results_struct' columns
         
     Raises:
-        SpacyModelNotFoundError: If required spaCy models are not installed
+        SpacyModelNotFoundError: If required spaCy models are not installed (unless pattern_only)
     """
-    is_available, error_msg = check_presidio_available()
-    if not is_available:
-        raise SpacyModelNotFoundError(error_msg)
+    if not pattern_only:
+        is_available, error_msg = check_presidio_available()
+        if not is_available:
+            raise SpacyModelNotFoundError(error_msg)
 
     presidio_udf = make_presidio_batch_udf(
-        score_threshold=score_threshold, model_size=model_size
+        score_threshold=score_threshold, model_size=model_size, pattern_only=pattern_only,
     )
 
     base_df = df.repartition(_smart_partitions(df, num_cores)) if _repartition else df
@@ -268,6 +271,7 @@ def run_detection(
     fail_on_presidio_error: bool = True,
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
     presidio_model_size: str = None,
+    presidio_pattern_only: bool = False,
     ai_model_type: str = "foundation",
     row_count: Optional[int] = None,
 ) -> DataFrame:
@@ -294,6 +298,7 @@ def run_detection(
                 score_threshold=score_threshold,
                 num_cores=num_cores,
                 model_size=presidio_model_size,
+                pattern_only=presidio_pattern_only,
                 _repartition=False,
             )
             result_df = result_df.cache()

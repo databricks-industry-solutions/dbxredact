@@ -14,6 +14,7 @@ export interface Config {
   reasoning_effort?: string;
   gliner_max_words?: number;
   presidio_model_size?: string;
+  presidio_pattern_only?: boolean;
   extra_params?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
