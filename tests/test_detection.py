@@ -3,7 +3,7 @@
 import pytest
 
 from dbxredact.config import (
-    ELIGIBLE_ENTITY_TYPES,
+    PRESIDIO_ENTITY_TYPES,
     LABEL_ENUMS,
     PHI_PROMPT_SKELETON,
     DEFAULT_PRESIDIO_SCORE_THRESHOLD,
@@ -15,11 +15,11 @@ from dbxredact.detection import check_presidio_available
 class TestConfig:
     """Tests for configuration constants."""
 
-    def test_eligible_entity_types_defined(self):
-        """Test that eligible entity types are defined."""
-        assert len(ELIGIBLE_ENTITY_TYPES) > 0
-        assert "PERSON" in ELIGIBLE_ENTITY_TYPES
-        assert "EMAIL" in ELIGIBLE_ENTITY_TYPES
+    def test_presidio_entity_types_defined(self):
+        """Test that Presidio entity types are defined."""
+        assert len(PRESIDIO_ENTITY_TYPES) > 0
+        assert "PERSON" in PRESIDIO_ENTITY_TYPES
+        assert "EMAIL_ADDRESS" in PRESIDIO_ENTITY_TYPES
 
     def test_label_enums_defined(self):
         """Test that label enums are defined."""

@@ -41,7 +41,7 @@ class TestIsFuzzyMatch:
 
 
 class TestIsOverlap:
-    """Tests for interval overlap detection."""
+    """Tests for half-open interval [start, end) overlap detection."""
 
     def test_complete_overlap(self):
         """Completely overlapping intervals should return True."""
@@ -60,16 +60,16 @@ class TestIsOverlap:
         assert not is_overlap(0, 5, 10, 15)
 
     def test_adjacent_intervals(self):
-        """Adjacent intervals should not overlap by default."""
+        """Adjacent intervals [0,5) and [6,10) should not overlap."""
         assert not is_overlap(0, 5, 6, 10)
 
     def test_adjacent_with_tolerance(self):
-        """Adjacent intervals should overlap with tolerance."""
-        assert is_overlap(0, 5, 6, 10, tolerance=1)
+        """Adjacent intervals should overlap with sufficient tolerance."""
+        assert is_overlap(0, 5, 6, 10, tolerance=2)
 
-    def test_single_point_overlap(self):
-        """Single point overlap should return True."""
-        assert is_overlap(0, 5, 5, 10)
+    def test_adjacent_intervals_exclusive(self):
+        """[0,5) and [5,10) are adjacent (not overlapping) with exclusive end."""
+        assert not is_overlap(0, 5, 5, 10)
 
 
 class TestCalculateOverlap:
@@ -108,4 +108,3 @@ class TestCalculateStringOverlap:
         """Strings with suffix-prefix overlap."""
         result = calculate_string_overlap("hello", "lowing")
         assert result > 0.0
-

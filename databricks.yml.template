@@ -1,14 +1,17 @@
 bundle:
   name: dbxredact
-  databricks_cli_version: ">=0.234.*"
+  databricks_cli_version: ">=0.283.0"
 
 variables:
   package_version:
     description: "Package version for wheel deployment"
-    default: "0.1.0"
+    default: "__PACKAGE_VERSION__"
+  sql_warehouse_id:
+    description: "SQL Warehouse ID for the management app"
 
 include:
-  - resources/*.yml
+  - resources/jobs.yml
+  - resources/app.yml  # Comment out to skip app deployment
   - variables.yml
 
 artifacts:
@@ -28,6 +31,7 @@ targets:
     variables:
       catalog: __CATALOG__
       schema: __SCHEMA__
+      sql_warehouse_id: __WAREHOUSE_ID__
 
   prod:
     mode: production
@@ -36,6 +40,7 @@ targets:
     variables:
       catalog: __CATALOG__
       schema: __SCHEMA__
+      sql_warehouse_id: __WAREHOUSE_ID__
       root_path: ${var.current_working_directory}
     permissions:
       - user_name: ${var.current_user}

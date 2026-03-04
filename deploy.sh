@@ -52,10 +52,20 @@ if [ -z "${SCHEMA}" ]; then
     exit 1
 fi
 
+if [ -z "${WAREHOUSE_ID}" ]; then
+    echo "Error: WAREHOUSE_ID not set in ${ENV_FILE}"
+    exit 1
+fi
+
 echo "Databricks Host: ${DATABRICKS_HOST}"
 echo "Catalog: ${CATALOG}"
 echo "Schema: ${SCHEMA}"
+echo "Warehouse ID: ${WAREHOUSE_ID}"
 echo ""
+
+# Get package version from pyproject.toml (single source of truth)
+PACKAGE_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+echo "Package version: ${PACKAGE_VERSION}"
 
 # Generate databricks.yml from template
 echo "Generating databricks.yml from template..."
@@ -67,6 +77,8 @@ fi
 sed -e "s|__DATABRICKS_HOST__|${DATABRICKS_HOST}|g" \
     -e "s|__CATALOG__|${CATALOG}|g" \
     -e "s|__SCHEMA__|${SCHEMA}|g" \
+    -e "s|__WAREHOUSE_ID__|${WAREHOUSE_ID}|g" \
+    -e "s|__PACKAGE_VERSION__|${PACKAGE_VERSION}|g" \
     databricks.yml.template > databricks.yml
 echo "Generated databricks.yml"
 
@@ -74,9 +86,6 @@ echo "Generated databricks.yml"
 echo ""
 echo "Building wheel with poetry..."
 poetry build
-
-# Get package version from pyproject.toml
-PACKAGE_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
 WHEEL_FILE="dbxredact-${PACKAGE_VERSION}-py3-none-any.whl"
 WHEEL_PATH="dist/${WHEEL_FILE}"
 
@@ -118,3 +127,72 @@ echo "=== Deployment Complete ==="
 echo "Target: ${TARGET}"
 echo "Host: ${DATABRICKS_HOST}"
 echo "Wheel: ${VOLUME_PATH}/${WHEEL_FILE}"
+echo ""
+
+# Grant UC permissions to app service principal
+APP_NAME="dbxredact-app"
+echo "Fetching service principal for app '${APP_NAME}'..."
+
+APP_JSON=$(databricks apps get "${APP_NAME}" --output json 2>&1) || {
+    echo "ERROR: Failed to get app info: ${APP_JSON}"
+    echo "The app may not exist yet -- it will be created by 'bundle run' below."
+    echo "Re-run this script after the first deploy to grant permissions."
+    APP_JSON=""
+}
+
+if [ -n "${APP_JSON}" ]; then
+    SPN_ID=$(echo "${APP_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_id',''))")
+    echo "App service principal ID: ${SPN_ID}"
+
+    if [ -z "${SPN_ID}" ]; then
+        echo "ERROR: service_principal_id not found in app response."
+        echo "Full response: ${APP_JSON}"
+        exit 1
+    fi
+
+    SPN_JSON=$(databricks service-principals get "${SPN_ID}" --output json 2>&1) || {
+        echo "ERROR: Failed to get service principal: ${SPN_JSON}"
+        exit 1
+    }
+    APP_ID=$(echo "${SPN_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('applicationId',''))")
+
+    if [ -z "${APP_ID}" ]; then
+        echo "ERROR: application_id not found for SPN ${SPN_ID}."
+        echo "Full response: ${SPN_JSON}"
+        exit 1
+    fi
+
+    echo "Service principal application_id: ${APP_ID}"
+    echo "Granting UC permissions..."
+
+    GRANT_STATEMENTS=(
+        "GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${APP_ID}\`"
+        "GRANT USE SCHEMA ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
+        "GRANT CREATE TABLE ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
+        "GRANT SELECT ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
+        "GRANT MODIFY ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
+    )
+
+    for STMT in "${GRANT_STATEMENTS[@]}"; do
+        echo "  Running: ${STMT}"
+        RESULT=$(databricks api post /api/2.0/sql/statements \
+            --json "{\"warehouse_id\": \"${WAREHOUSE_ID}\", \"statement\": \"${STMT}\", \"wait_timeout\": \"30s\"}" 2>&1)
+        STATUS=$(echo "${RESULT}" | python3 -c "import sys,json; d=json.load(sys.stdin); s=d.get('status',{}); print(s.get('state','UNKNOWN'))" 2>/dev/null || echo "PARSE_ERROR")
+        if [ "${STATUS}" = "SUCCEEDED" ]; then
+            echo "    OK"
+        else
+            echo "    FAILED (status: ${STATUS})"
+            echo "    Response: ${RESULT}"
+            exit 1
+        fi
+    done
+    echo "All grants applied successfully."
+fi
+
+# Start/redeploy the app
+echo ""
+echo "Starting app..."
+databricks bundle run dbxredact_app -t "${TARGET}"
+
+echo ""
+echo "=== Done ==="

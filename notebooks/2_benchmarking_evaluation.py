@@ -33,7 +33,10 @@
 
 # COMMAND ----------
 
+import uuid
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 from pyspark.sql.functions import col, explode
 
 from dbxredact import (
@@ -43,6 +46,15 @@ from dbxredact import (
     format_metrics_summary,
     save_evaluation_results,
     compare_methods_across_datasets,
+    analyze_errors,
+    build_recall_matrix,
+    summarize_method_strengths,
+)
+from dbxredact.config import (
+    DEFAULT_GLINER_MODEL,
+    DEFAULT_GLINER_THRESHOLD,
+    DEFAULT_PRESIDIO_SCORE_THRESHOLD,
+    DEFAULT_AI_REASONING_EFFORT,
 )
 
 # COMMAND ----------
@@ -209,62 +221,83 @@ print(f"Total tokens in corpus: {all_tokens:,}")
 
 # MAGIC %md
 # MAGIC ## Evaluate Each Detection Method
+# MAGIC
+# MAGIC Runs both **strict** (full-containment with -1 tolerance) and **overlap** (interval
+# MAGIC overlap for partial matches) evaluation modes.
 
 # COMMAND ----------
 
-evaluation_results = {}
+MATCH_MODES = ["strict", "overlap"]
 
-for method_name, exploded_df in exploded_results.items():
-    print(f"\n{'='*80}")
-    print(f"Evaluating: {method_name.upper()}")
-    print(f"{'='*80}")
+run_id = str(uuid.uuid4())
+base_run_metadata = {
+    "run_id": run_id,
+    "gliner_model": DEFAULT_GLINER_MODEL,
+    "reasoning_effort": DEFAULT_AI_REASONING_EFFORT,
+    "score_threshold": DEFAULT_PRESIDIO_SCORE_THRESHOLD,
+    "gliner_threshold": DEFAULT_GLINER_THRESHOLD,
+}
+print(f"Run metadata: {base_run_metadata}")
 
-    eval_df = evaluate_detection(ground_truth_df, exploded_df)
-    metrics = calculate_metrics(eval_df, all_tokens)
-    evaluation_results[method_name] = metrics
+# evaluation_results[match_mode][method_name] = metrics dict
+evaluation_results = {mode: {} for mode in MATCH_MODES}
 
-    print(f"\n{method_name.upper()} Contingency Table:")
-    contingency_df = format_contingency_table(metrics)
-    display(contingency_df)
+for mode in MATCH_MODES:
+    print(f"\n{'#'*80}")
+    print(f"  MATCH MODE: {mode.upper()}")
+    print(f"{'#'*80}")
 
-    print(f"\n{method_name.upper()} Metrics Summary:")
-    summary_df = format_metrics_summary(metrics)
-    display(summary_df)
+    run_metadata = {**base_run_metadata, "match_mode": mode}
 
-    save_evaluation_results(
-        spark=spark,
-        metrics=metrics,
-        dataset_name=dataset_name,
-        method_name=method_name,
-        output_table=evaluation_output_table,
-        mode=write_mode,
-    )
+    for method_name, exploded_df in exploded_results.items():
+        print(f"\n{'='*80}")
+        print(f"Evaluating: {method_name.upper()} ({mode})")
+        print(f"{'='*80}")
 
-    print(f"\nResults saved to {evaluation_output_table}")
+        eval_df = evaluate_detection(ground_truth_df, exploded_df, match_mode=mode)
+        metrics = calculate_metrics(eval_df, all_tokens)
+        evaluation_results[mode][method_name] = metrics
+
+        print(f"\n{method_name.upper()} Contingency Table:")
+        contingency_df = format_contingency_table(metrics)
+        display(contingency_df)
+
+        print(f"\n{method_name.upper()} Metrics Summary:")
+        summary_df = format_metrics_summary(metrics)
+        display(summary_df)
+
+        save_evaluation_results(
+            spark=spark,
+            metrics=metrics,
+            dataset_name=dataset_name,
+            method_name=f"{method_name}_{mode}",
+            output_table=evaluation_output_table,
+            mode=write_mode,
+            run_metadata=run_metadata,
+        )
+
+        print(f"\nResults saved to {evaluation_output_table}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Compare Methods
+# MAGIC ## Compare Methods (both modes)
 
 # COMMAND ----------
 
-comparison_data = {
-    "Method": [],
-    "Precision": [],
-    "Recall": [],
-    "F1 Score": [],
-    "Accuracy": [],
-}
+comparison_rows = []
+for mode in MATCH_MODES:
+    for method_name, metrics in evaluation_results[mode].items():
+        comparison_rows.append({
+            "Method": method_name.capitalize(),
+            "Match Mode": mode,
+            "Precision": metrics["precision"],
+            "Recall": metrics["recall"],
+            "F1 Score": metrics["f1_score"],
+            "Accuracy": metrics["accuracy"],
+        })
 
-for method_name, metrics in evaluation_results.items():
-    comparison_data["Method"].append(method_name.capitalize())
-    comparison_data["Precision"].append(metrics["precision"])
-    comparison_data["Recall"].append(metrics["recall"])
-    comparison_data["F1 Score"].append(metrics["f1_score"])
-    comparison_data["Accuracy"].append(metrics["accuracy"])
-
-comparison_df = pd.DataFrame(comparison_data)
+comparison_df = pd.DataFrame(comparison_rows)
 display(comparison_df)
 
 # COMMAND ----------
@@ -299,19 +332,244 @@ except Exception as e:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## False Negatives Analysis
+# MAGIC ## Error Analysis per Method
+# MAGIC
+# MAGIC For each detection method, identify the top false positives (entities detected that
+# MAGIC are not in ground truth) and false negatives (ground truth entities that were missed),
+# MAGIC broken down by entity type.
 
 # COMMAND ----------
 
-if "aligned" in exploded_results:
-    aligned_eval_df = evaluate_detection(ground_truth_df, exploded_results["aligned"])
+# error_analyses[match_mode][method_name] = analyze_errors() dict
+error_analyses = {mode: {} for mode in MATCH_MODES}
 
-    print("Top Missed Entities (False Negatives):")
-    false_negatives = (
-        aligned_eval_df.where(col("entity").isNull())
-        .select("chunk")
-        .groupBy("chunk")
-        .count()
-        .orderBy(col("count").desc())
-    )
-    display(false_negatives.limit(20))
+for mode in MATCH_MODES:
+    print(f"\n{'#'*80}")
+    print(f"  ERROR ANALYSIS -- MATCH MODE: {mode.upper()}")
+    print(f"{'#'*80}")
+
+    for method_name, exploded_df in exploded_results.items():
+        print(f"\n{'='*80}")
+        print(f"ERROR ANALYSIS: {method_name.upper()} ({mode})")
+        print(f"{'='*80}")
+
+        errors = analyze_errors(ground_truth_df, exploded_df, match_mode=mode)
+        error_analyses[mode][method_name] = errors
+
+        if not errors["fp_by_type"].empty:
+            print(f"\nFalse Positives by Entity Type:")
+            display(errors["fp_by_type"])
+
+        if not errors["top_fps"].empty:
+            print(f"\nTop 25 False Positive Entities:")
+            display(errors["top_fps"])
+
+        if not errors["fn_by_type"].empty:
+            print(f"\nFalse Negatives by GT Entity Type:")
+            display(errors["fn_by_type"])
+
+        if not errors["top_fns"].empty:
+            print(f"\nTop 25 Missed Ground Truth Entities:")
+            display(errors["top_fns"])
+
+        if not errors["recall_by_type"].empty:
+            print(f"\nRecall by Entity Type:")
+            display(errors["recall_by_type"])
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Method Strengths and Weaknesses
+
+# COMMAND ----------
+
+for mode in MATCH_MODES:
+    print(f"\n--- {mode.upper()} mode ---")
+    strengths_df = summarize_method_strengths(error_analyses[mode], evaluation_results[mode])
+    display(strengths_df)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Precision / Recall / F1 Comparison
+
+# COMMAND ----------
+
+for mode in MATCH_MODES:
+    methods = list(evaluation_results[mode].keys())
+    metrics_to_plot = ["precision", "recall", "f1_score"]
+    x = np.arange(len(methods))
+    width = 0.25
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for i, metric in enumerate(metrics_to_plot):
+        values = [evaluation_results[mode][m][metric] for m in methods]
+        bars = ax.bar(x + i * width, values, width, label=metric.replace("_", " ").title())
+        for bar, v in zip(bars, values):
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
+                    f"{v:.2f}", ha="center", va="bottom", fontsize=8)
+
+    ax.set_ylabel("Score")
+    ax.set_title(f"Detection Method Comparison ({mode})")
+    ax.set_xticks(x + width)
+    ax.set_xticklabels([m.capitalize() for m in methods])
+    ax.legend()
+    ax.set_ylim(0, 1.1)
+    plt.tight_layout()
+    plt.show()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Recall by Entity Type Heatmap
+# MAGIC
+# MAGIC Shows which entity types each detection method catches well (green) vs. misses (red).
+
+# COMMAND ----------
+
+for mode in MATCH_MODES:
+    matrix, entity_types, method_names = build_recall_matrix(error_analyses[mode])
+
+    if len(entity_types) > 0:
+        fig, ax = plt.subplots(figsize=(max(8, len(method_names) * 2.5), max(6, len(entity_types) * 0.45)))
+        im = ax.imshow(matrix, cmap="RdYlGn", aspect="auto", vmin=0, vmax=1)
+
+        ax.set_xticks(range(len(method_names)))
+        ax.set_xticklabels([m.capitalize() for m in method_names])
+        ax.set_yticks(range(len(entity_types)))
+        ax.set_yticklabels(entity_types)
+        ax.set_title(f"Recall by Entity Type ({mode})")
+
+        for i in range(len(entity_types)):
+            for j in range(len(method_names)):
+                val = matrix[i, j]
+                color = "black" if 0.3 < val < 0.8 else "white"
+                ax.text(j, i, f"{val:.2f}", ha="center", va="center", color=color, fontsize=8)
+
+        fig.colorbar(im, ax=ax, label="Recall", shrink=0.8)
+        plt.tight_layout()
+        plt.show()
+    else:
+        print(f"No entity type recall data available for {mode} mode.")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## False Positive Distribution by Entity Type
+
+# COMMAND ----------
+
+for mode in MATCH_MODES:
+    n_methods = len(error_analyses[mode])
+    fig, axes = plt.subplots(1, max(n_methods, 1), figsize=(5 * max(n_methods, 1), 6), squeeze=False)
+
+    for idx, (method, errors) in enumerate(error_analyses[mode].items()):
+        ax = axes[0][idx]
+        fp_data = errors["fp_by_type"].head(10)
+        if not fp_data.empty:
+            ax.barh(fp_data["entity_type"], fp_data["count"], color="salmon")
+            ax.set_xlabel("Count")
+            ax.set_title(f"{method.capitalize()} - Top FP Types ({mode})")
+            ax.invert_yaxis()
+        else:
+            ax.text(0.5, 0.5, "No FPs", ha="center", va="center", transform=ax.transAxes)
+            ax.set_title(f"{method.capitalize()} - FP Types ({mode})")
+
+    plt.tight_layout()
+    plt.show()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## False Negative Distribution by Entity Type
+
+# COMMAND ----------
+
+for mode in MATCH_MODES:
+    n_methods = len(error_analyses[mode])
+    fig, axes = plt.subplots(1, max(n_methods, 1), figsize=(5 * max(n_methods, 1), 6), squeeze=False)
+
+    for idx, (method, errors) in enumerate(error_analyses[mode].items()):
+        ax = axes[0][idx]
+        fn_data = errors["fn_by_type"].head(10)
+        if not fn_data.empty:
+            type_col = "gt_entity_type" if "gt_entity_type" in fn_data.columns else fn_data.columns[0]
+            ax.barh(fn_data[type_col], fn_data["count"], color="steelblue")
+            ax.set_xlabel("Count")
+            ax.set_title(f"{method.capitalize()} - Top FN Types ({mode})")
+            ax.invert_yaxis()
+        else:
+            ax.text(0.5, 0.5, "No FNs", ha="center", va="center", transform=ax.transAxes)
+            ax.set_title(f"{method.capitalize()} - FN Types ({mode})")
+
+    plt.tight_layout()
+    plt.show()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## TP / FP / FN Stacked Bar Chart
+
+# COMMAND ----------
+
+for mode in MATCH_MODES:
+    methods = list(evaluation_results[mode].keys())
+    fig, ax = plt.subplots(figsize=(10, 5))
+    method_labels = [m.capitalize() for m in methods]
+    tp_vals = [evaluation_results[mode][m]["true_positives"] for m in methods]
+    fp_vals = [evaluation_results[mode][m]["false_positives"] for m in methods]
+    fn_vals = [evaluation_results[mode][m]["false_negatives"] for m in methods]
+
+    x = np.arange(len(methods))
+    bar_width = 0.5
+
+    ax.bar(x, tp_vals, bar_width, label="True Positives", color="forestgreen")
+    ax.bar(x, fp_vals, bar_width, bottom=tp_vals, label="False Positives", color="salmon")
+    ax.bar(x, fn_vals, bar_width, bottom=[t + f for t, f in zip(tp_vals, fp_vals)],
+           label="False Negatives", color="steelblue")
+
+    ax.set_ylabel("Count")
+    ax.set_title(f"TP / FP / FN by Method ({mode})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(method_labels)
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Log Results to stdout
+
+# COMMAND ----------
+
+print("[BENCHMARK_RESULTS] === EVALUATION METRICS ===")
+for mode in MATCH_MODES:
+    for method_name, metrics in evaluation_results[mode].items():
+        print(
+            f"[BENCHMARK_RESULTS] {method_name} ({mode}): "
+            f"P={metrics['precision']:.3f} R={metrics['recall']:.3f} "
+            f"F1={metrics['f1_score']:.3f} TP={metrics['true_positives']} "
+            f"FP={metrics['false_positives']} FN={metrics['false_negatives']}"
+        )
+
+print("[BENCHMARK_RESULTS] === ERROR ANALYSIS (overlap) ===")
+for method_name, errors in error_analyses.get("overlap", {}).items():
+    print(f"[BENCHMARK_RESULTS] --- {method_name.upper()} ---")
+    if not errors["fn_by_type"].empty:
+        print(f"[BENCHMARK_RESULTS] FN by type:")
+        for _, r in errors["fn_by_type"].head(10).iterrows():
+            print(f"[BENCHMARK_RESULTS]   {r['gt_entity_type']}: {r['count']}")
+    if not errors["top_fps"].empty:
+        print(f"[BENCHMARK_RESULTS] Top FPs:")
+        for _, r in errors["top_fps"].head(10).iterrows():
+            etype = r.get("entity_type", "")
+            print(f"[BENCHMARK_RESULTS]   {r['entity']} ({etype}): {r['count']}")
+    if not errors["top_fns"].empty:
+        print(f"[BENCHMARK_RESULTS] Top FNs:")
+        for _, r in errors["top_fns"].head(10).iterrows():
+            print(f"[BENCHMARK_RESULTS]   {r['chunk']}: {r['count']}")
+    if not errors.get("recall_by_type", pd.DataFrame()).empty:
+        print(f"[BENCHMARK_RESULTS] Recall by type:")
+        for _, r in errors["recall_by_type"].iterrows():
+            print(f"[BENCHMARK_RESULTS]   {r['gt_entity_type']}: {r['recall']:.3f} ({r['tp']}/{r['tp']+r['fn']})")

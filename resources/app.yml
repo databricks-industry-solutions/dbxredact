@@ -1,0 +1,55 @@
+resources:
+  apps:
+    dbxredact_app:
+      name: "dbxredact-app"
+      description: "PII/PHI redaction management app"
+      source_code_path: ../apps/dbxredact-app
+      config:
+        command:
+          - sh
+          - -c
+          - pip install -r requirements.txt && npm install && npm run build && uvicorn app:app --host 0.0.0.0 --port 8000
+        env:
+          - name: DATABRICKS_WAREHOUSE_ID
+            value: ${var.sql_warehouse_id}
+          - name: CATALOG
+            value: ${var.catalog}
+          - name: SCHEMA
+            value: ${var.schema}
+          - name: PIPELINE_JOB_NAME
+            value: dbxredact - Redaction Pipeline
+          - name: BENCHMARK_JOB_NAME
+            value: dbxredact - Redaction Benchmark
+      resources:
+        - name: "sql-warehouse"
+          sql_warehouse:
+            id: ${var.sql_warehouse_id}
+            permission: "CAN_USE"
+        - name: "pipeline-cpu-small"
+          job:
+            id: ${resources.jobs.redaction_pipeline_cpu_small.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "pipeline-cpu-medium"
+          job:
+            id: ${resources.jobs.redaction_pipeline_cpu_medium.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "pipeline-cpu-large"
+          job:
+            id: ${resources.jobs.redaction_pipeline_cpu_large.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "pipeline-gpu-small"
+          job:
+            id: ${resources.jobs.redaction_pipeline_gpu_small.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "pipeline-gpu-medium"
+          job:
+            id: ${resources.jobs.redaction_pipeline_gpu_medium.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "pipeline-gpu-large"
+          job:
+            id: ${resources.jobs.redaction_pipeline_gpu_large.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "benchmark-job"
+          job:
+            id: ${resources.jobs.redaction_benchmark.id}
+            permission: "CAN_MANAGE_RUN"

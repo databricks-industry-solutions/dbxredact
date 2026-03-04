@@ -1,5 +1,7 @@
 """Entity alignment functions for combining multiple PHI detection methods."""
 
+import bisect
+import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
@@ -13,6 +15,8 @@ from pyspark.sql.types import (
     IntegerType,
     DoubleType,
 )
+
+logger = logging.getLogger(__name__)
 
 from .utils import is_fuzzy_match, is_overlap
 from .config import (
@@ -114,15 +118,28 @@ def find_best_match(
     entity: Entity,
     candidates: List[Entity],
     fuzzy_threshold: int = DEFAULT_FUZZY_MATCH_THRESHOLD,
+    _sorted_starts: Optional[List[int]] = None,
 ) -> Tuple[Optional[Entity], float, MatchType]:
-    """Find the best matching entity from a list of candidates."""
+    """Find the best matching entity from a list of candidates.
+
+    If _sorted_starts is provided (a list of candidate start positions, parallel
+    to candidates), narrows the search to entities whose spans could overlap,
+    reducing from O(n) to O(k) where k is the number of nearby candidates.
+    """
+    if _sorted_starts is not None and len(candidates) > 20:
+        max_entity_len = max(len(entity.entity), entity.end - entity.start, 1)
+        lo = bisect.bisect_left(_sorted_starts, entity.start - max_entity_len * 2)
+        hi = bisect.bisect_right(_sorted_starts, entity.end + max_entity_len * 2)
+        search_range = candidates[lo:hi]
+    else:
+        search_range = candidates
+
     best_match = None
     best_score = 0.0
     best_type = MatchType.NO_MATCH
 
-    for candidate in candidates:
+    for candidate in search_range:
         score, match_type = calculate_match_score(entity, candidate, fuzzy_threshold)
-
         if match_type == MatchType.EXACT:
             return candidate, score, match_type
         elif score > best_score:
@@ -216,6 +233,43 @@ def calculate_confidence(merged_entity: Dict[str, Any], match_type: MatchType) -
         return "low"
 
 
+CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1}
+
+
+def _merge_overlapping_spans(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Merge overlapping entity spans so redaction never produces garbled output.
+
+    Sorts by start position and sweeps left-to-right. When two spans overlap,
+    the wider span is kept and the higher-confidence entity type wins.
+    """
+    if len(results) <= 1:
+        return results
+
+    sorted_results = sorted(results, key=lambda r: (r["start"], -r["end"]))
+    merged = [sorted_results[0]]
+
+    for current in sorted_results[1:]:
+        prev = merged[-1]
+        if current["start"] < prev["end"]:
+            prev["start"] = min(prev["start"], current["start"])
+            prev["end"] = max(prev["end"], current["end"])
+            if len(current.get("entity", "")) > len(prev.get("entity", "")):
+                prev["entity"] = current["entity"]
+            cur_rank = CONFIDENCE_RANK.get(current.get("confidence", "low"), 0)
+            prev_rank = CONFIDENCE_RANK.get(prev.get("confidence", "low"), 0)
+            if cur_rank > prev_rank:
+                prev["entity_type"] = current["entity_type"]
+                prev["confidence"] = current["confidence"]
+            for key in ("presidio_score", "gliner_score", "ai_score"):
+                if current.get(key) is not None:
+                    if prev.get(key) is None or current[key] > prev[key]:
+                        prev[key] = current[key]
+        else:
+            merged.append(current)
+
+    return merged
+
+
 class MultiSourceAligner:
     """Orchestrates entity alignment across multiple detection sources."""
 
@@ -228,13 +282,35 @@ class MultiSourceAligner:
         presidio_entities: Optional[List[Dict[str, Any]]] = None,
         gliner_entities: Optional[List[Dict[str, Any]]] = None,
         ai_entities: Optional[List[Dict[str, Any]]] = None,
+        min_sources: int = 1,
     ) -> List[Dict[str, Any]]:
-        """Align entities from multiple sources for a single document."""
+        """Align entities from multiple sources for a single document.
+        
+        Args:
+            min_sources: Minimum number of detection sources that must agree
+                for an entity to be included. Use ceil(active_detectors / 2)
+                for majority-vote consensus.
+        """
         normalized_entities = {
             "presidio": self._normalize_entities(presidio_entities, "presidio", doc_id),
             "gliner": self._normalize_entities(gliner_entities, "gliner", doc_id),
             "ai": self._normalize_entities(ai_entities, "ai", doc_id),
         }
+
+        # Build id -> original-index lookup for O(1) marking (replaces list.index)
+        id_to_idx = {}
+        for src, ents in normalized_entities.items():
+            id_to_idx[src] = {id(e): i for i, e in enumerate(ents)}
+
+        # Pre-sort each source by start for bisect-based narrowing
+        sorted_by_src = {}
+        for src, ents in normalized_entities.items():
+            order = sorted(range(len(ents)), key=lambda i: ents[i].start)
+            sorted_by_src[src] = {
+                "order": order,
+                "sorted": [ents[i] for i in order],
+                "starts": [ents[i].start for i in order],
+            }
 
         used_entities = {"presidio": set(), "gliner": set(), "ai": set()}
 
@@ -255,21 +331,23 @@ class MultiSourceAligner:
                 if other_source == primary_source:
                     continue
 
+                src_data = sorted_by_src[other_source]
                 candidates = [
-                    entity
-                    for idx, entity in enumerate(normalized_entities[other_source])
-                    if idx not in used_entities[other_source]
+                    e for i, e in zip(src_data["order"], src_data["sorted"])
+                    if i not in used_entities[other_source]
                 ]
+                cand_starts = [e.start for e in candidates]
 
                 if candidates:
                     best_match, _score, match_type = find_best_match(
-                        primary_entity, candidates, self.fuzzy_threshold
+                        primary_entity, candidates, self.fuzzy_threshold,
+                        _sorted_starts=cand_starts,
                     )
 
                     if best_match and match_type != MatchType.NO_MATCH:
                         matches.append(best_match)
                         match_types.append(match_type)
-                        idx = normalized_entities[other_source].index(best_match)
+                        idx = id_to_idx[other_source][id(best_match)]
                         used_entities[other_source].add(idx)
 
             overall_match_type = (
@@ -293,6 +371,11 @@ class MultiSourceAligner:
                     merged = merge_entities([entity], MatchType.EXACT)
                     merged["confidence"] = calculate_confidence(merged, MatchType.EXACT)
                     results.append(merged)
+
+        if min_sources > 1:
+            results = [r for r in results if len(r.get("sources", [])) >= min_sources]
+
+        results = _merge_overlapping_spans(results)
 
         cleaned_results = []
         for result in results:
@@ -322,6 +405,7 @@ class MultiSourceAligner:
             if len(entities) == 0:
                 return []
         except TypeError:
+            logger.debug("Entities not iterable for source=%s doc_id=%s", source, doc_id)
             return []
 
         normalized = []
@@ -333,7 +417,8 @@ class MultiSourceAligner:
 
                 entity = normalize_entity(entity_dict, source, doc_id)
                 normalized.append(entity)
-            except (ValueError, KeyError, TypeError):
+            except (ValueError, KeyError, TypeError) as exc:
+                logger.debug("Skipping malformed entity from %s: %s", source, exc)
                 continue
 
         return normalized
@@ -345,6 +430,7 @@ def align_entities_multi_source(
     ai_entities: Optional[List[Dict[str, Any]]],
     doc_id: str,
     fuzzy_threshold: int = DEFAULT_FUZZY_MATCH_THRESHOLD,
+    min_sources: int = 1,
 ) -> List[Dict[str, Any]]:
     """Align entities from multiple sources for a single document."""
     aligner = MultiSourceAligner(fuzzy_threshold=fuzzy_threshold)
@@ -353,6 +439,7 @@ def align_entities_multi_source(
         presidio_entities=presidio_entities,
         gliner_entities=gliner_entities,
         ai_entities=ai_entities,
+        min_sources=min_sources,
     )
 
 
@@ -361,6 +448,7 @@ def align_entities_udf(
     include_presidio: bool = True,
     include_gliner: bool = False,
     include_ai: bool = True,
+    min_sources: int = 1,
 ):
     """Create a Pandas UDF for aligning entities from multiple detection sources."""
     entity_struct = StructType(
@@ -397,6 +485,7 @@ def align_entities_udf(
                 ai_entities=ai_ents if include_ai else None,
                 doc_id=doc_id,
                 fuzzy_threshold=fuzzy_threshold,
+                min_sources=min_sources,
             )
             results.append(aligned)
 

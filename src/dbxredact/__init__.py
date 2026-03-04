@@ -14,10 +14,17 @@ Main components:
 """
 
 from .config import (
-    ELIGIBLE_ENTITY_TYPES,
+    PRESIDIO_ENTITY_TYPES,
     LABEL_ENUMS,
-    ENTITIES_TO_IGNORE,
     PHI_PROMPT_SKELETON,
+    ENTITY_TYPES_TO_IGNORE,
+    ENTITY_TEXT_IGNORE_PATTERNS,
+    should_ignore_entity,
+    GLINER_LABEL_MAP,
+    DEFAULT_GLINER_THRESHOLD,
+    JUDGE_PROMPT_SKELETON,
+    NEXT_ACTION_PROMPT_SKELETON,
+    PROMPT_VERSION,
 )
 
 from .utils import (
@@ -25,6 +32,7 @@ from .utils import (
     is_overlap,
     calculate_overlap,
     calculate_string_overlap,
+    build_offset_map,
 )
 
 from .analyzer import SpacyModelNotFoundError
@@ -52,6 +60,9 @@ from .evaluation import (
     save_evaluation_results,
     compare_methods_across_datasets,
     get_best_method_per_dataset,
+    analyze_errors,
+    build_recall_matrix,
+    summarize_method_strengths,
 )
 
 from .detection import (
@@ -65,7 +76,6 @@ from .redaction import (
     redact_text,
     create_redaction_udf,
     create_redacted_table,
-    apply_redaction_to_columns,
     RedactionStrategy,
 )
 
@@ -75,25 +85,58 @@ from .metadata import (
     get_table_metadata,
 )
 
+from .active_learning import (
+    compute_document_uncertainty,
+    build_review_queue,
+    compute_detector_disagreement,
+)
+
+from .cost import estimate_ai_query_cost, print_cost_estimate
+
+from .calibration import CalibratedScorer
+
+from .entity_filter import (
+    EntityFilter,
+    load_filter_from_yaml,
+    load_filter_from_table,
+    apply_safe_filter,
+    apply_block_filter,
+)
+
 from .pipeline import (
     run_detection_pipeline,
     run_redaction_pipeline,
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
     OutputStrategy,
+    AlignmentMode,
+)
+
+from .judge import (
+    run_judge_evaluation,
+    compute_judge_summary,
+    run_next_action_query,
 )
 
 __all__ = [
     # Config
-    "ELIGIBLE_ENTITY_TYPES",
+    "PRESIDIO_ENTITY_TYPES",
     "LABEL_ENUMS",
-    "ENTITIES_TO_IGNORE",
     "PHI_PROMPT_SKELETON",
+    "ENTITY_TYPES_TO_IGNORE",
+    "ENTITY_TEXT_IGNORE_PATTERNS",
+    "should_ignore_entity",
+    "GLINER_LABEL_MAP",
+    "DEFAULT_GLINER_THRESHOLD",
+    "JUDGE_PROMPT_SKELETON",
+    "NEXT_ACTION_PROMPT_SKELETON",
+    "PROMPT_VERSION",
     # Utils
     "is_fuzzy_match",
     "is_overlap",
     "calculate_overlap",
     "calculate_string_overlap",
+    "build_offset_map",
     # Errors
     "SpacyModelNotFoundError",
     # Presidio
@@ -113,6 +156,9 @@ __all__ = [
     "save_evaluation_results",
     "compare_methods_across_datasets",
     "get_best_method_per_dataset",
+    "analyze_errors",
+    "build_recall_matrix",
+    "summarize_method_strengths",
     # Detection
     "run_presidio_detection",
     "run_ai_query_detection",
@@ -122,17 +168,36 @@ __all__ = [
     "redact_text",
     "create_redaction_udf",
     "create_redacted_table",
-    "apply_redaction_to_columns",
     "RedactionStrategy",
     # Metadata
     "get_columns_by_tag",
     "get_protected_columns",
     "get_table_metadata",
+    # Active Learning
+    "compute_document_uncertainty",
+    "build_review_queue",
+    "compute_detector_disagreement",
+    # Cost
+    "estimate_ai_query_cost",
+    "print_cost_estimate",
+    # Calibration
+    "CalibratedScorer",
+    # Entity Filter
+    "EntityFilter",
+    "load_filter_from_yaml",
+    "load_filter_from_table",
+    "apply_safe_filter",
+    "apply_block_filter",
     # Pipeline
     "run_detection_pipeline",
     "run_redaction_pipeline",
     "run_redaction_pipeline_streaming",
     "run_redaction_pipeline_by_tag",
     "OutputStrategy",
+    "AlignmentMode",
+    # Judge
+    "run_judge_evaluation",
+    "compute_judge_summary",
+    "run_next_action_query",
 ]
 
