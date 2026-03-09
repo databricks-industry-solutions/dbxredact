@@ -264,28 +264,33 @@ export default function RunPage() {
           </div>
         )}
         {showCostPanel && hasTable && (
-          <div className="col-span-2 border border-blue-200 dark:border-blue-800 rounded-lg p-3 bg-blue-50/50 dark:bg-blue-900/10">
-            <h4
-              className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-2 cursor-help"
+          <details className="col-span-2 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50/50 dark:bg-blue-900/10">
+            <summary
+              className="text-xs font-semibold text-blue-700 dark:text-blue-300 cursor-pointer select-none p-3"
               title="Estimates are directional, based on observed benchmarks with ensemble detection. Actual costs vary with data shape, cluster load, and model endpoint."
-            >Cost Estimate <span className="font-normal opacity-60">(approx.)</span></h4>
-            {loadingCost && <p className="text-xs text-gray-400 animate-pulse">Calculating...</p>}
-            {costEstimate && !loadingCost && (
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div><span className="text-gray-500">Rows:</span> <span className="font-medium">{costEstimate.row_count.toLocaleString()}</span></div>
-                <div><span className="text-gray-500">Characters:</span> <span className="font-medium">{costEstimate.total_chars.toLocaleString()}</span></div>
-                <div><span className="text-gray-500">Est. runtime:</span> <span className="font-medium">{costEstimate.estimated_minutes} min</span></div>
-                {costEstimate.use_ai_query && <>
-                  <div><span className="text-gray-500">Endpoint:</span> <span className="font-medium">{costEstimate.endpoint}</span></div>
-                  <div><span className="text-gray-500">Input tokens:</span> <span className="font-medium">{costEstimate.estimated_input_tokens.toLocaleString()}</span></div>
-                  <div><span className="text-gray-500">Output tokens:</span> <span className="font-medium">{costEstimate.estimated_output_tokens.toLocaleString()}</span></div>
-                  <div><span className="text-gray-500">AI Query cost:</span> <span className="font-medium">${costEstimate.ai_query_cost_usd.toFixed(4)}</span></div>
-                </>}
-                <div><span className="text-gray-500">Compute cost:</span> <span className="font-medium">${costEstimate.compute_cost_usd.toFixed(4)}</span></div>
-                <div><span className="text-gray-500">Total est.:</span> <span className="font-bold text-blue-700 dark:text-blue-300">${costEstimate.estimated_cost_usd.toFixed(4)}</span></div>
-              </div>
-            )}
-          </div>
+            >
+              Cost Estimate
+              <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded-full ml-1.5 font-medium">Beta</span>
+            </summary>
+            <div className="px-3 pb-3">
+              {loadingCost && <p className="text-xs text-gray-400 animate-pulse">Calculating...</p>}
+              {costEstimate && !loadingCost && (
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div><span className="text-gray-500">Rows:</span> <span className="font-medium">{costEstimate.row_count.toLocaleString()}</span></div>
+                  <div><span className="text-gray-500">Characters:</span> <span className="font-medium">{costEstimate.total_chars.toLocaleString()}</span></div>
+                  <div><span className="text-gray-500">Est. runtime:</span> <span className="font-medium">{costEstimate.estimated_minutes} min</span></div>
+                  {costEstimate.use_ai_query && <>
+                    <div><span className="text-gray-500">Endpoint:</span> <span className="font-medium">{costEstimate.endpoint}</span></div>
+                    <div><span className="text-gray-500">Input tokens:</span> <span className="font-medium">{costEstimate.estimated_input_tokens.toLocaleString()}</span></div>
+                    <div><span className="text-gray-500">Output tokens:</span> <span className="font-medium">{costEstimate.estimated_output_tokens.toLocaleString()}</span></div>
+                    <div><span className="text-gray-500">AI Query cost:</span> <span className="font-medium">${costEstimate.ai_query_cost_usd.toFixed(4)}</span></div>
+                  </>}
+                  <div><span className="text-gray-500">Compute cost:</span> <span className="font-medium">${costEstimate.compute_cost_usd.toFixed(4)}</span></div>
+                  <div><span className="text-gray-500">Total est.:</span> <span className="font-bold text-blue-700 dark:text-blue-300">${costEstimate.estimated_cost_usd.toFixed(4)}</span></div>
+                </div>
+              )}
+            </div>
+          </details>
         )}
 
         <div className="col-span-2 pt-2">

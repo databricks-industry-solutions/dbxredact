@@ -5,20 +5,32 @@ from pyspark.sql import Row
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType
 from dbxredact.evaluation import calculate_metrics, diagnose_strict_failures
 
-_EVAL_ROW_SCHEMA = StructType([
-    StructField("gt", StructType([
-        StructField("doc_id", StringType()),
-        StructField("begin", IntegerType()),
-        StructField("end", IntegerType()),
-        StructField("chunk", StringType()),
-    ])),
-    StructField("det", StructType([
-        StructField("doc_id", StringType()),
-        StructField("start", IntegerType()),
-        StructField("end", IntegerType()),
-        StructField("entity", StringType()),
-    ])),
-])
+_EVAL_ROW_SCHEMA = StructType(
+    [
+        StructField(
+            "gt",
+            StructType(
+                [
+                    StructField("doc_id", StringType()),
+                    StructField("begin", IntegerType()),
+                    StructField("end", IntegerType()),
+                    StructField("chunk", StringType()),
+                ]
+            ),
+        ),
+        StructField(
+            "det",
+            StructType(
+                [
+                    StructField("doc_id", StringType()),
+                    StructField("start", IntegerType()),
+                    StructField("end", IntegerType()),
+                    StructField("entity", StringType()),
+                ]
+            ),
+        ),
+    ]
+)
 
 
 @pytest.fixture
@@ -34,8 +46,9 @@ def _eval_schema():
     }
 
 
-def _make_eval_row(gt_doc_id, gt_begin, gt_end, gt_chunk,
-                    det_doc_id, det_start, det_end, det_entity):
+def _make_eval_row(
+    gt_doc_id, gt_begin, gt_end, gt_chunk, det_doc_id, det_start, det_end, det_entity
+):
     return Row(
         gt=Row(doc_id=gt_doc_id, begin=gt_begin, end=gt_end, chunk=gt_chunk),
         det=Row(doc_id=det_doc_id, start=det_start, end=det_end, entity=det_entity),
@@ -79,9 +92,9 @@ class TestCalculateMetrics:
 
     def test_mixed_tp_fp_fn(self, spark, _eval_schema):
         rows = [
-            _make_eval_row("d1", 0, 5, "John", "d1", 0, 5, "John"),   # TP
-            _make_eval_row(None, None, None, None, "d1", 10, 15, "X"), # FP
-            _make_eval_row("d1", 20, 25, "Jane", None, None, None, None), # FN
+            _make_eval_row("d1", 0, 5, "John", "d1", 0, 5, "John"),  # TP
+            _make_eval_row(None, None, None, None, "d1", 10, 15, "X"),  # FP
+            _make_eval_row("d1", 20, 25, "Jane", None, None, None, None),  # FN
         ]
         df = spark.createDataFrame(rows)
         m = calculate_metrics(df, total_tokens=100, **_eval_schema)
@@ -97,24 +110,34 @@ class TestCalculateMetrics:
 # ---------------------------------------------------------------------------
 def _make_gt_df(spark, rows):
     """rows: list of (doc_id, begin, end, chunk)"""
-    schema = StructType([
-        StructField("doc_id", StringType()),
-        StructField("begin", IntegerType()),
-        StructField("end", IntegerType()),
-        StructField("chunk", StringType()),
-    ])
-    return spark.createDataFrame([Row(doc_id=r[0], begin=r[1], end=r[2], chunk=r[3]) for r in rows], schema=schema)
+    schema = StructType(
+        [
+            StructField("doc_id", StringType()),
+            StructField("begin", IntegerType()),
+            StructField("end", IntegerType()),
+            StructField("chunk", StringType()),
+        ]
+    )
+    return spark.createDataFrame(
+        [Row(doc_id=r[0], begin=r[1], end=r[2], chunk=r[3]) for r in rows],
+        schema=schema,
+    )
 
 
 def _make_det_df(spark, rows):
     """rows: list of (doc_id, start, end, entity)"""
-    schema = StructType([
-        StructField("doc_id", StringType()),
-        StructField("start", IntegerType()),
-        StructField("end", IntegerType()),
-        StructField("entity", StringType()),
-    ])
-    return spark.createDataFrame([Row(doc_id=r[0], start=r[1], end=r[2], entity=r[3]) for r in rows], schema=schema)
+    schema = StructType(
+        [
+            StructField("doc_id", StringType()),
+            StructField("start", IntegerType()),
+            StructField("end", IntegerType()),
+            StructField("entity", StringType()),
+        ]
+    )
+    return spark.createDataFrame(
+        [Row(doc_id=r[0], start=r[1], end=r[2], entity=r[3]) for r in rows],
+        schema=schema,
+    )
 
 
 class TestDiagnoseStrictFailures:

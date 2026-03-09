@@ -163,7 +163,13 @@ class TestMultiSourceAligner:
         aligner = MultiSourceAligner()
 
         presidio_entities = [
-            {"entity": "John", "start": 0, "end": 4, "entity_type": "PERSON", "score": 0.9}
+            {
+                "entity": "John",
+                "start": 0,
+                "end": 4,
+                "entity_type": "PERSON",
+                "score": 0.9,
+            }
         ]
 
         result = aligner.align(
@@ -182,7 +188,13 @@ class TestMultiSourceAligner:
         aligner = MultiSourceAligner()
 
         presidio_entities = [
-            {"entity": "John", "start": 0, "end": 4, "entity_type": "PERSON", "score": 0.9}
+            {
+                "entity": "John",
+                "start": 0,
+                "end": 4,
+                "entity_type": "PERSON",
+                "score": 0.9,
+            }
         ]
         ai_entities = [
             {"entity": "John", "start": 0, "end": 4, "entity_type": "PERSON"}
@@ -219,7 +231,13 @@ class TestAlignEntitiesMultiSource:
     def test_basic_alignment(self):
         """Test basic alignment functionality."""
         presidio_entities = [
-            {"entity": "John", "start": 0, "end": 4, "entity_type": "PERSON", "score": 0.9}
+            {
+                "entity": "John",
+                "start": 0,
+                "end": 4,
+                "entity_type": "PERSON",
+                "score": 0.9,
+            }
         ]
         ai_entities = [
             {"entity": "John", "start": 0, "end": 4, "entity_type": "PERSON"}
@@ -245,7 +263,13 @@ class TestBackwardCompatibility:
             {"entity": "John", "start": 0, "end": 4, "entity_type": "PERSON"}
         ]
         presidio_entities = [
-            {"entity": "John", "start": 0, "end": 4, "entity_type": "PERSON", "score": 0.9}
+            {
+                "entity": "John",
+                "start": 0,
+                "end": 4,
+                "entity_type": "PERSON",
+                "score": 0.9,
+            }
         ]
 
         result = align_entities_row(
@@ -262,20 +286,56 @@ class TestMergeOverlappingSpans:
 
     def test_no_overlap(self):
         entities = [
-            {"entity": "John", "entity_type": "PERSON", "start": 0, "end": 4,
-             "doc_id": "d1", "presidio_score": 0.9, "gliner_score": None, "ai_score": None, "confidence": "high"},
-            {"entity": "NYC", "entity_type": "LOCATION", "start": 20, "end": 23,
-             "doc_id": "d1", "presidio_score": 0.8, "gliner_score": None, "ai_score": None, "confidence": "medium"},
+            {
+                "entity": "John",
+                "entity_type": "PERSON",
+                "start": 0,
+                "end": 4,
+                "doc_id": "d1",
+                "presidio_score": 0.9,
+                "gliner_score": None,
+                "ai_score": None,
+                "confidence": "high",
+            },
+            {
+                "entity": "NYC",
+                "entity_type": "LOCATION",
+                "start": 20,
+                "end": 23,
+                "doc_id": "d1",
+                "presidio_score": 0.8,
+                "gliner_score": None,
+                "ai_score": None,
+                "confidence": "medium",
+            },
         ]
         result = _merge_overlapping_spans(entities)
         assert len(result) == 2
 
     def test_overlapping_spans_merged(self):
         entities = [
-            {"entity": "Austin", "entity_type": "LOCATION", "start": 50, "end": 56,
-             "doc_id": "d1", "presidio_score": 0.9, "gliner_score": None, "ai_score": None, "confidence": "high"},
-            {"entity": "Austin,", "entity_type": "LOCATION", "start": 50, "end": 57,
-             "doc_id": "d1", "presidio_score": None, "gliner_score": None, "ai_score": 0.8, "confidence": "medium"},
+            {
+                "entity": "Austin",
+                "entity_type": "LOCATION",
+                "start": 50,
+                "end": 56,
+                "doc_id": "d1",
+                "presidio_score": 0.9,
+                "gliner_score": None,
+                "ai_score": None,
+                "confidence": "high",
+            },
+            {
+                "entity": "Austin,",
+                "entity_type": "LOCATION",
+                "start": 50,
+                "end": 57,
+                "doc_id": "d1",
+                "presidio_score": None,
+                "gliner_score": None,
+                "ai_score": 0.8,
+                "confidence": "medium",
+            },
         ]
         result = _merge_overlapping_spans(entities)
         assert len(result) == 1
@@ -285,10 +345,28 @@ class TestMergeOverlappingSpans:
 
     def test_subset_span_absorbed(self):
         entities = [
-            {"entity": "John Smith", "entity_type": "PERSON", "start": 0, "end": 10,
-             "doc_id": "d1", "presidio_score": 0.9, "gliner_score": None, "ai_score": None, "confidence": "high"},
-            {"entity": "John", "entity_type": "NAME", "start": 0, "end": 4,
-             "doc_id": "d1", "presidio_score": None, "gliner_score": 0.7, "ai_score": None, "confidence": "medium"},
+            {
+                "entity": "John Smith",
+                "entity_type": "PERSON",
+                "start": 0,
+                "end": 10,
+                "doc_id": "d1",
+                "presidio_score": 0.9,
+                "gliner_score": None,
+                "ai_score": None,
+                "confidence": "high",
+            },
+            {
+                "entity": "John",
+                "entity_type": "NAME",
+                "start": 0,
+                "end": 4,
+                "doc_id": "d1",
+                "presidio_score": None,
+                "gliner_score": 0.7,
+                "ai_score": None,
+                "confidence": "medium",
+            },
         ]
         result = _merge_overlapping_spans(entities)
         assert len(result) == 1
@@ -297,23 +375,52 @@ class TestMergeOverlappingSpans:
 
     def test_empty_and_single(self):
         assert _merge_overlapping_spans([]) == []
-        single = [{"entity": "X", "entity_type": "T", "start": 0, "end": 1,
-                    "doc_id": "d1", "presidio_score": None, "gliner_score": None, "ai_score": None, "confidence": "low"}]
+        single = [
+            {
+                "entity": "X",
+                "entity_type": "T",
+                "start": 0,
+                "end": 1,
+                "doc_id": "d1",
+                "presidio_score": None,
+                "gliner_score": None,
+                "ai_score": None,
+                "confidence": "low",
+            }
+        ]
         assert _merge_overlapping_spans(single) == single
 
     def test_redaction_clean_after_merge(self):
         """End-to-end: overlapping entities should produce clean redaction."""
         from dbxredact.redaction import redact_text
+
         text = "I live in Austin, Texas"
         entities = [
-            {"entity": "Austin", "entity_type": "LOCATION", "start": 10, "end": 16,
-             "doc_id": "d1", "presidio_score": 0.9, "gliner_score": None, "ai_score": None, "confidence": "high"},
-            {"entity": "Austin,", "entity_type": "LOCATION", "start": 10, "end": 17,
-             "doc_id": "d1", "presidio_score": None, "gliner_score": None, "ai_score": 0.8, "confidence": "medium"},
+            {
+                "entity": "Austin",
+                "entity_type": "LOCATION",
+                "start": 10,
+                "end": 16,
+                "doc_id": "d1",
+                "presidio_score": 0.9,
+                "gliner_score": None,
+                "ai_score": None,
+                "confidence": "high",
+            },
+            {
+                "entity": "Austin,",
+                "entity_type": "LOCATION",
+                "start": 10,
+                "end": 17,
+                "doc_id": "d1",
+                "presidio_score": None,
+                "gliner_score": None,
+                "ai_score": 0.8,
+                "confidence": "medium",
+            },
         ]
         merged = _merge_overlapping_spans(entities)
         result = redact_text(text, merged, strategy="typed")
         assert "[LOCATION]" in result
         assert result.replace("[LOCATION]", "").find("N]") == -1
         assert result.count("[LOCATION]") == 1
-

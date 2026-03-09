@@ -8,6 +8,7 @@ import numpy as np
 
 def _get_isotonic_regression():
     from sklearn.isotonic import IsotonicRegression
+
     return IsotonicRegression
 
 
@@ -20,7 +21,9 @@ class CalibratedScorer:
     def __init__(self):
         self._models: dict = {}
 
-    def fit(self, source: str, scores: List[float], labels: List[int]) -> "CalibratedScorer":
+    def fit(
+        self, source: str, scores: List[float], labels: List[int]
+    ) -> "CalibratedScorer":
         """Fit calibration for a single source.
 
         Args:

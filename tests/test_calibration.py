@@ -83,9 +83,11 @@ class TestCalibratedScorer:
         """Isotonic regression should produce monotonically non-decreasing output
         when given monotonically increasing input scores."""
         scorer = CalibratedScorer()
-        scorer.fit("presidio",
-                    [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95],
-                    [0,    0,    0,    0,    1,    0,    1,    1,    1,    1])
+        scorer.fit(
+            "presidio",
+            [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95],
+            [0, 0, 0, 0, 1, 0, 1, 1, 1, 1],
+        )
         inputs = [i / 20.0 for i in range(21)]
         calibrated = scorer.transform("presidio", inputs)
         for i in range(1, len(calibrated)):
