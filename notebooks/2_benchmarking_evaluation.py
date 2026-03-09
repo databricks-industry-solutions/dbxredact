@@ -288,14 +288,16 @@ for mode in MATCH_MODES:
 comparison_rows = []
 for mode in MATCH_MODES:
     for method_name, metrics in evaluation_results[mode].items():
-        comparison_rows.append({
-            "Method": method_name.capitalize(),
-            "Match Mode": mode,
-            "Precision": metrics["precision"],
-            "Recall": metrics["recall"],
-            "F1 Score": metrics["f1_score"],
-            "Accuracy": metrics["accuracy"],
-        })
+        comparison_rows.append(
+            {
+                "Method": method_name.capitalize(),
+                "Match Mode": mode,
+                "Precision": metrics["precision"],
+                "Recall": metrics["recall"],
+                "F1 Score": metrics["f1_score"],
+                "Accuracy": metrics["accuracy"],
+            }
+        )
 
 comparison_df = pd.DataFrame(comparison_rows)
 display(comparison_df)
@@ -385,7 +387,9 @@ for mode in MATCH_MODES:
 
 for mode in MATCH_MODES:
     print(f"\n--- {mode.upper()} mode ---")
-    strengths_df = summarize_method_strengths(error_analyses[mode], evaluation_results[mode])
+    strengths_df = summarize_method_strengths(
+        error_analyses[mode], evaluation_results[mode]
+    )
     display(strengths_df)
 
 # COMMAND ----------
@@ -404,10 +408,18 @@ for mode in MATCH_MODES:
     fig, ax = plt.subplots(figsize=(10, 5))
     for i, metric in enumerate(metrics_to_plot):
         values = [evaluation_results[mode][m][metric] for m in methods]
-        bars = ax.bar(x + i * width, values, width, label=metric.replace("_", " ").title())
+        bars = ax.bar(
+            x + i * width, values, width, label=metric.replace("_", " ").title()
+        )
         for bar, v in zip(bars, values):
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
-                    f"{v:.2f}", ha="center", va="bottom", fontsize=8)
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.01,
+                f"{v:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
 
     ax.set_ylabel("Score")
     ax.set_title(f"Detection Method Comparison ({mode})")
@@ -431,7 +443,9 @@ for mode in MATCH_MODES:
     matrix, entity_types, method_names = build_recall_matrix(error_analyses[mode])
 
     if len(entity_types) > 0:
-        fig, ax = plt.subplots(figsize=(max(8, len(method_names) * 2.5), max(6, len(entity_types) * 0.45)))
+        fig, ax = plt.subplots(
+            figsize=(max(8, len(method_names) * 2.5), max(6, len(entity_types) * 0.45))
+        )
         im = ax.imshow(matrix, cmap="RdYlGn", aspect="auto", vmin=0, vmax=1)
 
         ax.set_xticks(range(len(method_names)))
@@ -444,7 +458,15 @@ for mode in MATCH_MODES:
             for j in range(len(method_names)):
                 val = matrix[i, j]
                 color = "black" if 0.3 < val < 0.8 else "white"
-                ax.text(j, i, f"{val:.2f}", ha="center", va="center", color=color, fontsize=8)
+                ax.text(
+                    j,
+                    i,
+                    f"{val:.2f}",
+                    ha="center",
+                    va="center",
+                    color=color,
+                    fontsize=8,
+                )
 
         fig.colorbar(im, ax=ax, label="Recall", shrink=0.8)
         plt.tight_layout()
@@ -461,7 +483,9 @@ for mode in MATCH_MODES:
 
 for mode in MATCH_MODES:
     n_methods = len(error_analyses[mode])
-    fig, axes = plt.subplots(1, max(n_methods, 1), figsize=(5 * max(n_methods, 1), 6), squeeze=False)
+    fig, axes = plt.subplots(
+        1, max(n_methods, 1), figsize=(5 * max(n_methods, 1), 6), squeeze=False
+    )
 
     for idx, (method, errors) in enumerate(error_analyses[mode].items()):
         ax = axes[0][idx]
@@ -472,7 +496,9 @@ for mode in MATCH_MODES:
             ax.set_title(f"{method.capitalize()} - Top FP Types ({mode})")
             ax.invert_yaxis()
         else:
-            ax.text(0.5, 0.5, "No FPs", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5, 0.5, "No FPs", ha="center", va="center", transform=ax.transAxes
+            )
             ax.set_title(f"{method.capitalize()} - FP Types ({mode})")
 
     plt.tight_layout()
@@ -487,19 +513,27 @@ for mode in MATCH_MODES:
 
 for mode in MATCH_MODES:
     n_methods = len(error_analyses[mode])
-    fig, axes = plt.subplots(1, max(n_methods, 1), figsize=(5 * max(n_methods, 1), 6), squeeze=False)
+    fig, axes = plt.subplots(
+        1, max(n_methods, 1), figsize=(5 * max(n_methods, 1), 6), squeeze=False
+    )
 
     for idx, (method, errors) in enumerate(error_analyses[mode].items()):
         ax = axes[0][idx]
         fn_data = errors["fn_by_type"].head(10)
         if not fn_data.empty:
-            type_col = "gt_entity_type" if "gt_entity_type" in fn_data.columns else fn_data.columns[0]
+            type_col = (
+                "gt_entity_type"
+                if "gt_entity_type" in fn_data.columns
+                else fn_data.columns[0]
+            )
             ax.barh(fn_data[type_col], fn_data["count"], color="steelblue")
             ax.set_xlabel("Count")
             ax.set_title(f"{method.capitalize()} - Top FN Types ({mode})")
             ax.invert_yaxis()
         else:
-            ax.text(0.5, 0.5, "No FNs", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5, 0.5, "No FNs", ha="center", va="center", transform=ax.transAxes
+            )
             ax.set_title(f"{method.capitalize()} - FN Types ({mode})")
 
     plt.tight_layout()
@@ -524,9 +558,17 @@ for mode in MATCH_MODES:
     bar_width = 0.5
 
     ax.bar(x, tp_vals, bar_width, label="True Positives", color="forestgreen")
-    ax.bar(x, fp_vals, bar_width, bottom=tp_vals, label="False Positives", color="salmon")
-    ax.bar(x, fn_vals, bar_width, bottom=[t + f for t, f in zip(tp_vals, fp_vals)],
-           label="False Negatives", color="steelblue")
+    ax.bar(
+        x, fp_vals, bar_width, bottom=tp_vals, label="False Positives", color="salmon"
+    )
+    ax.bar(
+        x,
+        fn_vals,
+        bar_width,
+        bottom=[t + f for t, f in zip(tp_vals, fp_vals)],
+        label="False Negatives",
+        color="steelblue",
+    )
 
     ax.set_ylabel("Count")
     ax.set_title(f"TP / FP / FN by Method ({mode})")
@@ -572,4 +614,59 @@ for method_name, errors in error_analyses.get("overlap", {}).items():
     if not errors.get("recall_by_type", pd.DataFrame()).empty:
         print(f"[BENCHMARK_RESULTS] Recall by type:")
         for _, r in errors["recall_by_type"].iterrows():
-            print(f"[BENCHMARK_RESULTS]   {r['gt_entity_type']}: {r['recall']:.3f} ({r['tp']}/{r['tp']+r['fn']})")
+            print(
+                f"[BENCHMARK_RESULTS]   {r['gt_entity_type']}: {r['recall']:.3f} ({r['tp']}/{r['tp']+r['fn']})"
+            )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Strict vs Overlap Boundary Diagnostic
+# MAGIC
+# MAGIC For each detection method, find entities that match in **overlap** mode but fail **strict**
+# MAGIC containment.  Reports how many characters the detected span is off at the start / end,
+# MAGIC which reveals whether the detector systematically clips entity boundaries.
+
+# COMMAND ----------
+
+from dbxredact import diagnose_strict_failures
+
+for method_name, exploded_df in exploded_results.items():
+    diag = diagnose_strict_failures(ground_truth_df, exploded_df)
+    if diag.empty:
+        print(
+            f"{method_name.upper()}: No overlap-only failures (strict matches everything overlap does)."
+        )
+        continue
+
+    print(f"\n{'='*80}")
+    print(
+        f"BOUNDARY DIAGNOSTIC: {method_name.upper()}  ({len(diag)} overlap-only matches)"
+    )
+    print(f"{'='*80}")
+
+    # Distribution of boundary_type
+    type_dist = diag["boundary_type"].value_counts()
+    print(f"\nBoundary type distribution:")
+    for bt, cnt in type_dist.items():
+        print(f"  {bt}: {cnt}")
+
+    # Average deltas
+    print(
+        f"\nMean start_delta: {diag['start_delta'].mean():.2f}  (positive = front-clipped)"
+    )
+    print(
+        f"Mean end_delta:   {diag['end_delta'].mean():.2f}  (positive = back-clipped)"
+    )
+
+    # Show sample rows
+    print(f"\nSample boundary failures (up to 20):")
+    display(diag.head(20))
+
+    print(
+        f"\n[BENCHMARK_RESULTS] BOUNDARY_DIAG {method_name}: "
+        f"total={len(diag)} "
+        + " ".join(f"{bt}={cnt}" for bt, cnt in type_dist.items())
+        + f" mean_start_delta={diag['start_delta'].mean():.2f}"
+        + f" mean_end_delta={diag['end_delta'].mean():.2f}"
+    )

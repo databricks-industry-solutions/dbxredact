@@ -63,6 +63,7 @@ from .evaluation import (
     analyze_errors,
     build_recall_matrix,
     summarize_method_strengths,
+    diagnose_strict_failures,
 )
 
 from .detection import (
@@ -200,4 +201,3 @@ __all__ = [
     "compute_judge_summary",
     "run_next_action_query",
 ]
-

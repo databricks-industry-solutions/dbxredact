@@ -32,19 +32,16 @@ def _match_condition(
     gt_chunk = lower(col(f"{gt_prefix}.{chunk_column}"))
     det_entity = lower(col(f"{det_prefix}.{entity_column}"))
     base = (
-        (col(f"{det_prefix}.{doc_id_column}") == col(f"{gt_prefix}.{doc_id_column}"))
-        & (contains(gt_chunk, det_entity) | contains(det_entity, gt_chunk))
-    )
+        col(f"{det_prefix}.{doc_id_column}") == col(f"{gt_prefix}.{doc_id_column}")
+    ) & (contains(gt_chunk, det_entity) | contains(det_entity, gt_chunk))
     if match_mode == "overlap":
         position = (
-            (col(f"{det_prefix}.{start_column}") < col(f"{gt_prefix}.{end_column}"))
-            & (col(f"{det_prefix}.{end_column}") > col(f"{gt_prefix}.{begin_column}"))
-        )
+            col(f"{det_prefix}.{start_column}") < col(f"{gt_prefix}.{end_column}")
+        ) & (col(f"{det_prefix}.{end_column}") > col(f"{gt_prefix}.{begin_column}"))
     else:  # strict
         position = (
-            (col(f"{det_prefix}.{start_column}") <= col(f"{gt_prefix}.{begin_column}"))
-            & (col(f"{det_prefix}.{end_column}") >= col(f"{gt_prefix}.{end_column}") - 1)
-        )
+            col(f"{det_prefix}.{start_column}") <= col(f"{gt_prefix}.{begin_column}")
+        ) & (col(f"{det_prefix}.{end_column}") >= col(f"{gt_prefix}.{end_column}") - 1)
     return base & position
 
 
@@ -83,8 +80,12 @@ def evaluate_detection(
     det = detection_df.alias("det")
 
     cond = _match_condition(
-        doc_id_column, chunk_column, entity_column,
-        begin_column, end_column, start_column,
+        doc_id_column,
+        chunk_column,
+        entity_column,
+        begin_column,
+        end_column,
+        start_column,
         match_mode=match_mode,
     )
 
@@ -131,16 +132,24 @@ def calculate_metrics(
         Dictionary with metrics and contingency table values
     """
     gt_id = struct(
-        col(f"gt.{doc_id_column}"), col(f"gt.{begin_column}"),
-        col(f"gt.{end_column}"), col(f"gt.{chunk_column}"),
+        col(f"gt.{doc_id_column}"),
+        col(f"gt.{begin_column}"),
+        col(f"gt.{end_column}"),
+        col(f"gt.{chunk_column}"),
     )
     det_id = struct(
-        col(f"det.{doc_id_column}"), col(f"det.{start_column}"),
-        col(f"det.{end_column}"), col(f"det.{entity_column}"),
+        col(f"det.{doc_id_column}"),
+        col(f"det.{start_column}"),
+        col(f"det.{end_column}"),
+        col(f"det.{entity_column}"),
     )
 
     # Distinct GT entities that appear in the eval_df (matched or not)
-    all_gt = eval_df.where(col(f"gt.{chunk_column}").isNotNull()).select(gt_id.alias("_gid")).distinct()
+    all_gt = (
+        eval_df.where(col(f"gt.{chunk_column}").isNotNull())
+        .select(gt_id.alias("_gid"))
+        .distinct()
+    )
     pos_actual = all_gt.count()
 
     matched_rows = eval_df.where(
@@ -152,7 +161,11 @@ def calculate_metrics(
     fn = pos_actual - tp_recall
 
     # Distinct detections
-    all_det = eval_df.where(col(f"det.{entity_column}").isNotNull()).select(det_id.alias("_did")).distinct()
+    all_det = (
+        eval_df.where(col(f"det.{entity_column}").isNotNull())
+        .select(det_id.alias("_did"))
+        .distinct()
+    )
     pos_pred = all_det.count()
 
     # Detections that matched at least one GT (for precision)
@@ -352,7 +365,14 @@ def get_best_method_per_dataset(
     return spark.sql(query)
 
 
-_GT_ENTITY_TYPE_CANDIDATES = ["entity_type", "ner_label", "label", "ner", "type", "ner_tag"]
+_GT_ENTITY_TYPE_CANDIDATES = [
+    "entity_type",
+    "ner_label",
+    "label",
+    "ner",
+    "type",
+    "ner_tag",
+]
 
 
 def _find_gt_entity_type_col(columns: list) -> str:
@@ -401,33 +421,26 @@ def analyze_errors(
     if has_gt_type:
         gt = gt.withColumnRenamed(gt_entity_type_column, "gt_entity_type")
 
-    gt = (
-        gt.withColumnRenamed(doc_id_column, "gt_doc_id")
-        .withColumnRenamed(end_column, "gt_end")
+    gt = gt.withColumnRenamed(doc_id_column, "gt_doc_id").withColumnRenamed(
+        end_column, "gt_end"
     )
 
-    det = (
-        detection_df.withColumnRenamed(doc_id_column, "det_doc_id")
-        .withColumnRenamed(end_column, "det_end")
+    det = detection_df.withColumnRenamed(doc_id_column, "det_doc_id").withColumnRenamed(
+        end_column, "det_end"
     )
 
     # Build match condition with renamed column names
-    base_cond = (
-        (col("det_doc_id") == col("gt_doc_id"))
-        & (
-            contains(col(chunk_column), col(entity_column))
-            | contains(col(entity_column), col(chunk_column))
-        )
+    base_cond = (col("det_doc_id") == col("gt_doc_id")) & (
+        contains(col(chunk_column), col(entity_column))
+        | contains(col(entity_column), col(chunk_column))
     )
     if match_mode == "overlap":
-        pos_cond = (
-            (col(start_column) < col("gt_end"))
-            & (col("det_end") > col(begin_column))
+        pos_cond = (col(start_column) < col("gt_end")) & (
+            col("det_end") > col(begin_column)
         )
     else:  # strict
-        pos_cond = (
-            (col(start_column) <= col(begin_column))
-            & (col("det_end") >= col("gt_end") - 1)
+        pos_cond = (col(start_column) <= col(begin_column)) & (
+            col("det_end") >= col("gt_end") - 1
         )
     match_cond = base_cond & pos_cond
 
@@ -477,7 +490,9 @@ def analyze_errors(
             .withColumnRenamed("count", "fn")
             .toPandas()
         )
-        recall_df = tp_counts.merge(fn_counts, on="gt_entity_type", how="outer").fillna(0)
+        recall_df = tp_counts.merge(fn_counts, on="gt_entity_type", how="outer").fillna(
+            0
+        )
         recall_df["total"] = recall_df["tp"] + recall_df["fn"]
         recall_df["recall"] = recall_df["tp"] / recall_df["total"]
         recall_df = recall_df.sort_values("recall", ascending=False)
@@ -549,7 +564,11 @@ def summarize_method_strengths(
         fn_types = errors["fn_by_type"]
         recall = errors["recall_by_type"]
 
-        top_fp = ", ".join(fp_types["entity_type"].head(3).tolist()) if not fp_types.empty else "-"
+        top_fp = (
+            ", ".join(fp_types["entity_type"].head(3).tolist())
+            if not fp_types.empty
+            else "-"
+        )
 
         if not fn_types.empty and "gt_entity_type" in fn_types.columns:
             missed = ", ".join(fn_types["gt_entity_type"].head(3).tolist())
@@ -579,3 +598,63 @@ def summarize_method_strengths(
 
     return pd.DataFrame(rows)
 
+
+def diagnose_strict_failures(
+    ground_truth_df: DataFrame,
+    detection_df: DataFrame,
+    doc_id_column: str = "doc_id",
+    chunk_column: str = "chunk",
+    entity_column: str = "entity",
+    begin_column: str = "begin",
+    end_column: str = "end",
+    start_column: str = "start",
+) -> pd.DataFrame:
+    """Find entities that match in overlap mode but fail strict containment.
+
+    For each such pair, computes how many characters the detection span is
+    off at the start and end boundaries.  Positive ``start_delta`` means the
+    detection began *after* the GT span (front-clipped); positive ``end_delta``
+    means the detection ended *before* the GT span (back-clipped).
+
+    Returns:
+        Pandas DataFrame with columns: doc_id, gt_text, gt_start, gt_end,
+        det_text, det_start, det_end, start_delta, end_delta, boundary_type.
+    """
+    from pyspark.sql.functions import lit, when
+
+    gt = ground_truth_df.alias("gt")
+    det = detection_df.alias("det")
+
+    overlap_base = (col(f"det.{doc_id_column}") == col(f"gt.{doc_id_column}")) & (
+        contains(lower(col(f"gt.{chunk_column}")), lower(col(f"det.{entity_column}")))
+        | contains(lower(col(f"det.{entity_column}")), lower(col(f"gt.{chunk_column}")))
+    )
+    overlap_pos = (col(f"det.{start_column}") < col(f"gt.{end_column}")) & (
+        col(f"det.{end_column}") > col(f"gt.{begin_column}")
+    )
+
+    strict_ok = (col(f"det.{start_column}") <= col(f"gt.{begin_column}")) & (
+        col(f"det.{end_column}") >= col(f"gt.{end_column}") - 1
+    )
+
+    joined = gt.join(det, overlap_base & overlap_pos, "inner").where(~strict_ok)
+
+    result = joined.select(
+        col(f"gt.{doc_id_column}").alias("doc_id"),
+        col(f"gt.{chunk_column}").alias("gt_text"),
+        col(f"gt.{begin_column}").alias("gt_start"),
+        col(f"gt.{end_column}").alias("gt_end"),
+        col(f"det.{entity_column}").alias("det_text"),
+        col(f"det.{start_column}").alias("det_start"),
+        col(f"det.{end_column}").alias("det_end"),
+        (col(f"det.{start_column}") - col(f"gt.{begin_column}")).alias("start_delta"),
+        (col(f"gt.{end_column}") - col(f"det.{end_column}")).alias("end_delta"),
+    ).withColumn(
+        "boundary_type",
+        when((col("start_delta") > 0) & (col("end_delta") > 0), lit("both"))
+        .when(col("start_delta") > 0, lit("start_clipped"))
+        .when(col("end_delta") > 0, lit("end_clipped"))
+        .otherwise(lit("extended")),
+    )
+
+    return result.toPandas()
