@@ -69,11 +69,9 @@ class CalibratedScorer:
             data = json.load(f)
         scorer = cls()
         for source, params in data.items():
+            X = np.array(params["X_thresholds_"])
+            y = np.array(params["y_thresholds_"])
             ir = _get_isotonic_regression()(y_min=0.0, y_max=1.0, out_of_bounds="clip")
-            ir.X_thresholds_ = np.array(params["X_thresholds_"])
-            ir.y_thresholds_ = np.array(params["y_thresholds_"])
-            ir.X_min_ = ir.X_thresholds_[0]
-            ir.X_max_ = ir.X_thresholds_[-1]
-            ir.f_ = None  # will rebuild on next predict
+            ir.fit(X, y)
             scorer._models[source] = ir
         return scorer

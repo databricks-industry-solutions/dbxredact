@@ -47,7 +47,12 @@ DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
 CATALOG=your_catalog
 SCHEMA=redaction
 WAREHOUSE_ID=your_warehouse_id
+
+# Optional: set to "false" to deploy jobs only (no app)
+# DEPLOY_APP=false
 ```
+
+`WAREHOUSE_ID` is required when deploying the app (for the app's SQL warehouse resource and deploy-time permission grants). If `DEPLOY_APP=false`, it can be omitted.
 
 ### 2. Deploy
 
@@ -55,7 +60,7 @@ WAREHOUSE_ID=your_warehouse_id
 ./deploy.sh dev
 ```
 
-This builds the Python wheel, builds the React frontend, generates `databricks.yml` from the template, and deploys the Databricks Asset Bundle (jobs, app, and artifacts).
+This builds the Python wheel, generates `databricks.yml` from the template, and deploys the Databricks Asset Bundle (jobs, app, and artifacts). Use `DEPLOY_APP=false` in your env file to deploy jobs without the management app.
 
 ### 3. Run a Pipeline
 
@@ -90,6 +95,8 @@ CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.checkpoints;
 ```
 
 `deploy.sh` uploads the wheel to `wheels`. `cluster_logs` is used by the benchmark job for cluster log delivery. `checkpoints` is used by the streaming pipeline.
+
+> **Note:** The wheel volume only needs to exist in the deployment schema (the `SCHEMA` in your env file). The redaction pipeline itself can read from and write to any fully qualified table in any schema -- the wheel does not need to be present in every source or output schema.
 
 ## Detection Methods
 
@@ -137,7 +144,7 @@ Ground-truth annotations may not be perfect -- some edge cases (3-letter hospita
 
 Six pre-configured job variants ship with the bundle:
 
-| Profile | Workers | Instance | Use Case |
+| Profile | Workers | Instance (default) | Use Case |
 |---------|---------|----------|----------|
 | CPU Small | 2 | i3.xlarge | Development, small datasets |
 | CPU Medium | 5 | i3.xlarge | Medium workloads |
@@ -147,6 +154,23 @@ Six pre-configured job variants ship with the bundle:
 | GPU Large | 10 | g5.xlarge | GLiNER at scale |
 
 GPU profiles use Databricks Runtime `17.3.x-gpu-ml-scala2.13`.
+
+### Cloud-Specific Node Types
+
+The default instance types are AWS-specific. Azure workspaces must override `cpu_node_type` and `gpu_node_type` in `variables.yml` or their target config:
+
+| Type | AWS (default) | Azure equivalent |
+|------|---------------|------------------|
+| CPU | i3.xlarge | Standard_DS3_v2 |
+| GPU | g5.xlarge | Standard_NC4as_T4_v3 |
+
+If you see `Node type X is not supported` during deployment, set the correct node type for your cloud in `variables.yml`:
+```yaml
+cpu_node_type:
+  default: "Standard_DS3_v2"
+gpu_node_type:
+  default: "Standard_NC4as_T4_v3"
+```
 
 ## Management App
 

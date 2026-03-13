@@ -73,13 +73,13 @@ if [ -z "${SCHEMA}" ]; then
     exit 1
 fi
 
-if [ -z "${WAREHOUSE_ID}" ]; then
-    echo "Error: WAREHOUSE_ID not set in ${ENV_FILE}"
-    exit 1
-fi
-
 # App deployment flag (default: true)
 DEPLOY_APP="${DEPLOY_APP:-true}"
+
+if [ -z "${WAREHOUSE_ID}" ] && [ "${DEPLOY_APP}" != "false" ]; then
+    echo "Error: WAREHOUSE_ID not set in ${ENV_FILE} (required when DEPLOY_APP=true)"
+    exit 1
+fi
 
 # Get package version from pyproject.toml (single source of truth)
 PACKAGE_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')

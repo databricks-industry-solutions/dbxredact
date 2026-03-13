@@ -8,6 +8,7 @@ variables:
     default: "__PACKAGE_VERSION__"
   sql_warehouse_id:
     description: "SQL Warehouse ID for the management app"
+    default: ""
 
 include:
   - resources/jobs.yml

@@ -170,20 +170,21 @@ _COST_OUTPUT_RATIO = 0.3
 
 # Empirical cost model: est_min = startup + overhead + total_chars / chars_per_min
 # Derived from real benchmark runs with ensemble detection (Presidio + AI Query + GLiNER).
-# Benchmarks: en_core_web_trf, reasoning_effort=medium, spark.task.resource.gpu.amount=0.25.
-# Doc sizes: 48+ rows at ~7.5k chars/doc, 1-10 rows at ~13k chars/doc.
-# gpu_small (2x A10, 8 slots): 96r/7.5kc=13.4m, 192r/7.5kc=25.1m -> cpm=62k, overhead=1.7m.
-# cpu_medium (5x i3.xlarge, 20 slots): 48r/7.5kc=11.3m, 96r/7.5kc=16.1m -> cpm=75k, overhead=6.5m.
+# Settings: en_core_web_lg, reasoning_effort=low, spark.task.resource.gpu.amount=0.25.
+# Doc sizes: ~7.5k chars/doc. LAST_CALIBRATED: 2026-03-09.
+# gpu_small (2x g5.xlarge, 8 partitions) benchmarked:
+#   384r=14.85m, 768r=24.46m -> marginal cpm=300k, overhead=5.2m (detection floor+align+redact).
+# cpu profiles scaled proportionally from gpu_small (~4.8x vs prior en_core_web_trf calibration).
 # Medium/large extrapolated by worker ratio with 0.8x/0.6x sub-linear scaling
 # (AI_QUERY throughput is bounded by endpoint capacity at high concurrency).
-# Re-calibrate after switching to en_core_web_lg + reasoning_effort=low.
+# TODO: independently benchmark cpu and gpu_medium/gpu_large profiles.
 COMPUTE_PROFILES = {
-    "cpu_small":  {"dbu_per_hr": 1.5,  "startup": 8,  "overhead": 6.5, "chars_per_min": 30_000},
-    "cpu_medium": {"dbu_per_hr": 3.0,  "startup": 8,  "overhead": 2.5, "chars_per_min": 75_000},
-    "cpu_large":  {"dbu_per_hr": 5.5,  "startup": 8,  "overhead": 1.5, "chars_per_min": 135_000},
-    "gpu_small":  {"dbu_per_hr": 4.0,  "startup": 11, "overhead": 1.7, "chars_per_min": 62_000},
-    "gpu_medium": {"dbu_per_hr": 9.0,  "startup": 11, "overhead": 1.0, "chars_per_min": 124_000},
-    "gpu_large":  {"dbu_per_hr": 17.0, "startup": 11, "overhead": 0.5, "chars_per_min": 186_000},
+    "cpu_small":  {"dbu_per_hr": 1.5,  "startup": 8,  "overhead": 7.0, "chars_per_min": 145_000},
+    "cpu_medium": {"dbu_per_hr": 3.0,  "startup": 8,  "overhead": 5.5, "chars_per_min": 360_000},
+    "cpu_large":  {"dbu_per_hr": 5.5,  "startup": 8,  "overhead": 4.5, "chars_per_min": 650_000},
+    "gpu_small":  {"dbu_per_hr": 4.0,  "startup": 11, "overhead": 5.2, "chars_per_min": 300_000},
+    "gpu_medium": {"dbu_per_hr": 9.0,  "startup": 11, "overhead": 4.0, "chars_per_min": 600_000},
+    "gpu_large":  {"dbu_per_hr": 17.0, "startup": 11, "overhead": 3.0, "chars_per_min": 900_000},
 }
 
 
