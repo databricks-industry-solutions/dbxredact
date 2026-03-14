@@ -1,7 +1,7 @@
 """Labeling/annotation routes for ground truth creation."""
 
 from typing import List
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from api.services.db import fetch_all, fetch_one, execute, _table, quote_table, validate_identifier
 
 router = APIRouter()
@@ -67,8 +67,14 @@ async def list_documents_with_labels(
     return list(docs.values())
 
 
+_LABEL_REQUIRED_KEYS = {"entity_text", "entity_type", "start", "end"}
+
 @router.post("/batch")
 async def batch_label(doc_id: str, source_table: str, labels: List[dict]):
+    for label in labels:
+        if not _LABEL_REQUIRED_KEYS.issubset(label):
+            missing = _LABEL_REQUIRED_KEYS - label.keys()
+            raise HTTPException(400, f"Label missing required keys: {missing}")
     for label in labels:
         execute(
             f"""INSERT INTO {_table('redact_ground_truths')}

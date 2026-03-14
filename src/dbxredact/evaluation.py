@@ -1,10 +1,19 @@
 """Evaluation and metrics functions for PHI/PII detection."""
 
+import re
 from typing import Dict, Any, List, Literal
 import pandas as pd
 import numpy as np
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import col, contains, asc_nulls_last, struct, lower
+
+_SAFE_METRIC_NAME = re.compile(r"^[a-zA-Z0-9_]+$")
+
+
+def _validate_metric_name(name: str) -> str:
+    if not _SAFE_METRIC_NAME.match(name):
+        raise ValueError(f"Invalid metric name: {name!r}")
+    return name
 
 MatchMode = Literal["strict", "overlap"]
 
@@ -323,6 +332,7 @@ def compare_methods_across_datasets(
     spark, evaluation_table: str, metric_name: str = "f1_score"
 ) -> DataFrame:
     """Compare detection methods across multiple datasets."""
+    _validate_metric_name(metric_name)
     query = f"""
     SELECT 
         dataset_name,
@@ -340,6 +350,7 @@ def get_best_method_per_dataset(
     spark, evaluation_table: str, metric_name: str = "f1_score"
 ) -> DataFrame:
     """Identify the best performing method for each dataset."""
+    _validate_metric_name(metric_name)
     query = f"""
     WITH ranked AS (
         SELECT 

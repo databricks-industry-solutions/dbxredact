@@ -175,8 +175,10 @@ def run_next_action_query(
             modelParameters => named_struct('reasoning_effort', '{reasoning_effort}')
         ) AS recommendations
     """
-    row = spark.sql(query).collect()[0]
-    result = row["recommendations"]
+    rows = spark.sql(query).collect()
+    if not rows:
+        return "No recommendations generated."
+    result = rows[0]["recommendations"]
     if hasattr(result, "result"):
         return result.result
     return result
