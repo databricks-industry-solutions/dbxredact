@@ -347,6 +347,10 @@ def run_redaction_pipeline(
         fuzzy_threshold: Fuzzy matching threshold for alignment (0-100, default 50)
         entity_filter: Optional EntityFilter for deny/allow list processing
 
+    Note:
+        For tables exceeding 100k rows, consider ``run_redaction_pipeline_streaming``
+        for incremental processing with lower memory pressure and no row-count limits.
+
     Returns:
         DataFrame with redacted text
     """
@@ -362,14 +366,21 @@ def run_redaction_pipeline(
     if max_rows:
         row_count = source_df.count()
         if row_count > max_rows:
-            logger.warning(f"Source has {row_count:,} rows (after dedup). Limiting to {max_rows:,}.")
-            source_df = source_df.limit(max_rows)
+            print(f"WARNING: Source has {row_count:,} rows (after dedup). Limiting to {max_rows:,} (ordered by {doc_id_column}).")
+            source_df = source_df.orderBy(doc_id_column).limit(max_rows)
+            row_count = max_rows
+        if row_count > 100_000:
+            print(f"TIP: For {row_count:,}+ rows, consider run_redaction_pipeline_streaming for incremental processing.")
+    else:
+        row_count = None
 
     # Cache and materialize once so downstream detectors never re-scan the source
     source_df = source_df.cache()
-    cached_count = source_df.count()
+    source_df.count()
+    if row_count is None:
+        row_count = source_df.count()
     t_cache = time.time()
-    print(f"Cached {cached_count:,} rows for detection. [{t_cache - t_pipeline_start:.1f}s]")
+    print(f"Cached {row_count:,} rows for detection. [{t_cache - t_pipeline_start:.1f}s]")
 
     detection_df = run_detection_pipeline(
         spark=spark,
@@ -394,7 +405,7 @@ def run_redaction_pipeline(
         alignment_mode=alignment_mode,
         fuzzy_threshold=fuzzy_threshold,
         entity_filter=entity_filter,
-        row_count=cached_count,
+        row_count=row_count,
     )
 
     detection_df = detection_df.cache()
@@ -695,11 +706,11 @@ def run_redaction_pipeline_streaming(
             return
         # Log AI failures if the flag column is present
         if _has_ai_flag:
-            fail_count = batch_df.filter(col("_ai_detection_failed")).count()
-            if fail_count > 0:
+            failed = batch_df.filter(col("_ai_detection_failed"))
+            if not failed.isEmpty():
                 import logging
                 logging.getLogger("dbxredact.streaming").warning(
-                    f"Batch {batch_id}: {fail_count} document(s) had AI detection failures"
+                    f"Batch {batch_id}: some documents had AI detection failures (check _ai_detection_failed column)"
                 )
         view_name = f"_dbxredact_batch_{batch_id}"
         batch_df.createOrReplaceTempView(view_name)

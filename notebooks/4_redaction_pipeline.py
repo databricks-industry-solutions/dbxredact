@@ -354,6 +354,8 @@ print("=" * 80)
 
 if refresh_approach == "incremental":
     # Streaming approach - incremental processing
+    # TIP: For tables over 100k rows, streaming (incremental) is recommended for
+    # lower memory pressure, no row-count limits, and incremental updates.
     print("Using INCREMENTAL (streaming) approach...")
 
     query = run_redaction_pipeline_streaming(

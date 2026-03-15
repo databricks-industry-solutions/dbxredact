@@ -83,6 +83,7 @@ def print_cost_estimate(estimate: dict) -> None:
         f"Input tokens:    {estimate['estimated_input_tokens']:,}",
         f"Output tokens:   {estimate['estimated_output_tokens']:,}",
         f"Estimated cost:  ${estimate['estimated_cost_usd']:.4f}",
+        "(Prices are approximate and may not reflect current Databricks pricing.)",
         "------------------------------",
     ]
     logger.info("\n".join(lines))
