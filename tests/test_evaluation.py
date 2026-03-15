@@ -1,9 +1,9 @@
-"""Tests for evaluation.py -- calculate_metrics and diagnose_strict_failures."""
+"""Tests for evaluation.py -- calculate_metrics, diagnose_strict_failures, validators."""
 
 import pytest
 from pyspark.sql import Row
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType
-from dbxredact.evaluation import calculate_metrics, diagnose_strict_failures
+from dbxredact.evaluation import calculate_metrics, diagnose_strict_failures, _validate_metric_name
 
 _EVAL_ROW_SCHEMA = StructType(
     [
@@ -200,3 +200,50 @@ class TestDiagnoseStrictFailures:
         det = _make_det_df(spark, [("d1", 10, 19, "John Smit")])
         result = diagnose_strict_failures(gt, det)
         assert result.empty
+
+    def test_max_results_truncates(self, spark):
+        """max_results caps the returned DataFrame."""
+        gt = _make_gt_df(spark, [
+            ("d1", 10, 20, "John Smith"),
+            ("d1", 30, 40, "Jane Smith"),
+            ("d1", 50, 60, "Bob Wilson"),
+        ])
+        det = _make_det_df(spark, [
+            ("d1", 12, 20, "hn Smith"),
+            ("d1", 32, 40, "ne Smith"),
+            ("d1", 52, 60, "b Wilson"),
+        ])
+        result = diagnose_strict_failures(gt, det, max_results=1)
+        assert len(result) == 1
+
+
+class TestValidateMetricName:
+
+    def test_accepts_simple_name(self):
+        assert _validate_metric_name("precision") == "precision"
+
+    def test_accepts_underscored_name(self):
+        assert _validate_metric_name("f1_score") == "f1_score"
+
+    def test_accepts_alphanumeric(self):
+        assert _validate_metric_name("metric2") == "metric2"
+
+    def test_rejects_spaces(self):
+        with pytest.raises(ValueError):
+            _validate_metric_name("my metric")
+
+    def test_rejects_semicolon(self):
+        with pytest.raises(ValueError):
+            _validate_metric_name("metric; DROP TABLE")
+
+    def test_rejects_quotes(self):
+        with pytest.raises(ValueError):
+            _validate_metric_name("metric'name")
+
+    def test_rejects_dots(self):
+        with pytest.raises(ValueError):
+            _validate_metric_name("schema.metric")
+
+    def test_rejects_empty(self):
+        with pytest.raises(ValueError):
+            _validate_metric_name("")

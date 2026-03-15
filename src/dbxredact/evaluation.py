@@ -1,7 +1,10 @@
 """Evaluation and metrics functions for PHI/PII detection."""
 
+import logging
 import re
 from typing import Dict, Any, List, Literal
+
+logger = logging.getLogger(__name__)
 import pandas as pd
 import numpy as np
 from pyspark.sql import DataFrame
@@ -140,6 +143,20 @@ def calculate_metrics(
     Returns:
         Dictionary with metrics and contingency table values
     """
+    eval_df = eval_df.cache()
+    try:
+        return _calculate_metrics_inner(
+            eval_df, total_tokens, chunk_column, entity_column,
+            doc_id_column, begin_column, end_column, start_column,
+        )
+    finally:
+        eval_df.unpersist()
+
+
+def _calculate_metrics_inner(
+    eval_df, total_tokens, chunk_column, entity_column,
+    doc_id_column, begin_column, end_column, start_column,
+):
     gt_id = struct(
         col(f"gt.{doc_id_column}"),
         col(f"gt.{begin_column}"),
@@ -153,7 +170,6 @@ def calculate_metrics(
         col(f"det.{entity_column}"),
     )
 
-    # Distinct GT entities that appear in the eval_df (matched or not)
     all_gt = (
         eval_df.where(col(f"gt.{chunk_column}").isNotNull())
         .select(gt_id.alias("_gid"))
@@ -165,11 +181,9 @@ def calculate_metrics(
         col(f"gt.{chunk_column}").isNotNull() & col(f"det.{entity_column}").isNotNull()
     )
 
-    # GT entities that matched at least one detection (for recall)
     tp_recall = matched_rows.select(gt_id.alias("_gid")).distinct().count()
     fn = pos_actual - tp_recall
 
-    # Distinct detections
     all_det = (
         eval_df.where(col(f"det.{entity_column}").isNotNull())
         .select(det_id.alias("_did"))
@@ -177,7 +191,6 @@ def calculate_metrics(
     )
     pos_pred = all_det.count()
 
-    # Detections that matched at least one GT (for precision)
     tp_precision = matched_rows.select(det_id.alias("_did")).distinct().count()
     fp = pos_pred - tp_precision
 
@@ -619,6 +632,7 @@ def diagnose_strict_failures(
     begin_column: str = "begin",
     end_column: str = "end",
     start_column: str = "start",
+    max_results: int = 10_000,
 ) -> pd.DataFrame:
     """Find entities that match in overlap mode but fail strict containment.
 
@@ -626,6 +640,9 @@ def diagnose_strict_failures(
     off at the start and end boundaries.  Positive ``start_delta`` means the
     detection began *after* the GT span (front-clipped); positive ``end_delta``
     means the detection ended *before* the GT span (back-clipped).
+
+    Args:
+        max_results: Maximum rows to collect to driver. Increase if needed.
 
     Returns:
         Pandas DataFrame with columns: doc_id, gt_text, gt_start, gt_end,
@@ -668,4 +685,11 @@ def diagnose_strict_failures(
         .otherwise(lit("extended")),
     )
 
-    return result.toPandas()
+    pdf = result.limit(max_results + 1).toPandas()
+    if len(pdf) > max_results:
+        logger.warning(
+            f"diagnose_strict_failures: results truncated to {max_results:,}. "
+            f"Pass max_results= to increase."
+        )
+        pdf = pdf.head(max_results)
+    return pdf

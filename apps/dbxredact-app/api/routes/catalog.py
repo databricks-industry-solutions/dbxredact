@@ -30,4 +30,4 @@ async def list_tables(catalog: str, schema: str):
     except ValueError:
         raise HTTPException(400, "Invalid catalog or schema name")
     rows = fetch_all(f"SHOW TABLES IN `{catalog}`.`{schema}`")
-    return [r.get("tableName") or r.get("table_name") or list(r.values())[1] if len(r) > 1 else list(r.values())[0] for r in rows]
+    return [r.get("tableName") or r.get("table_name") or next(iter(r.values())) for r in rows]

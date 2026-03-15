@@ -347,11 +347,19 @@ def run_redaction_pipeline(
         fuzzy_threshold: Fuzzy matching threshold for alignment (0-100, default 50)
         entity_filter: Optional EntityFilter for deny/allow list processing
 
+    Note:
+        For tables exceeding 100k rows, consider ``run_redaction_pipeline_streaming``
+        for incremental processing with lower memory pressure and no row-count limits.
+
     Returns:
         DataFrame with redacted text
     """
     if not any([use_presidio, use_ai_query, use_gliner]):
         raise ValueError("At least one detection method must be enabled.")
+
+    from .metadata import _validate_identifier, _parse_table_name
+    _parse_table_name(output_table)
+    _validate_identifier(doc_id_column, "doc_id_column")
 
     t_pipeline_start = time.time()
 
@@ -362,14 +370,21 @@ def run_redaction_pipeline(
     if max_rows:
         row_count = source_df.count()
         if row_count > max_rows:
-            logger.warning(f"Source has {row_count:,} rows (after dedup). Limiting to {max_rows:,}.")
-            source_df = source_df.limit(max_rows)
+            print(f"WARNING: Source has {row_count:,} rows (after dedup). Limiting to {max_rows:,} (ordered by {doc_id_column}).")
+            source_df = source_df.orderBy(doc_id_column).limit(max_rows)
+            row_count = max_rows
+        if row_count > 100_000:
+            print(f"TIP: For {row_count:,}+ rows, consider run_redaction_pipeline_streaming for incremental processing.")
+    else:
+        row_count = None
 
     # Cache and materialize once so downstream detectors never re-scan the source
     source_df = source_df.cache()
-    cached_count = source_df.count()
+    source_df.count()
+    if row_count is None:
+        row_count = source_df.count()
     t_cache = time.time()
-    print(f"Cached {cached_count:,} rows for detection. [{t_cache - t_pipeline_start:.1f}s]")
+    print(f"Cached {row_count:,} rows for detection. [{t_cache - t_pipeline_start:.1f}s]")
 
     detection_df = run_detection_pipeline(
         spark=spark,
@@ -394,7 +409,7 @@ def run_redaction_pipeline(
         alignment_mode=alignment_mode,
         fuzzy_threshold=fuzzy_threshold,
         entity_filter=entity_filter,
-        row_count=cached_count,
+        row_count=row_count,
     )
 
     detection_df = detection_df.cache()
@@ -445,6 +460,10 @@ def _ensure_checkpoint_volume_exists(spark: SparkSession, checkpoint_path: str) 
         return
     
     catalog, schema, volume_name = match.groups()
+    from .metadata import _validate_identifier
+    _validate_identifier(catalog, "catalog")
+    _validate_identifier(schema, "schema")
+    _validate_identifier(volume_name, "volume_name")
     volume_fqn = f"{catalog}.{schema}.{volume_name}"
     
     try:
@@ -538,6 +557,10 @@ def run_redaction_pipeline_streaming(
     Returns:
         StreamingQuery that can be awaited or monitored
     """
+    from .metadata import _validate_identifier, _parse_table_name
+    _parse_table_name(output_table)
+    _validate_identifier(doc_id_column, "doc_id_column")
+
     logger.info("Starting streaming redaction pipeline")
     logger.info(f"  Source: {source_table}")
     logger.info(f"  Output: {output_table}")
@@ -695,11 +718,11 @@ def run_redaction_pipeline_streaming(
             return
         # Log AI failures if the flag column is present
         if _has_ai_flag:
-            fail_count = batch_df.filter(col("_ai_detection_failed")).count()
-            if fail_count > 0:
+            failed = batch_df.filter(col("_ai_detection_failed"))
+            if not failed.isEmpty():
                 import logging
                 logging.getLogger("dbxredact.streaming").warning(
-                    f"Batch {batch_id}: {fail_count} document(s) had AI detection failures"
+                    f"Batch {batch_id}: some documents had AI detection failures (check _ai_detection_failed column)"
                 )
         view_name = f"_dbxredact_batch_{batch_id}"
         batch_df.createOrReplaceTempView(view_name)

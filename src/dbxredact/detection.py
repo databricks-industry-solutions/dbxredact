@@ -30,7 +30,7 @@ def _smart_partitions(df: DataFrame, num_cores: int, row_count: Optional[int] = 
     if row_count is None:
         try:
             row_count = df.count()
-        except Exception:
+        except (ValueError, RuntimeError):
             return num_cores
     return max(1, min(num_cores, row_count // _MIN_ROWS_PER_PARTITION))
 
@@ -50,7 +50,7 @@ def check_presidio_available() -> tuple:
                 "Install with: %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl"
             )
         return True, None
-    except Exception as e:
+    except (ImportError, OSError) as e:
         return False, str(e)
 
 
@@ -287,6 +287,7 @@ def run_detection(
     print(f"Repartitioned to {n_parts} partitions (row_count={row_count}).")
 
     presidio_skipped = False
+    _prior_caches = []
 
     if use_presidio:
         t_presidio = time.time()
@@ -303,6 +304,7 @@ def run_detection(
             )
             result_df = result_df.cache()
             result_df.count()
+            _prior_caches.append(result_df)
             print(f"   Presidio detection: {time.time() - t_presidio:.1f}s")
         except SpacyModelNotFoundError as e:
             if fail_on_presidio_error:
@@ -329,6 +331,7 @@ def run_detection(
         )
         result_df = result_df.cache()
         result_df.count()
+        _prior_caches.append(result_df)
         print(f"   AI Query detection: {time.time() - t_ai:.1f}s")
 
     if use_gliner:
@@ -347,6 +350,11 @@ def run_detection(
         result_df = run_gliner_detection(**gliner_kwargs)
         result_df = result_df.cache()
         result_df.count()
+        _prior_caches.append(result_df)
         print(f"   GLiNER detection: {time.time() - t_gliner:.1f}s")
+
+    # Release intermediate caches; only the final one is needed by the caller
+    for c in _prior_caches[:-1]:
+        c.unpersist()
 
     return result_df

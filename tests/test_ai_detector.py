@@ -58,7 +58,7 @@ class TestFuzzyFallback:
         positions = _find_entity_positions("Smith,", "I saw Smith today")
         # "Smith," vs "Smith" -- fuzzy should find "Smith" in the text
         # Since window length differs, this tests the fuzzy sliding window
-        assert len(positions) >= 0  # May or may not match depending on threshold
+        assert isinstance(positions, list)  # May or may not match depending on threshold
 
     def test_partial_name(self):
         positions = _find_entity_positions("Alice Anderson", "I saw Alice Anderson today")

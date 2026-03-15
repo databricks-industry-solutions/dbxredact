@@ -43,14 +43,22 @@ def load_filter_from_yaml(path: str) -> EntityFilter:
     )
 
 
+_MAX_FILTER_ROWS = 10_000
+
+
 def load_filter_from_table(spark, table_name: str, list_type: str = "safe") -> EntityFilter:
     """Load block or safe entries from a Unity Catalog table.
 
     Expected columns: value (str), is_pattern (bool).
     """
-    df = spark.table(table_name).collect()
+    rows = spark.table(table_name).limit(_MAX_FILTER_ROWS + 1).collect()
+    if len(rows) > _MAX_FILTER_ROWS:
+        raise ValueError(
+            f"Filter table '{table_name}' exceeds {_MAX_FILTER_ROWS:,} rows. "
+            f"Block/safe lists should be small. Check that you're pointing at the correct table."
+        )
     exact, patterns = [], []
-    for row in df:
+    for row in rows:
         if row["is_pattern"]:
             patterns.append(row["value"])
         else:

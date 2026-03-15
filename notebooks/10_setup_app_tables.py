@@ -12,9 +12,14 @@ dbutils.widgets.text("schema", "", "Schema")
 
 # COMMAND ----------
 
+import re
+_SAFE_ID = re.compile(r"^[a-zA-Z0-9_]+$")
+
 catalog = dbutils.widgets.get("catalog")
 schema = dbutils.widgets.get("schema")
 assert catalog and schema, "Both catalog and schema are required"
+if not _SAFE_ID.match(catalog) or not _SAFE_ID.match(schema):
+    raise ValueError(f"Invalid catalog or schema name: {catalog!r}, {schema!r}")
 prefix = f"`{catalog}`.`{schema}`"
 
 # COMMAND ----------
