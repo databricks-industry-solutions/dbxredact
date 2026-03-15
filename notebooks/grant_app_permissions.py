@@ -13,10 +13,17 @@ dbutils.widgets.text("spn_name", "", "Service Principal Name")
 
 # COMMAND ----------
 
+import re
+_SAFE_ID = re.compile(r"^[a-zA-Z0-9_.\-@]+$")
+
 catalog = dbutils.widgets.get("catalog")
 schema = dbutils.widgets.get("schema")
 spn_name = dbutils.widgets.get("spn_name")
 assert catalog and schema and spn_name, "All parameters are required"
+if not re.match(r"^[a-zA-Z0-9_]+$", catalog) or not re.match(r"^[a-zA-Z0-9_]+$", schema):
+    raise ValueError(f"Invalid catalog or schema name: {catalog!r}, {schema!r}")
+if not _SAFE_ID.match(spn_name):
+    raise ValueError(f"Invalid service principal name: {spn_name!r}")
 
 fqn = f"`{catalog}`.`{schema}`"
 spn = f"`{spn_name}`"

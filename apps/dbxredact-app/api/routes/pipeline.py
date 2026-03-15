@@ -177,7 +177,6 @@ _COST_OUTPUT_RATIO = 0.3
 # cpu profiles scaled proportionally from gpu_small (~4.8x vs prior en_core_web_trf calibration).
 # Medium/large extrapolated by worker ratio with 0.8x/0.6x sub-linear scaling
 # (AI_QUERY throughput is bounded by endpoint capacity at high concurrency).
-# TODO: independently benchmark cpu and gpu_medium/gpu_large profiles.
 COMPUTE_PROFILES = {
     "cpu_small":  {"dbu_per_hr": 1.5,  "startup": 8,  "overhead": 7.0, "chars_per_min": 145_000},
     "cpu_medium": {"dbu_per_hr": 3.0,  "startup": 8,  "overhead": 5.5, "chars_per_min": 360_000},

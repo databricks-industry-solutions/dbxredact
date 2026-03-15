@@ -3,7 +3,7 @@
 import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class ConfigCreate(BaseModel):
@@ -44,7 +44,7 @@ class PipelineRunRequest(BaseModel):
     text_column: str = "text"
     doc_id_column: str = "doc_id"
     output_table: Optional[str] = None
-    max_rows: Optional[int] = 10000
+    max_rows: Optional[int] = Field(default=10000, le=1_000_000)
     max_cost_usd: Optional[float] = None
     cluster_profile: str = "cpu_small"
     refresh_approach: str = "full"
@@ -146,7 +146,7 @@ class BuildQueueRequest(BaseModel):
     detection_table: str
     doc_id_column: str = "doc_id"
     entities_column: str = "aligned_entities"
-    top_k: int = 100
+    top_k: int = Field(default=100, le=10_000)
 
 
 class ReviewRequest(BaseModel):

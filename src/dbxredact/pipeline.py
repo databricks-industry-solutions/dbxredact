@@ -357,6 +357,10 @@ def run_redaction_pipeline(
     if not any([use_presidio, use_ai_query, use_gliner]):
         raise ValueError("At least one detection method must be enabled.")
 
+    from .metadata import _validate_identifier, _parse_table_name
+    _parse_table_name(output_table)
+    _validate_identifier(doc_id_column, "doc_id_column")
+
     t_pipeline_start = time.time()
 
     # DO NOT remove .distinct() -- prevents redundant processing of duplicate rows
@@ -456,6 +460,10 @@ def _ensure_checkpoint_volume_exists(spark: SparkSession, checkpoint_path: str) 
         return
     
     catalog, schema, volume_name = match.groups()
+    from .metadata import _validate_identifier
+    _validate_identifier(catalog, "catalog")
+    _validate_identifier(schema, "schema")
+    _validate_identifier(volume_name, "volume_name")
     volume_fqn = f"{catalog}.{schema}.{volume_name}"
     
     try:
@@ -549,6 +557,10 @@ def run_redaction_pipeline_streaming(
     Returns:
         StreamingQuery that can be awaited or monitored
     """
+    from .metadata import _validate_identifier, _parse_table_name
+    _parse_table_name(output_table)
+    _validate_identifier(doc_id_column, "doc_id_column")
+
     logger.info("Starting streaming redaction pipeline")
     logger.info(f"  Source: {source_table}")
     logger.info(f"  Output: {output_table}")
