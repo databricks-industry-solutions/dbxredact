@@ -64,7 +64,14 @@ class CalibratedScorer:
 
     @classmethod
     def load(cls, path: str) -> "CalibratedScorer":
-        """Load calibration from JSON."""
+        """Load calibration from JSON.
+
+        Restores IsotonicRegression state directly from saved thresholds.
+        Re-fitting on already-reduced thresholds can leave sklearn's internal
+        interpolation function (f_) as None in some versions.
+        """
+        from scipy.interpolate import interp1d
+
         with open(path) as f:
             data = json.load(f)
         scorer = cls()
@@ -72,6 +79,11 @@ class CalibratedScorer:
             X = np.array(params["X_thresholds_"])
             y = np.array(params["y_thresholds_"])
             ir = _get_isotonic_regression()(y_min=0.0, y_max=1.0, out_of_bounds="clip")
-            ir.fit(X, y)
+            ir.X_thresholds_ = X
+            ir.y_thresholds_ = y
+            ir.X_min_ = float(X.min())
+            ir.X_max_ = float(X.max())
+            ir.increasing_ = True
+            ir.f_ = interp1d(X, y, kind="linear", bounds_error=False)
             scorer._models[source] = ir
         return scorer
