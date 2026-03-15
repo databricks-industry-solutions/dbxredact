@@ -1,0 +1,4587 @@
+doc_id,text,begin,end,chunk,chunk_label
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",0,9,847291053,IDNUM
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",10,36,Riverside General Hospital,LOCATION
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",46,60,Sarah Mitchell,NAME
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",66,71,55412,IDNUM
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",88,98,04/15/2023,DATE
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",115,125,04/22/2023,DATE
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",146,160,Sarah Mitchell,NAME
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",185,211,Riverside General Hospital,LOCATION
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",215,225,04/15/2023,DATE
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",273,285,James Rivera,NAME
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",361,371,04/17/2023,DATE
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",520,530,04/20/2023,DATE
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",625,635,04/22/2023,DATE
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",664,690,Riverside General Hospital,LOCATION
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",732,744,James Rivera,NAME
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",754,766,555-867-5309,CONTACT
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",776,789,42 Oak Street,LOCATION
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",791,802,Springfield,LOCATION
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",804,812,Illinois,LOCATION
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",813,818,62704,LOCATION
+1,"847291053
+Riverside General Hospital
+Patient: Sarah Mitchell
+MRN: 55412
+Admission Date: 04/15/2023
+Discharge Date: 04/22/2023
+
+DISCHARGE SUMMARY
+
+Sarah Mitchell is a female admitted to Riverside General Hospital on 04/15/2023 with acute cholecystitis. She was evaluated by James Rivera in the emergency department. Laparoscopic cholecystectomy was performed on 04/17/2023 without complications. The patient tolerated the procedure well and was advanced to a regular diet by postoperative day two.
+
+Laboratory results on 04/20/2023 showed normalization of liver enzymes. The patient was discharged home in stable condition on 04/22/2023 with follow-up scheduled at Riverside General Hospital outpatient clinic.
+
+ATTENDING PHYSICIAN: James Rivera
+CONTACT: 555-867-5309
+ADDRESS: 42 Oak Street, Springfield, Illinois 62704
+SSN: 451-82-7731
+",824,835,451-82-7731,IDNUM
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",20,36,"November 3, 2024",DATE
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",47,61,Linda Nakamura,NAME
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",72,96,Cedarwood Medical Center,LOCATION
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",107,122,Robert Chambers,NAME
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",129,136,7829104,IDNUM
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",143,153,06/18/1955,DATE
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",155,170,Robert Chambers,NAME
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",363,379,"October 28, 2024",DATE
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",680,704,Cedarwood Medical Center,LOCATION
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",741,753,503-441-2288,CONTACT
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",774,788,Linda Nakamura,NAME
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",789,813,Cedarwood Medical Center,LOCATION
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",814,833,1200 Pine Boulevard,LOCATION
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",835,843,Portland,LOCATION
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",845,851,Oregon,LOCATION
+2,"Progress Note
+Date: November 3, 2024
+Provider: Linda Nakamura
+Facility: Cedarwood Medical Center
+
+Patient: Robert Chambers (MRN: 7829104)
+DOB: 06/18/1955
+
+Robert Chambers presents today for follow-up of type 2 diabetes mellitus. He reports compliance with metformin 1000mg twice daily. Blood glucose log shows fasting levels between 110-140 mg/dL. HbA1c drawn on October 28, 2024 was 7.2%.
+
+Physical exam reveals blood pressure 138/82, heart rate 76 bpm, weight 198 lbs. No peripheral edema. Monofilament exam normal bilaterally.
+
+Assessment: Type 2 diabetes, fair control. Hypertension, controlled.
+
+Plan: Continue current medications. Recheck HbA1c in three months. Referral to Cedarwood Medical Center Nutrition Services. Patient to call 503-441-2288 with any concerns.
+
+Linda Nakamura
+Cedarwood Medical Center
+1200 Pine Boulevard, Portland, Oregon 97205
+",852,857,97205,LOCATION
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",0,28,Mercy Valley Oncology Center,LOCATION
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",29,43,456 Elm Avenue,LOCATION
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",45,51,Austin,LOCATION
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",53,58,Texas,LOCATION
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",59,64,78701,LOCATION
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",72,84,512-330-7654,CONTACT
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",90,102,512-330-7655,CONTACT
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",110,127,"February 10, 2025",DATE
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",159,171,Angela Pratt,NAME
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",177,187,09/22/1968,DATE
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",193,200,3304817,IDNUM
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",207,221,Kenji Watanabe,NAME
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",239,251,Angela Pratt,NAME
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",344,354,01/28/2025,DATE
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",358,364,Austin,LOCATION
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",358,383,Austin Imaging Associates,LOCATION
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",413,423,02/05/2025,DATE
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",471,483,Angela Pratt,NAME
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",738,752,Marcus Delgado,NAME
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",753,781,Mercy Valley Oncology Center,LOCATION
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",789,801,512-330-7654,CONTACT
+3,"Mercy Valley Oncology Center
+456 Elm Avenue, Austin, Texas 78701
+Phone: 512-330-7654
+Fax: 512-330-7655
+
+Date: February 10, 2025
+
+RE: Patient Referral
+Patient: Angela Pratt
+DOB: 09/22/1968
+MRN: 3304817
+
+Dear Kenji Watanabe,
+
+I am referring Angela Pratt for evaluation of a newly diagnosed left breast mass identified on mammography performed on 01/28/2025 at Austin Imaging Associates. Ultrasound-guided biopsy on 02/05/2025 confirmed invasive ductal carcinoma, grade 2.
+
+Angela Pratt is otherwise in good health with no significant comorbidities. She has a family history of breast cancer in her mother. Please evaluate for surgical options and adjuvant therapy.
+
+Enclosed: pathology report, imaging studies, and lab results.
+
+Sincerely,
+Marcus Delgado
+Mercy Valley Oncology Center
+Phone: 512-330-7654
+Patient SSN: 298-44-6103
+",815,826,298-44-6103,IDNUM
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",18,50,Pinecrest Diagnostics Laboratory,LOCATION
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",51,65,800 Birch Lane,LOCATION
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",67,73,Denver,LOCATION
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",75,83,Colorado,LOCATION
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",84,89,80202,LOCATION
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",100,115,Felicia Okonkwo,NAME
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",121,128,6601938,IDNUM
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",134,144,12/04/1982,DATE
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",162,172,08/19/2024,DATE
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",189,199,08/20/2024,DATE
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",220,234,Thomas Brennan,NAME
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",635,649,Patricia Huang,NAME
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",650,682,Pinecrest Diagnostics Laboratory,LOCATION
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",700,712,303-555-0142,CONTACT
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",730,755,felicia.okonkwo@email.com,CONTACT
+4,"LABORATORY REPORT
+Pinecrest Diagnostics Laboratory
+800 Birch Lane, Denver, Colorado 80202
+
+Patient: Felicia Okonkwo
+MRN: 6601938
+DOB: 12/04/1982
+Collection Date: 08/19/2024
+Reporting Date: 08/20/2024
+Ordering Physician: Thomas Brennan
+
+COMPLETE BLOOD COUNT
+WBC: 6.8 x10^3/uL (4.5-11.0)
+RBC: 4.52 x10^6/uL (4.0-5.5)
+Hemoglobin: 13.1 g/dL (12.0-16.0)
+Hematocrit: 39.2% (36-46)
+Platelets: 245 x10^3/uL (150-400)
+
+COMPREHENSIVE METABOLIC PANEL
+Glucose: 102 mg/dL (70-100) H
+BUN: 18 mg/dL (7-20)
+Creatinine: 0.9 mg/dL (0.6-1.2)
+Sodium: 141 mEq/L (136-145)
+Potassium: 4.1 mEq/L (3.5-5.0)
+AST: 22 U/L (10-40)
+ALT: 28 U/L (7-56)
+
+Verified by: Patricia Huang
+Pinecrest Diagnostics Laboratory
+Results faxed to 303-555-0142
+Patient contact: felicia.okonkwo@email.com
+Account: 9920-4471-83
+",765,777,9920-4471-83,IDNUM
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",28,52,Lakewood Surgical Center,LOCATION
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",70,83,"March 8, 2024",DATE
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",93,102,David Kim,NAME
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",114,127,Rachel Foster,NAME
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",146,157,Omar Hassan,NAME
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",168,182,William Torres,NAME
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",188,195,1158274,IDNUM
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",201,211,07/30/1971,DATE
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",371,385,William Torres,NAME
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",423,447,Lakewood Surgical Center,LOCATION
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",518,529,Omar Hassan,NAME
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",760,774,William Torres,NAME
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",825,834,David Kim,NAME
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",835,859,Lakewood Surgical Center,LOCATION
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",867,879,720-889-3344,CONTACT
+5,"OPERATIVE REPORT
+
+Facility: Lakewood Surgical Center
+Date of Surgery: March 8, 2024
+Surgeon: David Kim
+Assistant: Rachel Foster
+Anesthesiologist: Omar Hassan
+
+Patient: William Torres
+MRN: 1158274
+DOB: 07/30/1971
+
+PREOPERATIVE DIAGNOSIS: Right inguinal hernia
+POSTOPERATIVE DIAGNOSIS: Right inguinal hernia
+
+PROCEDURE: Laparoscopic right inguinal hernia repair with mesh
+
+William Torres was brought to the operating room at Lakewood Surgical Center and placed in supine position. General anesthesia was administered by Omar Hassan. A standard three-port laparoscopic approach was used. The hernia defect was identified and reduced. A 10x15 cm polypropylene mesh was placed and secured with absorbable tacks.
+
+Estimated blood loss was minimal. No complications. William Torres was transferred to recovery in stable condition.
+
+David Kim
+Lakewood Surgical Center
+Phone: 720-889-3344
+Patient SSN: 612-33-9087
+",893,904,612-33-9087,IDNUM
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",28,52,Maplewood Imaging Center,LOCATION
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",62,76,Diana Kowalski,NAME
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",82,89,4420561,IDNUM
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",95,105,03/15/1979,DATE
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",117,130,"June 12, 2024",DATE
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",152,163,Steven Park,NAME
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",785,796,Yuki Tanaka,NAME
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",797,821,Maplewood Imaging Center,LOCATION
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",822,838,2900 Maple Drive,LOCATION
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",840,849,Charlotte,LOCATION
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",851,865,North Carolina,LOCATION
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",866,871,28202,LOCATION
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",887,898,Steven Park,NAME
+6,"RADIOLOGY REPORT
+
+Facility: Maplewood Imaging Center
+Patient: Diana Kowalski
+MRN: 4420561
+DOB: 03/15/1979
+Exam Date: June 12, 2024
+Referring Physician: Steven Park
+
+EXAM: CT Abdomen and Pelvis with contrast
+
+CLINICAL INDICATION: Abdominal pain, rule out appendicitis
+
+TECHNIQUE: Axial images of the abdomen and pelvis were obtained following administration of oral and intravenous contrast.
+
+FINDINGS: The appendix measures 4mm in diameter and is normal in appearance. No periappendiceal fat stranding or fluid. The liver, spleen, pancreas, and adrenal glands are unremarkable. Kidneys are normal in size and enhancement. No hydronephrosis. No free fluid. No pathologically enlarged lymph nodes.
+
+IMPRESSION: Normal CT abdomen and pelvis. No evidence of appendicitis.
+
+Interpreted by: Yuki Tanaka
+Maplewood Imaging Center
+2900 Maple Drive, Charlotte, North Carolina 28202
+Report sent to Steven Park at steven.park@healthcare.org
+",902,928,steven.park@healthcare.org,CONTACT
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",25,35,09/14/2024,DATE
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",58,73,Natalie Bergman,NAME
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",86,101,Alejandro Reyes,NAME
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",124,146,Summit Heart Institute,LOCATION
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",157,171,Gregory Lawson,NAME
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",177,184,8837102,IDNUM
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",190,200,11/27/1960,DATE
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",206,217,377-50-2184,IDNUM
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",294,308,Gregory Lawson,NAME
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",389,399,09/10/2024,DATE
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",403,425,Summit Heart Institute,LOCATION
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",776,794,"September 12, 2024",DATE
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",1028,1043,Alejandro Reyes,NAME
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",1067,1079,214-778-5501,CONTACT
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",1097,1112,Alejandro Reyes,NAME
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",1113,1135,Summit Heart Institute,LOCATION
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",1136,1154,5500 Highland Road,LOCATION
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",1156,1162,Dallas,LOCATION
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",1164,1169,Texas,LOCATION
+7,"CONSULTATION NOTE
+
+Date: 09/14/2024
+Requesting Physician: Natalie Bergman
+Consultant: Alejandro Reyes, Cardiology
+Facility: Summit Heart Institute
+
+Patient: Gregory Lawson
+MRN: 8837102
+DOB: 11/27/1960
+SSN: 377-50-2184
+
+REASON FOR CONSULTATION: Evaluation of newly detected atrial fibrillation
+
+Gregory Lawson is a male who was found to have atrial fibrillation on routine ECG performed on 09/10/2024 at Summit Heart Institute. He denies palpitations, chest pain, or dyspnea. Past medical history includes hypertension and hyperlipidemia.
+
+Physical examination reveals irregularly irregular heart rhythm at a rate of 82 bpm. No murmurs, gallops, or rubs. Lungs clear. No peripheral edema.
+
+ECG confirms atrial fibrillation with controlled ventricular rate. Echocardiogram from September 12, 2024 shows preserved ejection fraction of 58%, left atrial enlargement, and no valvular abnormalities.
+
+RECOMMENDATIONS: Start apixaban 5mg twice daily for stroke prophylaxis. Rate control with metoprolol 25mg twice daily. Follow-up with Alejandro Reyes in four weeks. Contact 214-778-5501 for scheduling.
+
+Alejandro Reyes
+Summit Heart Institute
+5500 Highland Road, Dallas, Texas 75201
+",1170,1175,75201,LOCATION
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",37,64,Bayshore Community Hospital,LOCATION
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",71,81,01/05/2025,DATE
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",92,107,Christine Adler,NAME
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",118,132,Marcus Johnson,NAME
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",138,145,2219467,IDNUM
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",151,161,08/03/1990,DATE
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",208,222,Marcus Johnson,NAME
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",263,290,Bayshore Community Hospital,LOCATION
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",860,870,01/05/2025,DATE
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",901,928,Bayshore Community Hospital,LOCATION
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",967,979,415-209-8836,CONTACT
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",982,997,Christine Adler,NAME
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",998,1025,Bayshore Community Hospital,LOCATION
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",1026,1040,100 Harbor Way,LOCATION
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",1042,1055,San Francisco,LOCATION
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",1057,1067,California,LOCATION
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",1068,1073,94102,LOCATION
+8,"EMERGENCY DEPARTMENT NOTE
+
+Facility: Bayshore Community Hospital
+Date: 01/05/2025
+Provider: Christine Adler
+
+Patient: Marcus Johnson
+MRN: 2219467
+DOB: 08/03/1990
+
+CHIEF COMPLAINT: Laceration to left forearm
+
+Marcus Johnson presents to the emergency department at Bayshore Community Hospital after sustaining a laceration to the left forearm from a broken glass approximately one hour ago. He denies numbness, weakness, or tendon involvement. Tetanus is current.
+
+EXAMINATION: There is a 4 cm linear laceration over the volar aspect of the left forearm. No tendon or nerve involvement. Sensation and motor function intact distally. Wound is clean with no foreign body.
+
+TREATMENT: Wound irrigated with sterile saline. Repair performed with 4-0 nylon, simple interrupted sutures. Wound dressed with bacitracin and sterile gauze.
+
+DISPOSITION: Discharged home on 01/05/2025. Suture removal in 10 days at Bayshore Community Hospital outpatient clinic. Emergency contact: 415-209-8836.
+
+Christine Adler
+Bayshore Community Hospital
+100 Harbor Way, San Francisco, California 94102
+Patient ID: 8841-2025-0105
+",1086,1100,8841-2025-0105,IDNUM
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",37,67,Crescent Valley Medical Center,LOCATION
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",77,90,Elena Vasquez,NAME
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",96,103,5504219,IDNUM
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",109,119,05/11/1974,DATE
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",139,149,10/22/2024,DATE
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",166,176,10/25/2024,DATE
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",186,198,Philip Grant,NAME
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",212,224,Miriam Cheng,NAME
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",981,993,Miriam Cheng,NAME
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",997,1007,10/25/2024,DATE
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",1010,1040,Crescent Valley Medical Center,LOCATION
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",1041,1060,7700 Valley Parkway,LOCATION
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",1062,1069,Phoenix,LOCATION
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",1071,1078,Arizona,LOCATION
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",1079,1084,85004,LOCATION
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",1100,1112,Philip Grant,NAME
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",1117,1130,Elena Vasquez,NAME
+9,"SURGICAL PATHOLOGY REPORT
+
+Facility: Crescent Valley Medical Center
+Patient: Elena Vasquez
+MRN: 5504219
+DOB: 05/11/1974
+Date of Procedure: 10/22/2024
+Date of Report: 10/25/2024
+Surgeon: Philip Grant
+Pathologist: Miriam Cheng
+
+SPECIMEN: Excisional biopsy, right breast lesion
+
+GROSS DESCRIPTION: Received fresh labeled ""right breast mass"" is an irregularly shaped tan-pink tissue fragment measuring 3.2 x 2.8 x 1.5 cm. A firm area measuring 1.1 cm in greatest dimension is identified centrally. Specimen entirely submitted in cassettes A1-A4.
+
+MICROSCOPIC DESCRIPTION: Sections show invasive ductal carcinoma, Nottingham grade 2 (tubule formation 3, nuclear pleomorphism 2, mitotic count 1). Tumor measures 1.0 cm. Margins are negative with closest margin at 0.3 cm. No lymphovascular invasion. No ductal carcinoma in situ component identified.
+
+DIAGNOSIS: Right breast, excisional biopsy: Invasive ductal carcinoma, grade 2, measuring 1.0 cm. Margins negative.
+
+Report verified by Miriam Cheng on 10/25/2024.
+
+Crescent Valley Medical Center
+7700 Valley Parkway, Phoenix, Arizona 85004
+Copies sent to Philip Grant and Elena Vasquez primary care at 602-444-9127.
+",1147,1159,602-444-9127,CONTACT
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",37,71,Brookfield Community Health Center,LOCATION
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",78,88,07/01/2024,DATE
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",99,110,Janet Owens,NAME
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",120,133,Daniel Nguyen,NAME
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",139,146,9038715,IDNUM
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",152,162,02/28/1987,DATE
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",170,182,617-332-5540,CONTACT
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",480,493,Daniel Nguyen,NAME
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",610,644,Brookfield Community Health Center,LOCATION
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",657,667,06/15/2024,DATE
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",698,709,Janet Owens,NAME
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",737,752,"January 1, 2025",DATE
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",756,790,Brookfield Community Health Center,LOCATION
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",826,838,617-332-5541,CONTACT
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",848,874,pharmacy@brookfieldchc.org,CONTACT
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",877,888,Janet Owens,NAME
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",889,923,Brookfield Community Health Center,LOCATION
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",924,939,350 Main Street,LOCATION
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",941,947,Boston,LOCATION
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",949,962,Massachusetts,LOCATION
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",963,968,02108,LOCATION
+10,"MEDICATION RECONCILIATION
+
+Facility: Brookfield Community Health Center
+Date: 07/01/2024
+Provider: Janet Owens
+Patient: Daniel Nguyen
+MRN: 9038715
+DOB: 02/28/1987
+Phone: 617-332-5540
+
+CURRENT MEDICATIONS:
+1. Lisinopril 20mg PO daily - hypertension
+2. Atorvastatin 40mg PO at bedtime - hyperlipidemia
+3. Metformin 500mg PO twice daily - type 2 diabetes
+4. Omeprazole 20mg PO daily - GERD
+5. Sertraline 50mg PO daily - depression
+
+ALLERGIES: Penicillin (rash), Sulfa drugs (hives)
+
+Daniel Nguyen reports compliance with all medications. No new medications, supplements, or over-the-counter drugs. Last refill at Brookfield Community Health Center pharmacy on 06/15/2024.
+
+Reconciliation performed by Janet Owens. Next review scheduled for January 1, 2025 at Brookfield Community Health Center. Patient can reach the pharmacy at 617-332-5541 or email pharmacy@brookfieldchc.org.
+
+Janet Owens
+Brookfield Community Health Center
+350 Main Street, Boston, Massachusetts 02108
+Patient account: 7744-0389
+",986,995,7744-0389,IDNUM

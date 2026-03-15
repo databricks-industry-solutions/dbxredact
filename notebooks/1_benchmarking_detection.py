@@ -23,8 +23,10 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
-# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl
+# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl
+# MAGIC # For faster CPU inference at the cost of lower NER accuracy:
+# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
+# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_lg-3.8.0/es_core_news_lg-3.8.0-py3-none-any.whl
 # MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
 # MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.0-py3-none-any.whl
 # MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
@@ -35,7 +37,7 @@
 import os
 from pyspark.sql.functions import col
 
-from dbxredact import run_detection_pipeline
+from dbxredact import run_detection_pipeline, load_filter_from_table, EntityFilter
 
 # COMMAND ----------
 
@@ -44,55 +46,89 @@ from dbxredact import run_detection_pipeline
 
 # COMMAND ----------
 
+dbutils.widgets.dropdown(
+    name="detection_profile",
+    defaultValue="fast",
+    choices=["fast", "deep", "custom"],
+    label="0. Detection Profile",
+)
 dbutils.widgets.text(
     name="source_table",
     defaultValue="your_catalog.your_schema.jsl_benchmark_source",
-    label="0. Source Table",
+    label="1. Source Table",
 )
 dbutils.widgets.text(
-    name="doc_id_column", defaultValue="doc_id", label="1. Document ID Column"
+    name="doc_id_column", defaultValue="doc_id", label="2. Document ID Column"
 )
-dbutils.widgets.text(name="text_column", defaultValue="text", label="2. Text Column")
+dbutils.widgets.text(name="text_column", defaultValue="text", label="3. Text Column")
 dbutils.widgets.dropdown(
     name="use_presidio",
     defaultValue="true",
     choices=["true", "false"],
-    label="3. Use Presidio Detection",
+    label="4. Use Presidio Detection",
 )
 dbutils.widgets.dropdown(
     name="use_ai_query",
     defaultValue="true",
     choices=["true", "false"],
-    label="4. Use AI Query Detection",
+    label="5. Use AI Query Detection",
 )
 dbutils.widgets.dropdown(
     name="use_gliner",
-    defaultValue="false",
+    defaultValue="true",
     choices=["true", "false"],
-    label="5. Use GLiNER Detection",
+    label="6. Use GLiNER Detection",
 )
-dbutils.widgets.dropdown(
+dbutils.widgets.text(
     name="endpoint",
     defaultValue="databricks-gpt-oss-120b",
-    choices=sorted(
-        [
-            "databricks-gpt-oss-120b",
-        ]
-    ),
-    label="6. AI Endpoint (for AI Query method)",
+    label="7. AI Endpoint (for AI Query method)",
 )
 dbutils.widgets.text(
     name="presidio_score_threshold",
     defaultValue="0.5",
-    label="7. Presidio Score Threshold",
+    label="8. Presidio Score Threshold",
 )
-dbutils.widgets.text(name="num_cores", defaultValue="10", label="8. Number of Cores")
+dbutils.widgets.text(name="num_cores", defaultValue="0", label="9. Number of Cores (0=auto)")
 dbutils.widgets.text(
     name="output_table",
     defaultValue="",
-    label="9. Output Table (leave blank for auto-suffix)",
+    label="10. Output Table (leave blank for auto-suffix)",
+)
+dbutils.widgets.dropdown(
+    name="alignment_mode",
+    defaultValue="union",
+    choices=["union", "consensus"],
+    label="11. Alignment Mode (union=recall, consensus=precision)",
+)
+dbutils.widgets.text(
+    name="max_rows",
+    defaultValue="10000",
+    label="12. Max Rows (0 for unlimited)",
+)
+dbutils.widgets.dropdown(
+    name="reasoning_effort",
+    defaultValue="low",
+    choices=["low", "medium", "high"],
+    label="13. Reasoning Effort (AI Query)",
+)
+dbutils.widgets.text(
+    name="gliner_max_words",
+    defaultValue="256",
+    label="14. GLiNER Max Words (chunk size)",
+)
+dbutils.widgets.text(
+    name="safe_list_table",
+    defaultValue="",
+    label="15. Safe List Table (optional, fully qualified)",
+)
+dbutils.widgets.text(
+    name="block_list_table",
+    defaultValue="",
+    label="16. Block List Table (optional, fully qualified)",
 )
 
+detection_profile = dbutils.widgets.get("detection_profile")
 source_table = dbutils.widgets.get("source_table")
 doc_id_column = dbutils.widgets.get("doc_id_column")
 text_column = dbutils.widgets.get("text_column")
@@ -108,7 +144,54 @@ use_gliner = dbutils.widgets.get("use_gliner") == "true"
 endpoint = dbutils.widgets.get("endpoint")
 score_threshold = float(dbutils.widgets.get("presidio_score_threshold"))
 num_cores = int(dbutils.widgets.get("num_cores"))
+if num_cores <= 0:
+    try:
+        num_cores = sc.defaultParallelism
+    except Exception:
+        num_cores = 8
+    print(f"Auto-detected {num_cores} task slots")
 output_table = dbutils.widgets.get("output_table")
+alignment_mode = dbutils.widgets.get("alignment_mode")
+max_rows_str = dbutils.widgets.get("max_rows")
+max_rows = None if max_rows_str == "0" else int(max_rows_str)
+reasoning_effort = dbutils.widgets.get("reasoning_effort")
+gliner_max_words = int(dbutils.widgets.get("gliner_max_words"))
+safe_list_table = dbutils.widgets.get("safe_list_table").strip()
+block_list_table = dbutils.widgets.get("block_list_table").strip()
+
+# Profile overrides
+presidio_pattern_only = False
+if detection_profile == "fast":
+    use_presidio, use_ai_query, use_gliner = True, True, True
+    reasoning_effort, gliner_max_words = "low", 256
+    presidio_pattern_only = True
+    print("Profile: Fast Mode -- AI Query + GLiNER + Presidio (pattern-only), reasoning=low, max_words=256")
+elif detection_profile == "deep":
+    use_presidio, use_ai_query, use_gliner = True, True, True
+    reasoning_effort, gliner_max_words = "medium", 256
+    print("Profile: Deep Search -- all detectors, reasoning=medium, max_words=256")
+
+entity_filter = None
+if safe_list_table or block_list_table:
+    ef = EntityFilter()
+    if safe_list_table:
+        safe_ef = load_filter_from_table(spark, safe_list_table, list_type="safe")
+        ef.safe_list, ef.safe_patterns = safe_ef.safe_list, safe_ef.safe_patterns
+        ef._safe_set, ef._safe_re = safe_ef._safe_set, safe_ef._safe_re
+        print(f"Loaded safe list: {len(ef.safe_list)} exact, {len(ef.safe_patterns)} patterns")
+    if block_list_table:
+        block_ef = load_filter_from_table(spark, block_list_table, list_type="block")
+        ef.block_list, ef.block_patterns = block_ef.block_list, block_ef.block_patterns
+        ef._block_set, ef._block_re = block_ef._block_set, block_ef._block_re
+        print(f"Loaded block list: {len(ef.block_list)} exact, {len(ef.block_patterns)} patterns")
+    entity_filter = ef
+
+if not any([use_presidio, use_ai_query, use_gliner]):
+    raise ValueError("At least one detection method must be enabled.")
+if not 0.0 <= score_threshold <= 1.0:
+    raise ValueError(f"Presidio score threshold must be in [0.0, 1.0], got {score_threshold}")
+if num_cores < 1:
+    raise ValueError(f"Number of cores must be a positive integer, got {num_cores}")
 
 if not output_table:
     output_table = f"{source_table}_detection_results"
@@ -131,23 +214,18 @@ if "client" not in dbr_version:
 
 # COMMAND ----------
 
-source_df = spark.table(source_table).select(doc_id_column, col(text_column))
+_source_columns = [c.name for c in spark.table(source_table).schema]
+for _col in [doc_id_column, text_column]:
+    if _col not in _source_columns:
+        raise ValueError(f"Column '{_col}' not found in {source_table}. Available: {_source_columns}")
 
+source_df = spark.table(source_table).select(doc_id_column, col(text_column)).distinct()
 source_df_count = source_df.count()
+print(f"Source has {source_df_count} distinct documents from {source_table}")
 
-if source_df_count > 100:
-    print(
-        "Source table has more than 100 documents. Please use a smaller table or increase the limit for evaluation."
-    )
-    source_df = source_df.distinct()
-    source_df_distinct_count = source_df.count()
-    if source_df_distinct_count > 100:
-        raise ValueError(
-            "Source table has more than 100 distinct documents, even when distincted. Please use a smaller table or increase the limit for evaluation."
-        )
-
-print(f"Loaded {source_df_count} documents from {source_table}")
-display(source_df.limit(10))
+if max_rows and source_df_count > max_rows:
+    print(f"WARNING: Limiting to {max_rows:,} rows (set max_rows=0 for unlimited).")
+    source_df = source_df.limit(max_rows)
 
 # COMMAND ----------
 
@@ -168,6 +246,11 @@ results_df = run_detection_pipeline(
     score_threshold=score_threshold,
     num_cores=num_cores,
     align_results=True,
+    alignment_mode=alignment_mode,
+    entity_filter=entity_filter,
+    reasoning_effort=reasoning_effort,
+    gliner_max_words=gliner_max_words,
+    presidio_pattern_only=presidio_pattern_only,
 )
 
 # COMMAND ----------
@@ -177,7 +260,7 @@ results_df = run_detection_pipeline(
 
 # COMMAND ----------
 
-results_df.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(
+results_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(
     output_table
 )
 print(f"Results saved to table: {output_table}")

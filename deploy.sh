@@ -1,11 +1,32 @@
 #!/bin/bash
 # Deploy dbxredact to Databricks
-# Usage: ./deploy.sh [dev|prod] [--validate-only]
+# Usage: ./deploy.sh [dev|prod] [--validate-only] [--yes|-y]
 
 set -e
 
 ENV="${1:-dev}"
-VALIDATE_ONLY="${2:-}"
+VALIDATE_ONLY=""
+AUTO_YES=false
+for arg in "$@"; do
+    case "$arg" in
+        --validate-only) VALIDATE_ONLY="--validate-only" ;;
+        --yes|-y) AUTO_YES=true ;;
+    esac
+done
+
+confirm() {
+    local msg="$1"
+    if [ "$AUTO_YES" = true ]; then return 0; fi
+    echo ""
+    echo "--- $msg ---"
+    read -rp "Proceed? [Y/n/q] " answer
+    answer=$(echo "$answer" | tr '[:upper:]' '[:lower:]')
+    case "$answer" in
+        q) echo "Aborted."; exit 0 ;;
+        n) echo "Skipped."; return 1 ;;
+        *) return 0 ;;
+    esac
+}
 
 # Determine env file
 if [ "$ENV" == "prod" ]; then
@@ -52,55 +73,74 @@ if [ -z "${SCHEMA}" ]; then
     exit 1
 fi
 
-echo "Databricks Host: ${DATABRICKS_HOST}"
-echo "Catalog: ${CATALOG}"
-echo "Schema: ${SCHEMA}"
+# App deployment flag (default: true)
+DEPLOY_APP="${DEPLOY_APP:-true}"
+
+if [ -z "${WAREHOUSE_ID}" ] && [ "${DEPLOY_APP}" != "false" ]; then
+    echo "Error: WAREHOUSE_ID not set in ${ENV_FILE} (required when DEPLOY_APP=true)"
+    exit 1
+fi
+
+# Get package version from pyproject.toml (single source of truth)
+PACKAGE_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+VOLUME_PATH="/Volumes/${CATALOG}/${SCHEMA}/wheels"
+WHEEL_FILE="dbxredact-${PACKAGE_VERSION}-py3-none-any.whl"
+
+echo ""
+echo "  Host:          ${DATABRICKS_HOST}"
+echo "  Catalog:       ${CATALOG}"
+echo "  Schema:        ${SCHEMA}"
+echo "  Warehouse ID:  ${WAREHOUSE_ID}"
+echo "  Version:       ${PACKAGE_VERSION}"
+echo "  Volume:        ${VOLUME_PATH}"
+echo "  Wheel:         ${WHEEL_FILE}"
+echo "  Deploy app:    ${DEPLOY_APP}"
 echo ""
 
 # Generate databricks.yml from template
-echo "Generating databricks.yml from template..."
-if [ ! -f "databricks.yml.template" ]; then
-    echo "Error: databricks.yml.template not found"
-    exit 1
+if confirm "Generate databricks.yml from template for target '${TARGET}' on ${DATABRICKS_HOST}"; then
+    if [ ! -f "databricks.yml.template" ]; then
+        echo "Error: databricks.yml.template not found"
+        exit 1
+    fi
+    sed -e "s|__DATABRICKS_HOST__|${DATABRICKS_HOST}|g" \
+        -e "s|__CATALOG__|${CATALOG}|g" \
+        -e "s|__SCHEMA__|${SCHEMA}|g" \
+        -e "s|__WAREHOUSE_ID__|${WAREHOUSE_ID}|g" \
+        -e "s|__PACKAGE_VERSION__|${PACKAGE_VERSION}|g" \
+        databricks.yml.template > databricks.yml
+    if [ "${DEPLOY_APP}" = "false" ]; then
+        sed -i.bak '/resources\/app\.yml/d' databricks.yml && rm -f databricks.yml.bak
+        echo "Generated databricks.yml (app excluded)"
+    else
+        echo "Generated databricks.yml"
+    fi
 fi
-
-sed -e "s|__DATABRICKS_HOST__|${DATABRICKS_HOST}|g" \
-    -e "s|__CATALOG__|${CATALOG}|g" \
-    -e "s|__SCHEMA__|${SCHEMA}|g" \
-    databricks.yml.template > databricks.yml
-echo "Generated databricks.yml"
 
 # Build wheel
-echo ""
-echo "Building wheel with poetry..."
-poetry build
-
-# Get package version from pyproject.toml
-PACKAGE_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-WHEEL_FILE="dbxredact-${PACKAGE_VERSION}-py3-none-any.whl"
 WHEEL_PATH="dist/${WHEEL_FILE}"
-
-echo "Built wheel: ${WHEEL_PATH}"
+if confirm "Build wheel with poetry (version ${PACKAGE_VERSION})"; then
+    poetry build
+    echo "Built wheel: ${WHEEL_PATH}"
+fi
 
 # Upload wheel to volume
-echo ""
-VOLUME_PATH="/Volumes/${CATALOG}/${SCHEMA}/wheels"
-echo "Uploading wheel to ${VOLUME_PATH}..."
-
-if ! databricks fs cp "${WHEEL_PATH}" "dbfs:${VOLUME_PATH}/${WHEEL_FILE}" --overwrite; then
-    echo ""
-    echo "Error: Failed to upload wheel to ${VOLUME_PATH}"
-    echo ""
-    echo "Check that the volume exists. Create it with:"
-    echo "  CREATE VOLUME IF NOT EXISTS ${CATALOG}.${SCHEMA}.wheels"
-    exit 1
+if confirm "Upload ${WHEEL_FILE} to ${VOLUME_PATH}/${WHEEL_FILE}"; then
+    if ! databricks fs cp "${WHEEL_PATH}" "dbfs:${VOLUME_PATH}/${WHEEL_FILE}" --overwrite; then
+        echo ""
+        echo "Error: Failed to upload wheel to ${VOLUME_PATH}"
+        echo ""
+        echo "Check that the volume exists. Create it with:"
+        echo "  CREATE VOLUME IF NOT EXISTS ${CATALOG}.${SCHEMA}.wheels"
+        exit 1
+    fi
+    echo "Uploaded wheel to ${VOLUME_PATH}/${WHEEL_FILE}"
 fi
-echo "Uploaded wheel to ${VOLUME_PATH}/${WHEEL_FILE}"
 
 # Validate bundle
-echo ""
-echo "Validating Databricks bundle..."
-databricks bundle validate -t "${TARGET}"
+if confirm "Validate Databricks bundle for target '${TARGET}'"; then
+    databricks bundle validate -t "${TARGET}"
+fi
 
 if [ "$VALIDATE_ONLY" == "--validate-only" ]; then
     echo ""
@@ -109,12 +149,85 @@ if [ "$VALIDATE_ONLY" == "--validate-only" ]; then
 fi
 
 # Deploy bundle
-echo ""
-echo "Deploying Databricks bundle..."
-databricks bundle deploy -t "${TARGET}"
+if confirm "Deploy Databricks bundle to target '${TARGET}' on ${DATABRICKS_HOST}"; then
+    databricks bundle deploy -t "${TARGET}"
+    echo ""
+    echo "=== Deployment Complete ==="
+    echo "Target: ${TARGET}"
+    echo "Host: ${DATABRICKS_HOST}"
+    echo "Wheel: ${VOLUME_PATH}/${WHEEL_FILE}"
+fi
+
+# Grant UC permissions to app service principal
+APP_NAME="dbxredact-app"
+if [ "${DEPLOY_APP}" = "false" ]; then
+    echo "Skipping app UC grants (DEPLOY_APP=false)"
+elif confirm "Grant UC permissions to app service principal '${APP_NAME}' for ${CATALOG}.${SCHEMA}"; then
+    echo "Fetching service principal for app '${APP_NAME}'..."
+
+    APP_JSON=$(databricks apps get "${APP_NAME}" --output json 2>&1) || {
+        echo "ERROR: Failed to get app info: ${APP_JSON}"
+        echo "The app may not exist yet -- it will be created by 'bundle run' below."
+        echo "Re-run this script after the first deploy to grant permissions."
+        APP_JSON=""
+    }
+
+    if [ -n "${APP_JSON}" ]; then
+        SPN_ID=$(echo "${APP_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_id',''))")
+        echo "App service principal ID: ${SPN_ID}"
+
+        if [ -z "${SPN_ID}" ]; then
+            echo "ERROR: service_principal_id not found in app response."
+            echo "Full response: ${APP_JSON}"
+            exit 1
+        fi
+
+        SPN_JSON=$(databricks service-principals get "${SPN_ID}" --output json 2>&1) || {
+            echo "ERROR: Failed to get service principal: ${SPN_JSON}"
+            exit 1
+        }
+        APP_ID=$(echo "${SPN_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('applicationId',''))")
+
+        if [ -z "${APP_ID}" ]; then
+            echo "ERROR: application_id not found for SPN ${SPN_ID}."
+            echo "Full response: ${SPN_JSON}"
+            exit 1
+        fi
+
+        echo "Service principal application_id: ${APP_ID}"
+        echo "Granting UC permissions..."
+
+        GRANT_STATEMENTS=(
+            "GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${APP_ID}\`"
+            "GRANT USE SCHEMA ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
+            "GRANT CREATE TABLE ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
+            "GRANT SELECT ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
+            "GRANT MODIFY ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
+        )
+
+        for STMT in "${GRANT_STATEMENTS[@]}"; do
+            echo "  Running: ${STMT}"
+            RESULT=$(databricks api post /api/2.0/sql/statements \
+                --json "{\"warehouse_id\": \"${WAREHOUSE_ID}\", \"statement\": \"${STMT}\", \"wait_timeout\": \"30s\"}" 2>&1)
+            STATUS=$(echo "${RESULT}" | python3 -c "import sys,json; d=json.load(sys.stdin); s=d.get('status',{}); print(s.get('state','UNKNOWN'))" 2>/dev/null || echo "PARSE_ERROR")
+            if [ "${STATUS}" = "SUCCEEDED" ]; then
+                echo "    OK"
+            else
+                echo "    FAILED (status: ${STATUS})"
+                echo "    Response: ${RESULT}"
+                exit 1
+            fi
+        done
+        echo "All grants applied successfully."
+    fi
+fi
+
+# Start/redeploy the app
+if [ "${DEPLOY_APP}" = "false" ]; then
+    echo "Skipping app start (DEPLOY_APP=false)"
+elif confirm "Start/redeploy app 'dbxredact_app' on target '${TARGET}'"; then
+    databricks bundle run dbxredact_app -t "${TARGET}"
+fi
 
 echo ""
-echo "=== Deployment Complete ==="
-echo "Target: ${TARGET}"
-echo "Host: ${DATABRICKS_HOST}"
-echo "Wheel: ${VOLUME_PATH}/${WHEEL_FILE}"
+echo "=== Done ==="

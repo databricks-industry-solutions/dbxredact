@@ -1,6 +1,37 @@
 """Utility functions for PHI/PII detection and matching."""
 
+import re
+from typing import List
+
 from rapidfuzz import fuzz
+
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def build_offset_map(original: str) -> List[int]:
+    """Map each character position in normalized text to its position in original.
+
+    Mirrors the behaviour of ``re.sub(r"\\s+", " ", original).strip()``:
+    leading/trailing whitespace is dropped and interior runs of whitespace
+    collapse to a single space.
+    """
+    mapping: List[int] = []
+    oi = 0
+    while oi < len(original) and original[oi] in " \t\n\r":
+        oi += 1
+    in_ws = False
+    for oi_scan in range(oi, len(original)):
+        ch = original[oi_scan]
+        if ch in " \t\n\r":
+            if not in_ws:
+                mapping.append(oi_scan)
+                in_ws = True
+        else:
+            mapping.append(oi_scan)
+            in_ws = False
+    while mapping and original[mapping[-1]] in " \t\n\r":
+        mapping.pop()
+    return mapping
 
 
 def is_fuzzy_match(str1: str, str2: str, threshold: int = 50) -> bool:
@@ -29,19 +60,19 @@ def is_overlap(
     start1: int, end1: int, start2: int, end2: int, tolerance: int = 0
 ) -> bool:
     """
-    Check if two intervals overlap.
+    Check if two half-open intervals overlap.
 
     Args:
         start1: Start position of first interval
-        end1: End position of first interval
+        end1: End position of first interval (exclusive)
         start2: Start position of second interval
-        end2: End position of second interval
-        tolerance: Optional tolerance for near-misses (default: 0)
+        end2: End position of second interval (exclusive)
+        tolerance: Extends each end position by this amount (default: 0)
 
     Returns:
-        True if intervals [start1, end1] and [start2, end2] overlap
+        True if intervals [start1, end1) and [start2, end2) overlap
     """
-    return max(start1, start2) <= min(end1, end2) + tolerance
+    return max(start1, start2) < min(end1, end2) + tolerance
 
 
 def calculate_overlap(start1: int, end1: int, start2: int, end2: int) -> int:

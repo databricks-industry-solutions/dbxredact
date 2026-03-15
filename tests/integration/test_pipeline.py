@@ -57,7 +57,7 @@ class TestModuleExports:
         import dbxredact
 
         # Config
-        assert hasattr(dbxredact, "ELIGIBLE_ENTITY_TYPES")
+        assert hasattr(dbxredact, "PRESIDIO_ENTITY_TYPES")
         assert hasattr(dbxredact, "LABEL_ENUMS")
         assert hasattr(dbxredact, "PHI_PROMPT_SKELETON")
 

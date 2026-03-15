@@ -1,26 +1,17 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # PII/PHI Redaction
+# MAGIC # PII/PHI Redaction -- Per-Method Benchmark
 # MAGIC
-# MAGIC This notebook takes detection results and applies redaction to create a clean dataset.
+# MAGIC Applies redaction separately for **each** detection method so redaction quality
+# MAGIC can be compared side-by-side.
 # MAGIC
-# MAGIC **Redaction Strategies:**
-# MAGIC - **Generic**: Replace entities with `[REDACTED]`
-# MAGIC - **Typed**: Replace entities with type-specific placeholders like `[PERSON]`, `[EMAIL]`
-# MAGIC
-# MAGIC **Input:**
-# MAGIC - Table with detection results (from Benchmarking Detection notebook)
-# MAGIC
-# MAGIC **Output:**
-# MAGIC - New table with redacted text (suffix: `_redacted`)
+# MAGIC **Output columns:** `text_redacted_presidio`, `text_redacted_ai`,
+# MAGIC `text_redacted_gliner`, `text_redacted_aligned`
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Install dbxredact
-# MAGIC
-# MAGIC When running via a Databricks Asset Bundle job, the wheel is attached as a cluster library automatically.
-# MAGIC For interactive use, uncomment and update the `%pip install` line below.
 
 # COMMAND ----------
 
@@ -31,9 +22,9 @@
 
 # COMMAND ----------
 
-from pyspark.sql.functions import col
+from pyspark.sql.functions import col, explode, size
 
-from dbxredact import create_redacted_table
+from dbxredact import create_redaction_udf
 
 # COMMAND ----------
 
@@ -48,42 +39,30 @@ dbutils.widgets.text(
     label="0. Detection Results Table",
 )
 dbutils.widgets.text(
-    name="text_column", defaultValue="text", label="1. Text Column to Redact"
-)
-dbutils.widgets.text(
-    name="entities_column", defaultValue="aligned_entities", label="2. Entities Column"
+    name="text_column", defaultValue="text", label="1. Text Column"
 )
 dbutils.widgets.dropdown(
     name="redaction_strategy",
     defaultValue="typed",
     choices=["generic", "typed"],
-    label="3. Redaction Strategy",
+    label="2. Redaction Strategy",
 )
 dbutils.widgets.text(
     name="output_table",
     defaultValue="your_catalog.your_schema.jsl_benchmark_redacted",
-    label="4. Output Table (leave blank for auto-suffix)",
-)
-dbutils.widgets.text(
-    name="redacted_suffix", defaultValue="_redacted", label="5. Redacted Column Suffix"
+    label="3. Output Table",
 )
 
 detection_table = dbutils.widgets.get("detection_table")
 text_column = dbutils.widgets.get("text_column")
-entities_column = dbutils.widgets.get("entities_column")
 redaction_strategy = dbutils.widgets.get("redaction_strategy")
 output_table = dbutils.widgets.get("output_table")
-redacted_suffix = dbutils.widgets.get("redacted_suffix")
 
 for _table in [detection_table, output_table]:
     if _table and ("your_catalog" in _table or "your_schema" in _table):
         raise ValueError(
-            "Please update the table widgets with your actual catalog and schema names. "
-            "The defaults (your_catalog.your_schema) are placeholders."
+            "Please update table widgets with your actual catalog and schema names."
         )
-
-if not output_table:
-    output_table = f"{detection_table}_redacted"
 
 # COMMAND ----------
 
@@ -93,74 +72,85 @@ if not output_table:
 # COMMAND ----------
 
 detection_df = spark.table(detection_table)
-
 print(f"Loaded {detection_df.count()} records from {detection_table}")
 print(f"Columns: {detection_df.columns}")
-
-if text_column not in detection_df.columns:
-    raise ValueError(f"Text column '{text_column}' not found in table")
-if entities_column not in detection_df.columns:
-    raise ValueError(f"Entities column '{entities_column}' not found in table")
-
 display(detection_df.limit(5))
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Apply Redaction
+# MAGIC ## Apply Redaction Per Method
 
 # COMMAND ----------
 
-redacted_df = create_redacted_table(
-    spark=spark,
-    source_df=detection_df,
-    text_column=text_column,
-    entities_column=entities_column,
-    output_table=output_table,
-    strategy=redaction_strategy,
-    suffix=redacted_suffix,
+METHOD_ENTITIES_MAP = {
+    "presidio": "presidio_results_struct",
+    "ai": "ai_results_struct",
+    "gliner": "gliner_results_struct",
+    "aligned": "aligned_entities",
+}
+
+redact_udf = create_redaction_udf(strategy=redaction_strategy)
+redacted_df = detection_df
+
+applied_methods = []
+
+for method, entities_col in METHOD_ENTITIES_MAP.items():
+    if entities_col not in detection_df.columns:
+        print(f"Skipping {method}: column '{entities_col}' not found")
+        continue
+    redacted_col = f"text_redacted_{method}"
+    redacted_df = redacted_df.withColumn(
+        redacted_col, redact_udf(col(text_column), col(entities_col))
+    )
+    applied_methods.append(method)
+    print(f"Applied {redaction_strategy} redaction for {method}")
+
+print(f"\nMethods redacted: {applied_methods}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Save Results
+
+# COMMAND ----------
+
+redacted_df.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(
+    output_table
 )
-
-print(f"Redacted table saved to: {output_table}")
-print(f"Redaction strategy: {redaction_strategy}")
+print(f"Saved to {output_table}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## View Results
+# MAGIC ## Side-by-Side Comparison
 
 # COMMAND ----------
 
-display(redacted_df)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Compare Before and After
-
-# COMMAND ----------
-
-redacted_col_name = f"{text_column}{redacted_suffix}"
-comparison_df = redacted_df.select(text_column, redacted_col_name, entities_column)
-
-display(comparison_df.limit(10))
+compare_cols = ["doc_id", text_column] + [
+    f"text_redacted_{m}" for m in applied_methods
+]
+display(redacted_df.select(*[c for c in compare_cols if c in redacted_df.columns]).limit(10))
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Redaction Statistics
+# MAGIC ## Redaction Statistics Per Method
 
 # COMMAND ----------
 
-stats_df = redacted_df.selectExpr(
-    "COUNT(*) as total_documents",
-    f"SUM(SIZE({entities_column})) as total_entities_redacted",
-    f"AVG(SIZE({entities_column})) as avg_entities_per_doc",
-    f"AVG(LENGTH({text_column})) as avg_original_length",
-    f"AVG(LENGTH({redacted_col_name})) as avg_redacted_length",
-)
-
-display(stats_df)
+for method in applied_methods:
+    entities_col = METHOD_ENTITIES_MAP[method]
+    redacted_col = f"text_redacted_{method}"
+    stats = redacted_df.selectExpr(
+        f"'{method}' as method",
+        "COUNT(*) as docs",
+        f"SUM(SIZE({entities_col})) as total_entities",
+        f"AVG(SIZE({entities_col})) as avg_entities_per_doc",
+        f"AVG(LENGTH({text_column})) as avg_original_len",
+        f"AVG(LENGTH({redacted_col})) as avg_redacted_len",
+    )
+    display(stats)
 
 # COMMAND ----------
 
@@ -169,12 +159,11 @@ display(stats_df)
 
 # COMMAND ----------
 
-print("=== Sample Redactions ===\n")
-
-samples = redacted_df.select(text_column, redacted_col_name).limit(3).collect()
-
-for i, row in enumerate(samples, 1):
-    print(f"Example {i}:")
-    print(f"Original: {row[text_column][:200]}...")
-    print(f"Redacted: {row[redacted_col_name][:200]}...")
-    print("-" * 80)
+for method in applied_methods:
+    redacted_col = f"text_redacted_{method}"
+    print(f"\n=== {method.upper()} ===")
+    samples = redacted_df.select(text_column, redacted_col).limit(2).collect()
+    for i, row in enumerate(samples, 1):
+        print(f"  Doc {i} original : {row[text_column][:150]}...")
+        print(f"  Doc {i} redacted : {row[redacted_col][:150]}...")
+        print()

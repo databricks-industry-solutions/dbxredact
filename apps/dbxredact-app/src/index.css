@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply antialiased;
+  }
+}
+
+@layer components {
+  .input-field {
+    @apply border border-gray-200 dark:border-gray-600 rounded-lg w-full px-3 py-2 text-sm
+      bg-white dark:bg-gray-700 dark:text-gray-100
+      focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500
+      transition-colors placeholder:text-gray-400 dark:placeholder:text-gray-500;
+  }
+
+  .card {
+    @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
+      rounded-xl shadow-sm;
+  }
+
+  .btn-primary {
+    @apply bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium
+      hover:bg-blue-700 active:bg-blue-800
+      disabled:opacity-50 disabled:cursor-not-allowed
+      transition-colors shadow-sm;
+  }
+
+  .btn-success {
+    @apply bg-emerald-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium
+      hover:bg-emerald-700 active:bg-emerald-800
+      disabled:opacity-50 disabled:cursor-not-allowed
+      transition-colors shadow-sm;
+  }
+
+  .btn-ghost {
+    @apply px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300
+      hover:bg-gray-100 dark:hover:bg-gray-700
+      transition-colors;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold tracking-tight mb-1;
+  }
+
+  .page-desc {
+    @apply text-sm text-gray-500 dark:text-gray-400 mb-6 leading-relaxed;
+  }
+
+  .status-banner {
+    @apply rounded-lg p-3.5 text-sm border;
+  }
+  .status-running {
+    @apply bg-amber-50 dark:bg-amber-900/15 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200;
+  }
+  .status-success {
+    @apply bg-emerald-50 dark:bg-emerald-900/15 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200;
+  }
+  .status-error {
+    @apply bg-red-50 dark:bg-red-900/15 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200;
+  }
+
+  .data-table {
+    @apply w-full text-sm;
+  }
+  .data-table thead tr {
+    @apply border-b border-gray-200 dark:border-gray-700 text-left text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400;
+  }
+  .data-table thead th {
+    @apply py-3 px-3 font-medium;
+  }
+  .data-table tbody tr {
+    @apply border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors;
+  }
+  .data-table tbody td {
+    @apply py-3 px-3;
+  }
+
+  .stat-card {
+    @apply card p-4;
+  }
+  .stat-card .stat-label {
+    @apply text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-medium;
+  }
+  .stat-card .stat-value {
+    @apply text-2xl font-bold mt-1;
+  }
+}

@@ -29,27 +29,20 @@ def redact_text(
     if not entities:
         return text
 
-    sorted_entities = sorted(entities, key=lambda e: e.get("start", 0), reverse=True)
+    valid = [(e["start"], e["end"], e.get("entity_type", "REDACTED"))
+             for e in entities if e.get("start") is not None and e.get("end") is not None]
+    valid.sort(key=lambda t: t[0])
 
-    redacted = text
-    for entity in sorted_entities:
-        start = entity.get("start")
-        end = entity.get("end")
-        entity_type = entity.get("entity_type", "REDACTED")
-
-        if start is None or end is None:
+    parts = []
+    prev_end = 0
+    for start, end, entity_type in valid:
+        if start < prev_end:
             continue
-
-        end_idx = end + 1
-
-        if strategy == "typed":
-            replacement = f"[{entity_type}]"
-        else:
-            replacement = "[REDACTED]"
-
-        redacted = redacted[:start] + replacement + redacted[end_idx:]
-
-    return redacted
+        parts.append(text[prev_end:start])
+        parts.append(f"[{entity_type}]" if strategy == "typed" else "[REDACTED]")
+        prev_end = end
+    parts.append(text[prev_end:])
+    return "".join(parts)
 
 
 def create_redaction_udf(strategy: RedactionStrategy = "generic"):
@@ -130,39 +123,4 @@ def create_redacted_table(
     )
 
     return result_df
-
-
-def apply_redaction_to_columns(
-    spark: SparkSession,
-    table_name: str,
-    column_entities_map: Dict[str, List[Dict[str, Any]]],
-    output_table: str,
-    strategy: RedactionStrategy = "generic",
-) -> DataFrame:
-    """
-    Apply redaction to multiple columns in a table.
-
-    Args:
-        spark: Active SparkSession
-        table_name: Source table name
-        column_entities_map: Map of column names to their entity lists
-        output_table: Output table name
-        strategy: Redaction strategy ('generic' or 'typed')
-
-    Returns:
-        DataFrame with all specified columns redacted
-    """
-    df = spark.table(table_name)
-
-    for col_name, entities in column_entities_map.items():
-        if col_name not in df.columns:
-            continue
-
-        redacted_col = f"{col_name}_redacted"
-        redact_udf = create_redaction_udf(strategy=strategy)
-        df = df.withColumn(redacted_col, redact_udf(col(col_name), col(col_name)))
-
-    df.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(output_table)
-
-    return df
 
