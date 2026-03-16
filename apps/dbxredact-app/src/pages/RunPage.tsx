@@ -37,6 +37,7 @@ export default function RunPage() {
   const [clusterSize, setClusterSize] = useState<"small" | "medium" | "large">("small");
   const [useGpu, setUseGpu] = useState(false);
   const [refreshApproach, setRefreshApproach] = useState<"full" | "incremental">("full");
+  const [outputMode, setOutputMode] = useState<"separate" | "in_place">("separate");
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
@@ -144,12 +145,13 @@ export default function RunPage() {
       const status = await apiPost<RunStatus>("/pipeline/run", {
         config_id: configId,
         source_table: sourceTable,
-        output_table: outputTable || undefined,
+        output_table: outputMode === "in_place" ? undefined : (outputTable || undefined),
         text_column: textCol,
         doc_id_column: docIdCol,
         max_rows: maxRows,
         cluster_profile: clusterProfile,
         refresh_approach: refreshApproach,
+        output_mode: outputMode,
       });
       setRunStatus(status);
       refetchHistory();
@@ -187,13 +189,20 @@ export default function RunPage() {
             </p>
           )}
         </div>
-        <div className="col-span-2">
-          <label className="block text-sm font-medium mb-1.5">
-            Output Table <span className="text-gray-400 font-normal">(defaults to source_table_redacted)</span>
-          </label>
-          <input className="input-field" value={outputTable}
-            onChange={(e) => setOutputTable(e.target.value)} placeholder="catalog.schema.output_table" />
-        </div>
+        {outputMode === "separate" && (
+          <div className="col-span-2">
+            <label className="block text-sm font-medium mb-1.5">
+              Output Table <span className="text-gray-400 font-normal">(defaults to source_table_redacted)</span>
+            </label>
+            <input className="input-field" value={outputTable}
+              onChange={(e) => setOutputTable(e.target.value)} placeholder="catalog.schema.output_table" />
+          </div>
+        )}
+        {outputMode === "in_place" && (
+          <div className="col-span-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 p-3 text-sm text-amber-800 dark:text-amber-200">
+            <strong>Destructive operation:</strong> The <code>{textCol}</code> column in the source table will be permanently overwritten with redacted text.
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium mb-1.5">Text Column</label>
           {columnOptions.length ? (
@@ -249,6 +258,14 @@ export default function RunPage() {
           {usesGliner && !useGpu && (
             <span className="text-xs text-amber-600 dark:text-amber-400">GPU recommended when GLiNER is enabled</span>
           )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Output Mode</label>
+          <select className="input-field" value={outputMode}
+            onChange={(e) => setOutputMode(e.target.value as "separate" | "in_place")}>
+            <option value="separate">Separate table</option>
+            <option value="in_place">In-place (destructive)</option>
+          </select>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1.5">Refresh Mode</label>

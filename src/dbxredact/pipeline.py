@@ -31,6 +31,45 @@ OutputStrategy = Literal["validation", "production"]
 
 AlignmentMode = Literal["union", "consensus"]
 
+OutputMode = Literal["separate", "in_place"]
+
+
+def _write_in_place(
+    spark: SparkSession,
+    result_df: DataFrame,
+    source_table: str,
+    doc_id_column: str,
+    text_column: str,
+) -> None:
+    """Overwrite the text column in the source table with redacted text.
+
+    This is a **destructive** operation -- the original text is permanently
+    replaced.  The caller is responsible for gating access behind
+    ``confirm_destructive=True``.
+
+    Uses MERGE INTO so that only rows present in *result_df* are touched;
+    rows that were excluded by ``max_rows`` or dedup remain unchanged.
+    """
+    from .metadata import _validate_identifier, _parse_table_name
+
+    _parse_table_name(source_table)
+    _validate_identifier(doc_id_column, "doc_id_column")
+    _validate_identifier(text_column, "text_column")
+
+    redacted_col_name = f"{text_column}_redacted"
+    merge_df = result_df.select(col(doc_id_column), col(redacted_col_name))
+
+    view_name = f"_dbxredact_inplace_{int(time.time())}"
+    merge_df.createOrReplaceTempView(view_name)
+
+    spark.sql(f"""
+        MERGE INTO {source_table} t
+        USING {view_name} s
+        ON t.`{doc_id_column}` = s.`{doc_id_column}`
+        WHEN MATCHED THEN UPDATE SET t.`{text_column}` = s.`{redacted_col_name}`
+    """)
+    logger.info("In-place redaction complete: %s.%s updated in %s", text_column, doc_id_column, source_table)
+
 
 def _apply_alignment(
     df: DataFrame,
@@ -296,7 +335,7 @@ def run_redaction_pipeline(
     spark: SparkSession,
     source_table: str,
     text_column: str,
-    output_table: str,
+    output_table: Optional[str] = None,
     doc_id_column: str = "doc_id",
     use_presidio: bool = True,
     use_ai_query: bool = True,
@@ -319,6 +358,8 @@ def run_redaction_pipeline(
     alignment_mode: AlignmentMode = "union",
     fuzzy_threshold: int = 50,
     entity_filter: Optional[EntityFilter] = None,
+    output_mode: OutputMode = "separate",
+    confirm_destructive: bool = False,
 ) -> DataFrame:
     """
     Run end-to-end detection and redaction pipeline.
@@ -327,7 +368,7 @@ def run_redaction_pipeline(
         spark: Active SparkSession
         source_table: Fully qualified source table name
         text_column: Name of text column to redact
-        output_table: Fully qualified output table name
+        output_table: Fully qualified output table name (required for ``output_mode="separate"``)
         doc_id_column: Name of document ID column
         use_presidio: Whether to run Presidio detection
         use_ai_query: Whether to run AI Query detection
@@ -346,6 +387,9 @@ def run_redaction_pipeline(
         ai_model_type: "foundation" or "external" (for Claude, etc.)
         fuzzy_threshold: Fuzzy matching threshold for alignment (0-100, default 50)
         entity_filter: Optional EntityFilter for deny/allow list processing
+        output_mode: ``"separate"`` writes to ``output_table``; ``"in_place"``
+            destructively overwrites the text column in ``source_table``.
+        confirm_destructive: Must be ``True`` when ``output_mode="in_place"``.
 
     Note:
         For tables exceeding 100k rows, consider ``run_redaction_pipeline_streaming``
@@ -358,7 +402,20 @@ def run_redaction_pipeline(
         raise ValueError("At least one detection method must be enabled.")
 
     from .metadata import _validate_identifier, _parse_table_name
-    _parse_table_name(output_table)
+
+    if output_mode == "in_place":
+        if not confirm_destructive:
+            raise ValueError(
+                "In-place redaction is destructive and will permanently overwrite "
+                f"the '{text_column}' column in {source_table}. "
+                "Pass confirm_destructive=True to proceed."
+            )
+        _parse_table_name(source_table)
+    else:
+        if not output_table:
+            raise ValueError("output_table is required when output_mode='separate'.")
+        _parse_table_name(output_table)
+
     _validate_identifier(doc_id_column, "doc_id_column")
 
     t_pipeline_start = time.time()
@@ -425,10 +482,14 @@ def run_redaction_pipeline(
         detection_df, text_column, entities_column, redaction_strategy
     )
 
-    output_df = _select_output_columns(result_df, doc_id_column, text_column, output_strategy)
+    if output_mode == "in_place":
+        print(f"4. Updating {source_table}.{text_column} in-place...")
+        _write_in_place(spark, result_df, source_table, doc_id_column, text_column)
+    else:
+        output_df = _select_output_columns(result_df, doc_id_column, text_column, output_strategy)
+        print(f"4. Writing to {output_table}...")
+        output_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(output_table)
 
-    print(f"4. Writing to {output_table}...")
-    output_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(output_table)
     t_write_done = time.time()
     print(f"   Redaction + write: {t_write_done - t_redact_start:.1f}s  |  Total pipeline: {t_write_done - t_pipeline_start:.1f}s")
 
@@ -484,8 +545,8 @@ def run_redaction_pipeline_streaming(
     spark: SparkSession,
     source_table: str,
     text_column: str,
-    output_table: str,
-    checkpoint_path: str,
+    output_table: Optional[str] = None,
+    checkpoint_path: str = "",
     doc_id_column: str = "doc_id",
     use_presidio: bool = True,
     use_ai_query: bool = True,
@@ -507,6 +568,8 @@ def run_redaction_pipeline_streaming(
     alignment_mode: AlignmentMode = "union",
     max_files_per_trigger: Optional[int] = 10,
     entity_filter=None,
+    output_mode: OutputMode = "separate",
+    confirm_destructive: bool = False,
 ) -> StreamingQuery:
     """
     Run streaming redaction pipeline with incremental processing.
@@ -515,6 +578,10 @@ def run_redaction_pipeline_streaming(
     Output is written via ``foreachBatch`` + ``MERGE INTO`` on ``doc_id_column``
     so re-processed or retried documents replace their earlier result instead of
     creating duplicates.
+
+    When ``output_mode="in_place"``, each micro-batch MERGEs back into the
+    *source* table, overwriting the text column with redacted text.  This is
+    destructive -- ``confirm_destructive=True`` is required.
 
     **Streaming caveats:**
 
@@ -536,7 +603,7 @@ def run_redaction_pipeline_streaming(
         spark: Active SparkSession
         source_table: Fully qualified source table name (must be Delta)
         text_column: Name of text column to redact
-        output_table: Fully qualified output table name
+        output_table: Fully qualified output table name (required for ``output_mode="separate"``)
         checkpoint_path: Path for streaming checkpoints (e.g., /Volumes/catalog/schema/checkpoints/table)
         doc_id_column: Name of document ID column
         use_presidio: Whether to run Presidio detection
@@ -553,17 +620,36 @@ def run_redaction_pipeline_streaming(
         presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg')
         alignment_mode: 'union' (any detector) or 'consensus' (majority agreement)
         max_files_per_trigger: Limit files per micro-batch (None for unlimited)
+        output_mode: ``"separate"`` writes to ``output_table``; ``"in_place"``
+            destructively overwrites the text column in ``source_table``.
+        confirm_destructive: Must be ``True`` when ``output_mode="in_place"``.
 
     Returns:
         StreamingQuery that can be awaited or monitored
     """
     from .metadata import _validate_identifier, _parse_table_name
-    _parse_table_name(output_table)
+
+    if output_mode == "in_place":
+        if not confirm_destructive:
+            raise ValueError(
+                "In-place redaction is destructive and will permanently overwrite "
+                f"the '{text_column}' column in {source_table}. "
+                "Pass confirm_destructive=True to proceed."
+            )
+        _parse_table_name(source_table)
+    else:
+        if not output_table:
+            raise ValueError("output_table is required when output_mode='separate'.")
+        _parse_table_name(output_table)
+
     _validate_identifier(doc_id_column, "doc_id_column")
+
+    _is_in_place = output_mode == "in_place"
+    _target_table = source_table if _is_in_place else output_table
 
     logger.info("Starting streaming redaction pipeline")
     logger.info(f"  Source: {source_table}")
-    logger.info(f"  Output: {output_table}")
+    logger.info(f"  Output: {_target_table} {'(IN-PLACE)' if _is_in_place else ''}")
     logger.info(f"  Checkpoint: {checkpoint_path}")
     logger.info(f"  Output strategy: {output_strategy}")
     
@@ -701,22 +787,26 @@ def run_redaction_pipeline_streaming(
     # Apply redaction
     stream_df = _apply_redaction(stream_df, text_column, entities_column, redaction_strategy)
 
-    # Select output columns
-    stream_df = _select_output_columns(stream_df, doc_id_column, text_column, output_strategy)
+    # Select output columns (skip for in-place -- we only need doc_id + redacted col)
+    if _is_in_place:
+        _redacted_col = f"{text_column}_redacted"
+        stream_df = stream_df.select(col(doc_id_column), col(_redacted_col))
+    else:
+        stream_df = _select_output_columns(stream_df, doc_id_column, text_column, output_strategy)
 
     # Ensure output table exists for MERGE INTO (create empty if needed)
-    if not spark.catalog.tableExists(output_table):
+    if not _is_in_place and not spark.catalog.tableExists(output_table):
         stream_df.limit(0).write.format("delta").option("mergeSchema", "true").saveAsTable(output_table)
 
     # Use foreachBatch with MERGE INTO to handle deduplication and updates.
     _doc_id_col = doc_id_column
-    _output_tbl = output_table
+    _merge_target = _target_table
+    _text_col = text_column
     _has_ai_flag = "_ai_detection_failed" in stream_df.columns
 
     def _write_batch(batch_df, batch_id):
         if batch_df.isEmpty():
             return
-        # Log AI failures if the flag column is present
         if _has_ai_flag:
             failed = batch_df.filter(col("_ai_detection_failed"))
             if not failed.isEmpty():
@@ -726,13 +816,22 @@ def run_redaction_pipeline_streaming(
                 )
         view_name = f"_dbxredact_batch_{batch_id}"
         batch_df.createOrReplaceTempView(view_name)
-        batch_df.sparkSession.sql(f"""
-            MERGE INTO {_output_tbl} t
-            USING {view_name} s
-            ON t.{_doc_id_col} = s.{_doc_id_col}
-            WHEN MATCHED THEN UPDATE SET *
-            WHEN NOT MATCHED THEN INSERT *
-        """)
+        if _is_in_place:
+            _rcol = f"{_text_col}_redacted"
+            batch_df.sparkSession.sql(f"""
+                MERGE INTO {_merge_target} t
+                USING {view_name} s
+                ON t.`{_doc_id_col}` = s.`{_doc_id_col}`
+                WHEN MATCHED THEN UPDATE SET t.`{_text_col}` = s.`{_rcol}`
+            """)
+        else:
+            batch_df.sparkSession.sql(f"""
+                MERGE INTO {_merge_target} t
+                USING {view_name} s
+                ON t.`{_doc_id_col}` = s.`{_doc_id_col}`
+                WHEN MATCHED THEN UPDATE SET *
+                WHEN NOT MATCHED THEN INSERT *
+            """)
 
     query = (
         stream_df
@@ -750,7 +849,7 @@ def run_redaction_pipeline_streaming(
 def run_redaction_pipeline_by_tag(
     spark: SparkSession,
     source_table: str,
-    output_table: str,
+    output_table: Optional[str] = None,
     tag_name: str = "data_classification",
     tag_value: str = "protected",
     doc_id_column: str = "doc_id",
@@ -772,6 +871,8 @@ def run_redaction_pipeline_by_tag(
     alignment_mode: AlignmentMode = "union",
     fuzzy_threshold: int = 50,
     presidio_pattern_only: bool = False,
+    output_mode: OutputMode = "separate",
+    confirm_destructive: bool = False,
 ) -> DataFrame:
     """
     Run redaction pipeline on columns identified by Unity Catalog tags.
@@ -812,8 +913,12 @@ def run_redaction_pipeline_by_tag(
 
     result_df = None
     for text_column in protected_columns:
-        col_output_table = f"{output_table}_{text_column}" if len(protected_columns) > 1 else output_table
-        logger.info(f"Processing column: {text_column} -> {col_output_table}")
+        if output_mode == "in_place":
+            col_output_table = None
+            logger.info(f"Processing column: {text_column} (in-place)")
+        else:
+            col_output_table = f"{output_table}_{text_column}" if len(protected_columns) > 1 else output_table
+            logger.info(f"Processing column: {text_column} -> {col_output_table}")
 
         result_df = run_redaction_pipeline(
             spark=spark,
@@ -839,6 +944,8 @@ def run_redaction_pipeline_by_tag(
             alignment_mode=alignment_mode,
             fuzzy_threshold=fuzzy_threshold,
             presidio_pattern_only=presidio_pattern_only,
+            output_mode=output_mode,
+            confirm_destructive=confirm_destructive,
         )
 
     return result_df

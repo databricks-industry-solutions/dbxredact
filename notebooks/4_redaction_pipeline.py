@@ -185,6 +185,18 @@ dbutils.widgets.text(
     defaultValue="",
     label="22. Block List Table (optional, fully qualified)",
 )
+dbutils.widgets.dropdown(
+    name="output_mode",
+    defaultValue="separate",
+    choices=["separate", "in_place"],
+    label="23. Output Mode (separate=new table, in_place=overwrite source column)",
+)
+dbutils.widgets.dropdown(
+    name="confirm_destructive",
+    defaultValue="false",
+    choices=["true", "false"],
+    label="24. Confirm Destructive (required for in_place)",
+)
 
 # COMMAND ----------
 
@@ -227,6 +239,8 @@ reasoning_effort = dbutils.widgets.get("reasoning_effort")
 gliner_max_words = int(dbutils.widgets.get("gliner_max_words"))
 safe_list_table = dbutils.widgets.get("safe_list_table").strip()
 block_list_table = dbutils.widgets.get("block_list_table").strip()
+output_mode = dbutils.widgets.get("output_mode")
+confirm_destructive = dbutils.widgets.get("confirm_destructive") == "true"
 
 # Profile overrides
 presidio_pattern_only = False
@@ -272,15 +286,23 @@ if input_mode == "table_column":
         if _col not in _source_columns:
             raise ValueError(f"Column '{_col}' not found in {source_table}. Available: {_source_columns}")
 
-if not output_table:
+if output_mode == "in_place":
+    if not confirm_destructive:
+        raise ValueError(
+            "In-place redaction will permanently overwrite the text column in the source table. "
+            "Set 'Confirm Destructive' to 'true' to proceed."
+        )
+    print(f"WARNING: In-place mode will PERMANENTLY overwrite '{text_column}' in {source_table}.")
+    output_table = None
+elif not output_table:
     output_table = f"{source_table}_redacted"
 
 # Auto-generate checkpoint path if not provided
 if not checkpoint_path and refresh_approach == "incremental":
-    # Extract table name for checkpoint path
-    table_name_only = output_table.split(".")[-1]
-    catalog = output_table.split(".")[0] if "." in output_table else "main"
-    schema = output_table.split(".")[1] if output_table.count(".") >= 1 else "default"
+    _ckpt_ref = source_table if output_mode == "in_place" else output_table
+    table_name_only = _ckpt_ref.split(".")[-1]
+    catalog = _ckpt_ref.split(".")[0] if "." in _ckpt_ref else "main"
+    schema = _ckpt_ref.split(".")[1] if _ckpt_ref.count(".") >= 1 else "default"
     checkpoint_path = f"/Volumes/{catalog}/{schema}/checkpoints/{table_name_only}"
 
 # COMMAND ----------
@@ -340,7 +362,11 @@ print(f"Use GLiNER: {use_gliner}")
 print(f"Reasoning Effort: {reasoning_effort}")
 print(f"GLiNER Max Words: {gliner_max_words}")
 print(f"Redaction Strategy: {redaction_strategy}")
-print(f"Output Table: {output_table}")
+print(f"Output Mode: {output_mode}")
+if output_mode == "in_place":
+    print(f"  -> DESTRUCTIVE: overwriting {text_column} in {source_table}")
+else:
+    print(f"Output Table: {output_table}")
 print(f"Refresh Approach: {refresh_approach}")
 print(f"Output Strategy: {output_strategy}")
 print(f"Alignment Mode: {alignment_mode}")
@@ -380,6 +406,8 @@ if refresh_approach == "incremental":
         gliner_max_words=gliner_max_words,
         presidio_pattern_only=presidio_pattern_only,
         entity_filter=entity_filter,
+        output_mode=output_mode,
+        confirm_destructive=confirm_destructive,
     )
 
     # Wait for completion (availableNow trigger processes all then stops)
@@ -413,6 +441,8 @@ else:
             reasoning_effort=reasoning_effort,
             gliner_max_words=gliner_max_words,
             presidio_pattern_only=presidio_pattern_only,
+            output_mode=output_mode,
+            confirm_destructive=confirm_destructive,
         )
     else:
         result_df = run_redaction_pipeline(
@@ -436,6 +466,8 @@ else:
             reasoning_effort=reasoning_effort,
             gliner_max_words=gliner_max_words,
             presidio_pattern_only=presidio_pattern_only,
+            output_mode=output_mode,
+            confirm_destructive=confirm_destructive,
         )
 
 # COMMAND ----------
@@ -443,12 +475,16 @@ else:
 print("=" * 80)
 print("PIPELINE COMPLETE")
 print("=" * 80)
-print(f"Redacted table saved to: {output_table}")
+if output_mode == "in_place":
+    print(f"Source table updated in-place: {source_table}")
+else:
+    print(f"Redacted table saved to: {output_table}")
 
 # COMMAND ----------
 
 # Read from saved table to avoid re-executing the lazy pipeline (which would re-run AI Query, doubling token costs)
-result_df = spark.table(output_table)
+_result_table = source_table if output_mode == "in_place" else output_table
+result_df = spark.table(_result_table)
 
 # COMMAND ----------
 

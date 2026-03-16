@@ -48,6 +48,7 @@ class PipelineRunRequest(BaseModel):
     max_cost_usd: Optional[float] = None
     cluster_profile: str = "cpu_small"
     refresh_approach: str = "full"
+    output_mode: str = "separate"
 
 
 class RunStatusResponse(BaseModel):
@@ -159,3 +160,16 @@ class ActiveLearnStats(BaseModel):
     pending: int
     skipped: int
     avg_priority: Optional[float] = None
+
+
+class LabelCreate(BaseModel):
+    entity_text: str
+    entity_type: str
+    start: int = Field(ge=0)
+    end_pos: int = Field(ge=0)
+
+
+class BatchLabelRequest(BaseModel):
+    doc_id: str
+    source_table: str
+    labels: List[LabelCreate]

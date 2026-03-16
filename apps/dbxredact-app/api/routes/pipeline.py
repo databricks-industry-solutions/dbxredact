@@ -20,7 +20,8 @@ async def run_pipeline(body: PipelineRunRequest):
     if not config:
         raise HTTPException(404, "Config not found")
 
-    output_table = body.output_table or f"{body.source_table}_redacted"
+    is_in_place = body.output_mode == "in_place"
+    output_table = "" if is_in_place else (body.output_table or f"{body.source_table}_redacted")
     # Pre-run cost guardrail
     if body.max_cost_usd is not None and str(config.get("use_ai_query", "false")).lower() == "true":
         est = await cost_estimate(
@@ -54,16 +55,19 @@ async def run_pipeline(body: PipelineRunRequest):
         "max_rows": str(body.max_rows or 10000),
         "safe_list_table": f"{CATALOG}.{SCHEMA}.redact_safe_list",
         "block_list_table": f"{CATALOG}.{SCHEMA}.redact_block_list",
+        "output_mode": body.output_mode,
+        "confirm_destructive": "true" if is_in_place else "false",
     }
 
     run_id = trigger_pipeline_run(notebook_params, cluster_profile=body.cluster_profile)
 
+    history_output = f"{body.source_table} (in-place)" if is_in_place else output_table
     execute(
         f"""INSERT INTO {_table('redact_job_history')}
         (run_id, config_id, source_table, output_table, status, started_at)
         VALUES (%(run_id)s, %(config_id)s, %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp())""",
         {"run_id": run_id, "config_id": body.config_id,
-         "source_table": body.source_table, "output_table": output_table},
+         "source_table": body.source_table, "output_table": history_output},
     )
 
     return get_run_status(run_id)

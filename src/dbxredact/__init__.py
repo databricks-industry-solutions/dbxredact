@@ -64,6 +64,7 @@ from .evaluation import (
     build_recall_matrix,
     summarize_method_strengths,
     diagnose_strict_failures,
+    build_ground_truth_from_labels,
 )
 
 from .detection import (
@@ -110,6 +111,7 @@ from .pipeline import (
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
     OutputStrategy,
+    OutputMode,
     AlignmentMode,
 )
 
@@ -160,6 +162,7 @@ __all__ = [
     "analyze_errors",
     "build_recall_matrix",
     "summarize_method_strengths",
+    "build_ground_truth_from_labels",
     # Detection
     "run_presidio_detection",
     "run_ai_query_detection",
@@ -195,6 +198,7 @@ __all__ = [
     "run_redaction_pipeline_streaming",
     "run_redaction_pipeline_by_tag",
     "OutputStrategy",
+    "OutputMode",
     "AlignmentMode",
     # Judge
     "run_judge_evaluation",

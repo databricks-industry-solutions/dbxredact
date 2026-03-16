@@ -57,6 +57,13 @@ export default function LabelPage() {
   const [editLabels, setEditLabels] = useState<LabelEntry[]>([]);
   const [preLoading, setPreLoading] = useState(false);
 
+  // Dirty / saving guards
+  const [isDirty, setIsDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Labeling progress stats
+  const [stats, setStats] = useState<{ total_docs: number; labeled_docs: number } | null>(null);
+
   const textContainerRef = useRef<HTMLDivElement>(null);
 
   const parts = table.split(".");
@@ -127,6 +134,17 @@ export default function LabelPage() {
     }
   }, [preIdx, preDocs, mode]);
 
+  // Fetch labeling progress stats
+  function fetchStats() {
+    if (!hasTable) { setStats(null); return; }
+    fetch(`/api/labels/stats?source_table=${encodeURIComponent(table)}`)
+      .then((r) => r.json())
+      .then((s) => setStats(s))
+      .catch(() => setStats(null));
+  }
+
+  useEffect(fetchStats, [table, hasTable]);
+
   function getTextOffsetInContainer(container: Node, targetNode: Node, targetOffset: number): number {
     let offset = 0;
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
@@ -154,28 +172,57 @@ export default function LabelPage() {
     const entry: LabelEntry = { entity_text: text, entity_type: entityType, start, end };
     if (mode === "unlabeled") setLabels((prev) => [...prev, entry]);
     else setEditLabels((prev) => [...prev, entry]);
+    setIsDirty(true);
     sel.removeAllRanges();
+  }
+
+  function toBatchBody(docId: string, labelList: LabelEntry[]) {
+    return {
+      doc_id: String(docId),
+      source_table: table,
+      labels: labelList.map((l) => ({
+        entity_text: l.entity_text,
+        entity_type: l.entity_type,
+        start: l.start,
+        end_pos: l.end,
+      })),
+    };
   }
 
   async function saveUnlabeled() {
     const doc = docs[currentIdx];
+    setSaving(true);
     try {
-      await apiPost(`/labels/batch?doc_id=${doc.doc_id}&source_table=${encodeURIComponent(table)}`, labels);
+      await apiPost("/labels/batch", toBatchBody(doc.doc_id, labels));
       setLabels([]);
+      setIsDirty(false);
+      fetchStats();
       setCurrentIdx((i) => Math.min(i + 1, docs.length - 1));
     } catch (e: any) {
       setError(e.message || "Failed to save labels");
+    } finally {
+      setSaving(false);
     }
   }
 
   async function savePreLabeled() {
     const doc = preDocs[preIdx];
+    setSaving(true);
     try {
-      await apiPost(`/labels/batch?doc_id=${doc.doc_id}&source_table=${encodeURIComponent(table)}`, editLabels);
+      await apiPost("/labels/batch", toBatchBody(doc.doc_id, editLabels));
+      setIsDirty(false);
+      fetchStats();
       setPreIdx((i) => Math.min(i + 1, preDocs.length - 1));
     } catch (e: any) {
       setError(e.message || "Failed to save labels");
+    } finally {
+      setSaving(false);
     }
+  }
+
+  function confirmDiscardIfDirty(): boolean {
+    if (!isDirty) return true;
+    return window.confirm("You have unsaved labels. Discard changes?");
   }
 
   const unlabeledDoc = docs[currentIdx];
@@ -189,6 +236,17 @@ export default function LabelPage() {
         Create or edit ground-truth labels by highlighting text spans. Labels are stored
         as annotations and used for evaluation benchmarks.
       </p>
+
+      {stats && (
+        <div className="mb-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-700 dark:text-blue-300">
+          <span className="font-semibold">{stats.labeled_docs}</span> / {stats.total_docs} documents labeled
+          {stats.total_docs > 0 && (
+            <span className="text-xs opacity-70">
+              ({Math.round((stats.labeled_docs / stats.total_docs) * 100)}%)
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Mode selector */}
       <div className="flex gap-2 mb-6">
@@ -273,10 +331,10 @@ export default function LabelPage() {
               Document {currentIdx + 1} of {docs.length} -- <span className="font-mono text-xs">{String(unlabeledDoc.doc_id)}</span>
             </div>
             <div className="flex gap-2">
-              <button className="btn-ghost text-xs" disabled={currentIdx === 0}
-                onClick={() => { setCurrentIdx((i) => i - 1); setLabels([]); }}>Prev</button>
-              <button className="btn-ghost text-xs" disabled={currentIdx >= docs.length - 1}
-                onClick={() => { setCurrentIdx((i) => i + 1); setLabels([]); }}>Next</button>
+              <button className="btn-ghost text-xs" disabled={currentIdx === 0 || saving}
+                onClick={() => { if (!confirmDiscardIfDirty()) return; setCurrentIdx((i) => i - 1); setLabels([]); setIsDirty(false); }}>Prev</button>
+              <button className="btn-ghost text-xs" disabled={currentIdx >= docs.length - 1 || saving}
+                onClick={() => { if (!confirmDiscardIfDirty()) return; setCurrentIdx((i) => i + 1); setLabels([]); setIsDirty(false); }}>Next</button>
             </div>
           </div>
 
@@ -291,12 +349,14 @@ export default function LabelPage() {
             />
           </div>
 
-          {labels.length > 0 && <LabelChips labels={labels} onRemove={(i) => setLabels((p) => p.filter((_, j) => j !== i))} />}
+          {labels.length > 0 && <LabelChips labels={labels} onRemove={(i) => { setLabels((p) => p.filter((_, j) => j !== i)); setIsDirty(true); }} />}
 
           <div className="flex gap-2">
-            <button className="btn-primary" disabled={labels.length === 0} onClick={saveUnlabeled}>Save & Next</button>
-            <button className="btn-ghost border border-gray-200 dark:border-gray-600"
-              onClick={() => { setCurrentIdx((i) => Math.min(i + 1, docs.length - 1)); setLabels([]); }}>
+            <button className="btn-primary" disabled={labels.length === 0 || saving} onClick={saveUnlabeled}>
+              {saving ? "Saving..." : "Save & Next"}
+            </button>
+            <button className="btn-ghost border border-gray-200 dark:border-gray-600" disabled={saving}
+              onClick={() => { if (!confirmDiscardIfDirty()) return; setCurrentIdx((i) => Math.min(i + 1, docs.length - 1)); setLabels([]); setIsDirty(false); }}>
               Skip
             </button>
           </div>
@@ -311,10 +371,10 @@ export default function LabelPage() {
               Document {preIdx + 1} of {preDocs.length} -- <span className="font-mono text-xs">{preDoc.doc_id}</span>
             </div>
             <div className="flex gap-2">
-              <button className="btn-ghost text-xs" disabled={preIdx === 0}
-                onClick={() => setPreIdx((i) => i - 1)}>Prev</button>
-              <button className="btn-ghost text-xs" disabled={preIdx >= preDocs.length - 1}
-                onClick={() => setPreIdx((i) => i + 1)}>Next</button>
+              <button className="btn-ghost text-xs" disabled={preIdx === 0 || saving}
+                onClick={() => { if (!confirmDiscardIfDirty()) return; setPreIdx((i) => i - 1); setIsDirty(false); }}>Prev</button>
+              <button className="btn-ghost text-xs" disabled={preIdx >= preDocs.length - 1 || saving}
+                onClick={() => { if (!confirmDiscardIfDirty()) return; setPreIdx((i) => i + 1); setIsDirty(false); }}>Next</button>
             </div>
           </div>
 
@@ -332,16 +392,18 @@ export default function LabelPage() {
           {editLabels.length > 0 && (
             <LabelChips
               labels={editLabels}
-              onRemove={(i) => setEditLabels((p) => p.filter((_, j) => j !== i))}
+              onRemove={(i) => { setEditLabels((p) => p.filter((_, j) => j !== i)); setIsDirty(true); }}
               editable
-              onChangeType={(i, t) => setEditLabels((p) => p.map((l, j) => j === i ? { ...l, entity_type: t } : l))}
+              onChangeType={(i, t) => { setEditLabels((p) => p.map((l, j) => j === i ? { ...l, entity_type: t } : l)); setIsDirty(true); }}
             />
           )}
 
           <div className="flex gap-2">
-            <button className="btn-primary" onClick={savePreLabeled}>Save & Next</button>
-            <button className="btn-ghost border border-gray-200 dark:border-gray-600"
-              onClick={() => setPreIdx((i) => Math.min(i + 1, preDocs.length - 1))}>
+            <button className="btn-primary" disabled={saving} onClick={savePreLabeled}>
+              {saving ? "Saving..." : "Save & Next"}
+            </button>
+            <button className="btn-ghost border border-gray-200 dark:border-gray-600" disabled={saving}
+              onClick={() => { if (!confirmDiscardIfDirty()) return; setPreIdx((i) => Math.min(i + 1, preDocs.length - 1)); setIsDirty(false); }}>
               Skip
             </button>
           </div>
