@@ -418,7 +418,7 @@ class MultiSourceAligner:
                 entity = normalize_entity(entity_dict, source, doc_id)
                 normalized.append(entity)
             except (ValueError, KeyError, TypeError) as exc:
-                logger.debug("Skipping malformed entity from %s: %s", source, exc)
+                logger.debug("Skipping malformed entity from %s: %s", source, type(exc).__name__)
                 continue
 
         return normalized

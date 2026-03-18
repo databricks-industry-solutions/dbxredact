@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const BASE = "/api";
 
@@ -20,20 +20,38 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export function useGet<T>(path: string) {
+export interface UseGetOptions {
+  deps?: unknown[];
+  enabled?: boolean;
+}
+
+export function useGet<T>(path: string, opts?: UseGetOptions) {
+  const { deps = [], enabled = true } = opts ?? {};
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const refetch = useCallback(() => {
+    if (!enabled) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
-    apiFetch<T>(path)
-      .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [path]);
+    apiFetch<T>(path, { signal: controller.signal })
+      .then((d) => { if (!controller.signal.aborted) setData(d); })
+      .catch((e) => { if (!controller.signal.aborted) setError(e.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+  }, [path, enabled, ...deps]);
 
-  useEffect(() => { refetch(); }, [refetch]);
+  useEffect(() => {
+    refetch();
+    return () => { abortRef.current?.abort(); };
+  }, [refetch]);
 
   return { data, loading, error, refetch };
 }
@@ -49,3 +67,5 @@ export async function apiPut<T>(path: string, body: unknown): Promise<T> {
 export async function apiDelete(path: string): Promise<void> {
   await apiFetch(path, { method: "DELETE" });
 }
+
+export { apiFetch };

@@ -114,21 +114,29 @@ def _execute_with_retry(statement: str):
                 raise _classify_error(exc) from exc
             wait = _INITIAL_BACKOFF_S * (2 ** attempt)
             logger.warning("Transient SQL error (attempt %d/%d), retrying in %.1fs: %s",
-                           attempt + 1, _MAX_RETRIES, wait, exc)
+                           attempt + 1, _MAX_RETRIES, wait, type(exc).__name__)
             time.sleep(wait)
     raise _classify_error(last_exc) from last_exc
+
+
+def _sql_summary(statement: str) -> str:
+    """Extract SQL command keyword and first table reference for safe logging."""
+    keyword = statement.strip().split()[0].upper() if statement.strip() else "UNKNOWN"
+    m = re.search(r'(?:FROM|INTO|UPDATE|TABLE|MERGE\s+INTO)\s+[`]?(\S+)', statement, re.IGNORECASE)
+    table = m.group(1).strip('`') if m else "?"
+    return f"{keyword} ... {table}"
 
 
 def execute(sql: str, params: Optional[Dict[str, Any]] = None) -> None:
     """Execute a SQL statement (INSERT/UPDATE/DELETE). Params are interpolated manually."""
     statement = _interpolate(sql, params) if params else sql
-    logger.debug("execute: %s", statement[:200])
+    logger.debug("execute: %s", _sql_summary(statement))
     _execute_with_retry(statement)
 
 
 def fetch_all(sql: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     statement = _interpolate(sql, params) if params else sql
-    logger.debug("fetch_all: %s", statement[:200])
+    logger.debug("fetch_all: %s", _sql_summary(statement))
     result = _execute_with_retry(statement)
     return _parse_result(result)
 

@@ -47,6 +47,7 @@ from dbxredact import (
     get_columns_by_tag,
     load_filter_from_table,
     EntityFilter,
+    RedactionConfig,
 )
 
 # COMMAND ----------
@@ -141,7 +142,13 @@ dbutils.widgets.dropdown(
     name="output_strategy",
     defaultValue="production",
     choices=["validation", "production"],
-    label="14. Output Strategy",
+    label="14. Output Strategy (validation = debug, includes raw PII)",
+)
+dbutils.widgets.dropdown(
+    name="confirm_validation_output",
+    defaultValue="false",
+    choices=["true", "false"],
+    label="14b. Confirm Validation Output (required if output_strategy=validation)",
 )
 dbutils.widgets.text(
     name="checkpoint_path",
@@ -241,6 +248,7 @@ safe_list_table = dbutils.widgets.get("safe_list_table").strip()
 block_list_table = dbutils.widgets.get("block_list_table").strip()
 output_mode = dbutils.widgets.get("output_mode")
 confirm_destructive = dbutils.widgets.get("confirm_destructive") == "true"
+confirm_validation_output = dbutils.widgets.get("confirm_validation_output") == "true"
 
 # Profile overrides
 presidio_pattern_only = False
@@ -272,6 +280,26 @@ if safe_list_table or block_list_table:
         ef._block_re = block_ef._block_re
         print(f"Loaded block list: {len(ef.block_list)} exact, {len(ef.block_patterns)} patterns")
     entity_filter = ef
+
+config = RedactionConfig(
+    use_presidio=use_presidio,
+    use_ai_query=use_ai_query,
+    use_gliner=use_gliner,
+    endpoint=endpoint if use_ai_query else None,
+    score_threshold=score_threshold,
+    gliner_max_words=gliner_max_words,
+    num_cores=num_cores,
+    redaction_strategy=redaction_strategy,
+    output_strategy=output_strategy,
+    output_mode=output_mode,
+    confirm_destructive=confirm_destructive,
+    confirm_validation_output=confirm_validation_output,
+    max_rows=max_rows,
+    alignment_mode=alignment_mode,
+    reasoning_effort=reasoning_effort,
+    presidio_pattern_only=presidio_pattern_only,
+    entity_filter=entity_filter,
+)
 
 if not any([use_presidio, use_ai_query, use_gliner]):
     raise ValueError("At least one detection method must be enabled.")
@@ -391,23 +419,8 @@ if refresh_approach == "incremental":
         output_table=output_table,
         checkpoint_path=checkpoint_path,
         doc_id_column=doc_id_column,
-        use_presidio=use_presidio,
-        use_ai_query=use_ai_query,
-        use_gliner=use_gliner,
-        redaction_strategy=redaction_strategy,
-        endpoint=endpoint if use_ai_query else None,
-        score_threshold=score_threshold,
-        num_cores=num_cores,
-        use_aligned=True,
-        output_strategy=output_strategy,
-        alignment_mode=alignment_mode,
         max_files_per_trigger=max_files_per_trigger,
-        reasoning_effort=reasoning_effort,
-        gliner_max_words=gliner_max_words,
-        presidio_pattern_only=presidio_pattern_only,
-        entity_filter=entity_filter,
-        output_mode=output_mode,
-        confirm_destructive=confirm_destructive,
+        config=config,
     )
 
     # Wait for completion (availableNow trigger processes all then stops)
@@ -428,21 +441,7 @@ else:
             tag_name=tag_name,
             tag_value=tag_value,
             doc_id_column=doc_id_column,
-            use_presidio=use_presidio,
-            use_ai_query=use_ai_query,
-            use_gliner=use_gliner,
-            redaction_strategy=redaction_strategy,
-            endpoint=endpoint if use_ai_query else None,
-            score_threshold=score_threshold,
-            num_cores=num_cores,
-            output_strategy=output_strategy,
-            max_rows=max_rows,
-            alignment_mode=alignment_mode,
-            reasoning_effort=reasoning_effort,
-            gliner_max_words=gliner_max_words,
-            presidio_pattern_only=presidio_pattern_only,
-            output_mode=output_mode,
-            confirm_destructive=confirm_destructive,
+            config=config,
         )
     else:
         result_df = run_redaction_pipeline(
@@ -451,23 +450,7 @@ else:
             text_column=text_column,
             output_table=output_table,
             doc_id_column=doc_id_column,
-            use_presidio=use_presidio,
-            use_ai_query=use_ai_query,
-            use_gliner=use_gliner,
-            redaction_strategy=redaction_strategy,
-            endpoint=endpoint if use_ai_query else None,
-            score_threshold=score_threshold,
-            num_cores=num_cores,
-            use_aligned=True,
-            output_strategy=output_strategy,
-            max_rows=max_rows,
-            alignment_mode=alignment_mode,
-            entity_filter=entity_filter,
-            reasoning_effort=reasoning_effort,
-            gliner_max_words=gliner_max_words,
-            presidio_pattern_only=presidio_pattern_only,
-            output_mode=output_mode,
-            confirm_destructive=confirm_destructive,
+            config=config,
         )
 
 # COMMAND ----------

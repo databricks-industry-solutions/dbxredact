@@ -5,6 +5,7 @@ import os
 import uuid
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -15,10 +16,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="dbxredact", version="0.2.0")
+
+_allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins or ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(api_router, prefix="/api")
 
 
 _DEBUG = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
+RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "90"))
 
 
 @app.exception_handler(DatabaseError)
@@ -29,7 +40,7 @@ async def database_error_handler(request: Request, exc: DatabaseError):
 
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):
-    logger.error("Unhandled error on %s: %s", request.url.path, exc, exc_info=True)
+    logger.error("Unhandled error on %s: %s", request.url.path, type(exc).__name__)
     detail = str(exc) if _DEBUG else "Internal server error"
     return JSONResponse(status_code=500, content={"error": detail})
 
@@ -71,7 +82,8 @@ TABLE_DDLS = [
         workflow STRING, entity_text STRING, entity_type STRING,
         start INT, end_pos INT, action STRING, corrected_type STRING,
         corrected_value STRING, detection_method STRING, created_at TIMESTAMP
-    )""",
+    )
+    TBLPROPERTIES ('delta.deletedFileRetentionDuration' = 'interval 90 days')""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_job_history (
         run_id BIGINT, config_id STRING, source_table STRING, output_table STRING,
         status STRING, cost_estimate_usd DOUBLE, started_at TIMESTAMP, completed_at TIMESTAMP
@@ -88,6 +100,12 @@ TABLE_DDLS = [
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_ground_truths (
         doc_id STRING, source_table STRING, entity_text STRING, entity_type STRING,
         start INT, end_pos INT, created_at TIMESTAMP
+    )
+    TBLPROPERTIES ('delta.deletedFileRetentionDuration' = 'interval 90 days')""",
+    f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_audit_log (
+        run_id STRING, doc_id STRING, entity_type STRING, entity_count INT,
+        detection_status STRING, detectors_used STRING, config_snapshot STRING,
+        created_at TIMESTAMP
     )""",
 ]
 
@@ -113,6 +131,8 @@ DEFAULT_CONFIG = {
 
 @app.on_event("startup")
 async def on_startup():
+    if not _allowed_origins:
+        logger.warning("ALLOWED_ORIGINS not set -- CORS allows all origins. Set ALLOWED_ORIGINS for production.")
     if not os.environ.get("DATABRICKS_WAREHOUSE_ID"):
         logger.warning("DATABRICKS_WAREHOUSE_ID not set -- skipping table setup")
         return
@@ -152,6 +172,23 @@ async def on_startup():
             logger.info("Seeded default config")
     except Exception as e:
         logger.error("Failed to seed default config: %s", e)
+    # Warn if PII-bearing tables have stale data beyond retention period
+    for pii_table in ("redact_annotations", "redact_ground_truths"):
+        try:
+            stale = fetch_one(
+                f"SELECT count(*) as cnt, min(created_at) as oldest "
+                f"FROM {_table(pii_table)} "
+                f"WHERE created_at < current_timestamp() - INTERVAL {RETENTION_DAYS} DAY"
+            )
+            cnt = int(stale.get("cnt", 0)) if stale else 0
+            if cnt > 0:
+                logger.warning(
+                    "GOVERNANCE: %s has %d rows older than %d days (oldest: %s). "
+                    "These contain raw PII. Call POST /api/admin/purge-annotations to clean up.",
+                    pii_table, cnt, RETENTION_DAYS, stale.get("oldest"),
+                )
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

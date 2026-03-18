@@ -1,11 +1,17 @@
 import { useState, useEffect } from "react";
-import TablePicker from "../components/TablePicker";
+import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
+import { useGet } from "../hooks/useApi";
 import type { JobHistoryItem } from "../types";
 
 interface TableInfo {
   columns: string[];
   row_count: number;
+}
+
+interface CompareData {
+  rows: CompareRow[];
+  total: number;
 }
 
 interface CompareRow {
@@ -15,88 +21,72 @@ interface CompareRow {
 }
 
 export default function ReviewPage() {
-  const [sourceTable, setSourceTable] = useState("");
-  const [outputTable, setOutputTable] = useState("");
+  const [sourceTable, setSourceTable] = useState<TableRef>(emptyTableRef);
+  const [outputTable, setOutputTable] = useState<TableRef>(emptyTableRef);
   const [sourceCol, setSourceCol] = useState("text");
   const [outputCol, setOutputCol] = useState("text_redacted");
   const [docIdCol, setDocIdCol] = useState("doc_id");
-  const [sourceCols, setSourceCols] = useState<string[]>([]);
-  const [outputCols, setOutputCols] = useState<string[]>([]);
-  const [rows, setRows] = useState<CompareRow[]>([]);
-  const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [suggested, setSuggested] = useState(false);
 
-  const isSourceReady = sourceTable.split(".").length === 3 && sourceTable.split(".")[2] !== "";
-  const isOutputReady = outputTable.split(".").length === 3 && outputTable.split(".")[2] !== "";
+  const srcQualified = toQualified(sourceTable);
+  const outQualified = toQualified(outputTable);
+  const isSourceReady = isComplete(sourceTable);
+  const isOutputReady = isComplete(outputTable);
 
-  // Auto-suggest from most recent completed pipeline run
+  const { data: historyData } = useGet<JobHistoryItem[]>("/pipeline/history", { enabled: !suggested });
+
   useEffect(() => {
-    if (suggested) return;
-    fetch("/api/pipeline/history")
-      .then((r) => r.json())
-      .then((history: JobHistoryItem[]) => {
-        const completed = history.find((h) => h.status === "TERMINATED");
-        if (completed) {
-          setSourceTable(completed.source_table);
-          setOutputTable(completed.output_table);
-        }
-        setSuggested(true);
-      })
-      .catch(() => setSuggested(true));
-  }, [suggested]);
+    if (suggested || !historyData) return;
+    const completed = historyData.find((h) => h.status === "TERMINATED");
+    if (completed) {
+      const srcParts = completed.source_table.split(".");
+      const outParts = completed.output_table.split(".");
+      if (srcParts.length === 3) setSourceTable({ catalog: srcParts[0], schema: srcParts[1], table: srcParts[2] });
+      if (outParts.length === 3) setOutputTable({ catalog: outParts[0], schema: outParts[1], table: outParts[2] });
+    }
+    setSuggested(true);
+  }, [historyData, suggested]);
 
-  // Fetch columns when source table changes
+  const { data: sourceInfo } = useGet<TableInfo>(
+    `/pipeline/table-info?table=${encodeURIComponent(srcQualified)}`,
+    { enabled: isSourceReady, deps: [srcQualified] },
+  );
+  const { data: outputInfo } = useGet<TableInfo>(
+    `/pipeline/table-info?table=${encodeURIComponent(outQualified)}`,
+    { enabled: isOutputReady, deps: [outQualified] },
+  );
+
   useEffect(() => {
-    if (!isSourceReady) { setSourceCols([]); return; }
-    fetch(`/api/pipeline/table-info?table=${encodeURIComponent(sourceTable)}`)
-      .then((r) => r.json())
-      .then((info: TableInfo) => {
-        setSourceCols(info.columns);
-        if (info.columns.includes("text")) setSourceCol("text");
-        else if (info.columns.length) setSourceCol(info.columns[0]);
-        if (info.columns.includes("doc_id")) setDocIdCol("doc_id");
-      })
-      .catch((e) => setError(e.message || "Failed to load source table columns"));
-  }, [sourceTable, isSourceReady]);
+    if (!sourceInfo) return;
+    if (sourceInfo.columns.includes("text")) setSourceCol("text");
+    else if (sourceInfo.columns.length) setSourceCol(sourceInfo.columns[0]);
+    if (sourceInfo.columns.includes("doc_id")) setDocIdCol("doc_id");
+  }, [sourceInfo]);
 
-  // Fetch columns when output table changes
   useEffect(() => {
-    if (!isOutputReady) { setOutputCols([]); return; }
-    fetch(`/api/pipeline/table-info?table=${encodeURIComponent(outputTable)}`)
-      .then((r) => r.json())
-      .then((info: TableInfo) => {
-        setOutputCols(info.columns);
-        if (info.columns.includes("text_redacted")) setOutputCol("text_redacted");
-        else if (info.columns.includes("redacted_text")) setOutputCol("redacted_text");
-        else if (info.columns.length) setOutputCol(info.columns[0]);
-      })
-      .catch((e) => setError(e.message || "Failed to load output table columns"));
-  }, [outputTable, isOutputReady]);
+    if (!outputInfo) return;
+    if (outputInfo.columns.includes("text_redacted")) setOutputCol("text_redacted");
+    else if (outputInfo.columns.includes("redacted_text")) setOutputCol("redacted_text");
+    else if (outputInfo.columns.length) setOutputCol(outputInfo.columns[0]);
+  }, [outputInfo]);
 
-  // Fetch comparison data
-  useEffect(() => {
-    if (!isSourceReady || !isOutputReady) { setRows([]); setTotal(0); return; }
-    setLoading(true);
-    const params = new URLSearchParams({
-      source_table: sourceTable,
-      source_column: sourceCol,
-      output_table: outputTable,
-      output_column: outputCol,
-      doc_id_column: docIdCol,
-      limit: "1",
-      offset: String(offset),
-    });
-    fetch(`/api/review/compare?${params}`)
-      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
-      .then((data) => { setRows(data.rows); setTotal(data.total); })
-      .catch((e) => setError(e.message || "Failed to load comparison"))
-      .finally(() => setLoading(false));
-  }, [sourceTable, sourceCol, outputTable, outputCol, docIdCol, offset, isSourceReady, isOutputReady]);
+  const compareParams = new URLSearchParams({
+    source_table: srcQualified, source_column: sourceCol,
+    output_table: outQualified, output_column: outputCol,
+    doc_id_column: docIdCol, limit: "1", offset: String(offset),
+  }).toString();
 
-  const doc = rows[0];
+  const { data: compareData, loading } = useGet<CompareData>(
+    `/review/compare?${compareParams}`,
+    { enabled: isSourceReady && isOutputReady, deps: [srcQualified, sourceCol, outQualified, outputCol, docIdCol, offset] },
+  );
+
+  const doc = compareData?.rows?.[0];
+  const total = compareData?.total ?? 0;
+  const sourceCols = sourceInfo?.columns ?? [];
+  const outputCols = outputInfo?.columns ?? [];
 
   return (
     <div>

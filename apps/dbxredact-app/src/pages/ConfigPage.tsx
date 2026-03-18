@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
-import { useGet, apiPost, apiDelete } from "../hooks/useApi";
+import { useGet, apiPost, apiPut, apiDelete } from "../hooks/useApi";
 import ErrorBanner from "../components/ErrorBanner";
+import ConfirmDialog from "../components/ConfirmDialog";
+import DataTable, { type Column } from "../components/DataTable";
+import { useToast } from "../hooks/useToast";
 import type { Config } from "../types";
 
 const PROFILE_PRESETS: Record<string, Partial<typeof DEFAULTS>> = {
@@ -45,6 +48,9 @@ export default function ConfigPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Config | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => { if (fetchError) setError(fetchError); }, [fetchError]);
 
@@ -63,26 +69,92 @@ export default function ConfigPage() {
   async function save() {
     setSaving(true);
     try {
-      await apiPost("/config/", form);
+      if (editingId) {
+        await apiPut(`/config/${editingId}`, form);
+        toast("Config updated");
+      } else {
+        await apiPost("/config/", form);
+        toast("Config saved");
+      }
       setForm(DEFAULTS);
+      setEditingId(null);
       refetch();
-    } catch (e: any) {
-      setError(e.message || "Failed to save config");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to save config");
     }
     setSaving(false);
   }
 
-  async function remove(id: string) {
-    try {
-      await apiDelete(`/config/${id}`);
-      refetch();
-    } catch (e: any) {
-      setError(e.message || "Failed to delete config");
-    }
+  function startEdit(c: Config) {
+    setEditingId(c.config_id);
+    setForm({
+      name: c.name,
+      detection_profile: c.detection_profile || "custom",
+      use_presidio: c.use_presidio,
+      use_ai_query: c.use_ai_query,
+      use_gliner: c.use_gliner,
+      endpoint: c.endpoint,
+      score_threshold: c.score_threshold,
+      gliner_model: c.gliner_model,
+      gliner_threshold: c.gliner_threshold,
+      redaction_strategy: c.redaction_strategy,
+      alignment_mode: c.alignment_mode,
+      reasoning_effort: c.reasoning_effort || "low",
+      gliner_max_words: c.gliner_max_words || 256,
+      presidio_model_size: c.presidio_model_size || "trf",
+      presidio_pattern_only: c.presidio_pattern_only ?? true,
+    });
+    setShowAdvanced(true);
   }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(DEFAULTS);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    try {
+      await apiDelete(`/config/${deleteTarget.config_id}`);
+      toast("Config deleted");
+      refetch();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to delete config");
+    }
+    setDeleteTarget(null);
+  }
+
+  const configColumns: Column<Config & Record<string, unknown>>[] = [
+    { key: "name", header: "Name", render: (c) => <span className="font-medium">{c.name}</span> },
+    { key: "detection_profile", header: "Profile", render: (c) => (
+      <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">{c.detection_profile || "custom"}</span>
+    )},
+    { key: "use_presidio", header: "Presidio", render: (c) => c.use_presidio ? "Y" : "-", sortable: false, searchable: false },
+    { key: "use_ai_query", header: "AI", render: (c) => c.use_ai_query ? "Y" : "-", sortable: false, searchable: false },
+    { key: "use_gliner", header: "GLiNER", render: (c) => c.use_gliner ? "Y" : "-", sortable: false, searchable: false },
+    { key: "redaction_strategy", header: "Strategy", render: (c) => (
+      <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">{c.redaction_strategy}</span>
+    )},
+    { key: "alignment_mode", header: "Mode" },
+    { key: "_actions", header: "", sortable: false, searchable: false, render: (c) => (
+      <span className="space-x-2">
+        <button className="text-blue-500 dark:text-blue-400 hover:text-blue-700 text-xs font-medium transition-colors" onClick={() => startEdit(c)}>Edit</button>
+        <button className="text-red-500 dark:text-red-400 hover:text-red-700 text-xs font-medium transition-colors" onClick={() => setDeleteTarget(c)}>Delete</button>
+      </span>
+    )},
+  ];
 
   return (
     <div>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete Configuration"
+        message={`Are you sure you want to delete "${deleteTarget?.name}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       <h2 className="page-title">Detection Configurations</h2>
       <p className="page-desc">Create and manage PII detection configurations for pipeline runs.</p>
@@ -190,44 +262,25 @@ export default function ConfigPage() {
           </>
         )}
 
-        <div className="col-span-2 pt-2">
+        <div className="col-span-2 pt-2 flex gap-2">
           <button className="btn-primary" disabled={saving || !form.name} onClick={save}>
-            {saving ? "Saving..." : "Save Config"}
+            {saving ? "Saving..." : editingId ? "Update Config" : "Save Config"}
           </button>
+          {editingId && (
+            <button className="btn-secondary" onClick={cancelEdit}>Cancel Edit</button>
+          )}
         </div>
       </div>
 
       {loading ? (
         <p className="text-sm text-gray-500">Loading...</p>
-      ) : configs?.length ? (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Name</th><th>Profile</th><th>Presidio</th><th>AI</th><th>GLiNER</th>
-              <th>Strategy</th><th>Mode</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {configs.map((c) => (
-              <tr key={c.config_id}>
-                <td className="font-medium">{c.name}</td>
-                <td><span className="inline-block px-2 py-0.5 text-xs rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">{c.detection_profile || "custom"}</span></td>
-                <td>{c.use_presidio ? "Y" : "-"}</td>
-                <td>{c.use_ai_query ? "Y" : "-"}</td>
-                <td>{c.use_gliner ? "Y" : "-"}</td>
-                <td><span className="inline-block px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">{c.redaction_strategy}</span></td>
-                <td>{c.alignment_mode}</td>
-                <td>
-                  <button className="text-red-500 dark:text-red-400 hover:text-red-700 text-xs font-medium transition-colors" onClick={() => remove(c.config_id)}>
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       ) : (
-        <p className="text-sm text-gray-400">No configurations yet.</p>
+        <DataTable<Config & Record<string, unknown>>
+          data={(configs ?? []) as (Config & Record<string, unknown>)[]}
+          rowKey={(c) => c.config_id}
+          emptyMessage="No configurations yet."
+          columns={configColumns}
+        />
       )}
     </div>
   );

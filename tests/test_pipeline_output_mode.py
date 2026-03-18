@@ -19,18 +19,7 @@ for _mod in _pyspark_mods:
         _stashed[_mod] = None
         sys.modules[_mod] = MagicMock()
 
-from dbxredact.pipeline import OutputMode, _write_in_place
-
-
-class TestOutputModeType:
-
-    def test_separate_is_valid(self):
-        mode: OutputMode = "separate"
-        assert mode == "separate"
-
-    def test_in_place_is_valid(self):
-        mode: OutputMode = "in_place"
-        assert mode == "in_place"
+from dbxredact.pipeline import _write_in_place, _check_consensus_safety
 
 
 class TestWriteInPlace:
@@ -87,3 +76,16 @@ class TestWriteInPlace:
         assert "MERGE INTO my_cat.my_sch.my_tbl" in sql_call
         assert "t.`notes` = s.`notes_redacted`" in sql_call
         assert "t.`doc_id` = s.`doc_id`" in sql_call
+
+
+class TestConsensusGuard:
+
+    def test_union_mode_passes(self):
+        _check_consensus_safety("union", allow_consensus_redaction=False)
+
+    def test_consensus_without_opt_in_raises(self):
+        with pytest.raises(ValueError, match="unsafe for redaction"):
+            _check_consensus_safety("consensus", allow_consensus_redaction=False)
+
+    def test_consensus_with_opt_in_passes(self):
+        _check_consensus_safety("consensus", allow_consensus_redaction=True)

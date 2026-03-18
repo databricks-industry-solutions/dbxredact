@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useGet, apiPost } from "../hooks/useApi";
-import TablePicker from "../components/TablePicker";
+import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
+import DataTable, { type Column } from "../components/DataTable";
+import { useToast } from "../hooks/useToast";
 import type { Config, RunStatus, JobHistoryItem } from "../types";
 
 interface TableInfo {
@@ -29,7 +31,7 @@ export default function RunPage() {
   const { data: configs, loading: configsLoading, error: configsError } = useGet<Config[]>("/config/");
   const { data: history, refetch: refetchHistory, error: historyError } = useGet<JobHistoryItem[]>("/pipeline/history");
   const [configId, setConfigId] = useState("");
-  const [sourceTable, setSourceTable] = useState("");
+  const [sourceTable, setSourceTable] = useState<TableRef>(emptyTableRef);
   const [outputTable, setOutputTable] = useState("");
   const [textCol, setTextCol] = useState("text");
   const [docIdCol, setDocIdCol] = useState("doc_id");
@@ -41,65 +43,56 @@ export default function RunPage() {
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
+  const { toast } = useToast();
 
   const displayError = error || configsError || historyError || "";
+  const hasTable = isComplete(sourceTable);
+  const qualified = toQualified(sourceTable);
 
-  const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
-  const [loadingTable, setLoadingTable] = useState(false);
-  const [costEstimate, setCostEstimate] = useState<CostEstimate | null>(null);
-  const [loadingCost, setLoadingCost] = useState(false);
+  const { data: tableInfo, loading: loadingTable } = useGet<TableInfo>(
+    `/pipeline/table-info?table=${encodeURIComponent(qualified)}`,
+    { enabled: hasTable, deps: [qualified] },
+  );
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const failCountRef = useRef(0);
-
-  const parts = sourceTable.split(".");
-  const hasTable = parts.length === 3 && parts[2] !== "";
 
   useEffect(() => {
     if (!configId && configs?.length) setConfigId(configs[0].config_id);
   }, [configs, configId]);
 
   useEffect(() => {
-    if (!hasTable) { setTableInfo(null); return; }
-    setLoadingTable(true);
-    fetch(`/api/pipeline/table-info?table=${encodeURIComponent(sourceTable)}`)
-      .then((r) => r.json())
-      .then((info: TableInfo) => {
-        setTableInfo(info);
-        if (info.columns.includes("text")) setTextCol("text");
-        else if (info.columns.length) setTextCol(info.columns[0]);
-        if (info.columns.includes("doc_id")) setDocIdCol("doc_id");
-        else if (info.columns.length) setDocIdCol(info.columns[0]);
-      })
-      .catch((e: any) => { setError(e.message || "Failed to load table info"); setTableInfo(null); })
-      .finally(() => setLoadingTable(false));
-  }, [sourceTable, hasTable]);
+    if (!tableInfo) return;
+    if (tableInfo.columns.includes("text")) setTextCol("text");
+    else if (tableInfo.columns.length) setTextCol(tableInfo.columns[0]);
+    if (tableInfo.columns.includes("doc_id")) setDocIdCol("doc_id");
+    else if (tableInfo.columns.length) setDocIdCol(tableInfo.columns[0]);
+  }, [tableInfo]);
 
   const selectedConfig = configs?.find((c) => c.config_id === configId);
   const usesAiQuery = selectedConfig?.use_ai_query ?? false;
   const usesGliner = selectedConfig?.use_gliner ?? false;
   const clusterProfile = `${useGpu ? "gpu" : "cpu"}_${clusterSize}`;
-
   const showCostPanel = usesAiQuery || usesGliner;
 
-  useEffect(() => {
-    if (!hasTable || !showCostPanel || !selectedConfig) { setCostEstimate(null); return; }
-    setLoadingCost(true);
-    const params = new URLSearchParams({
-      table: sourceTable,
-      text_column: textCol,
-      endpoint: selectedConfig.endpoint || "databricks-gpt-oss-120b",
-      max_rows: String(maxRows),
-      cluster_profile: clusterProfile,
-      use_gliner: String(usesGliner),
-      use_ai_query: String(usesAiQuery),
-      detection_profile: selectedConfig.detection_profile || "fast",
-    });
-    fetch(`/api/pipeline/cost-estimate?${params}`)
-      .then((r) => r.json())
-      .then(setCostEstimate)
-      .catch((e: any) => { setError(e.message || "Failed to load cost estimate"); setCostEstimate(null); })
-      .finally(() => setLoadingCost(false));
-  }, [sourceTable, hasTable, showCostPanel, usesAiQuery, selectedConfig?.endpoint, textCol, maxRows, clusterProfile, usesGliner, selectedConfig?.detection_profile]);
+  const costParams = new URLSearchParams({
+    table: qualified,
+    text_column: textCol,
+    endpoint: selectedConfig?.endpoint || "databricks-gpt-oss-120b",
+    max_rows: String(maxRows),
+    cluster_profile: clusterProfile,
+    use_gliner: String(usesGliner),
+    use_ai_query: String(usesAiQuery),
+    detection_profile: selectedConfig?.detection_profile || "fast",
+  }).toString();
+
+  const { data: costEstimate, loading: loadingCost } = useGet<CostEstimate>(
+    `/pipeline/cost-estimate?${costParams}`,
+    {
+      enabled: hasTable && showCostPanel && !!selectedConfig,
+      deps: [qualified, textCol, selectedConfig?.endpoint, maxRows, clusterProfile, usesGliner, usesAiQuery, selectedConfig?.detection_profile],
+    },
+  );
 
   useEffect(() => {
     if (runStatus && runStatus.state && !TERMINAL_STATES.includes(runStatus.state)) {
@@ -144,7 +137,7 @@ export default function RunPage() {
     try {
       const status = await apiPost<RunStatus>("/pipeline/run", {
         config_id: configId,
-        source_table: sourceTable,
+        source_table: qualified,
         output_table: outputMode === "in_place" ? undefined : (outputTable || undefined),
         text_column: textCol,
         doc_id_column: docIdCol,
@@ -154,15 +147,30 @@ export default function RunPage() {
         output_mode: outputMode,
       });
       setRunStatus(status);
+      toast("Pipeline launched");
       refetchHistory();
-    } catch (e: any) {
-      setError(e.message || "Failed to launch pipeline");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to launch pipeline");
     }
     setRunning(false);
   }
 
   const columnOptions = tableInfo?.columns || [];
   const isRunning = runStatus?.state && !TERMINAL_STATES.includes(runStatus.state);
+
+  const historyColumns: Column<JobHistoryItem & Record<string, unknown>>[] = [
+    { key: "run_id", header: "Run ID", render: (h) => <span className="font-mono text-xs">{h.run_id}</span> },
+    { key: "config_id", header: "Config", render: (h) => <span className="font-mono text-xs">{h.config_id.slice(0, 8)}</span> },
+    { key: "source_table", header: "Source" },
+    { key: "status", header: "Status", render: (h) => (
+      <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${
+        h.status === "RUNNING" ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
+        : h.status === "SUCCESS" ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300"
+        : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+      }`}>{h.status}</span>
+    )},
+    { key: "started_at", header: "Started", render: (h) => <span className="text-gray-500 dark:text-gray-400">{h.started_at}</span> },
+  ];
 
   return (
     <div>
@@ -338,32 +346,12 @@ export default function RunPage() {
         Recent Runs
         <button type="button" onClick={() => refetchHistory()} className="btn-secondary text-sm">Refresh</button>
       </h3>
-      {history?.length ? (
-        <table className="data-table">
-          <thead>
-            <tr><th>Run ID</th><th>Config</th><th>Source</th><th>Status</th><th>Started</th></tr>
-          </thead>
-          <tbody>
-            {history.map((h) => (
-              <tr key={h.run_id}>
-                <td className="font-mono text-xs">{h.run_id}</td>
-                <td className="font-mono text-xs">{h.config_id.slice(0, 8)}</td>
-                <td>{h.source_table}</td>
-                <td>
-                  <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${
-                    h.status === "RUNNING" ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
-                    : h.status === "SUCCESS" ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300"
-                    : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
-                  }`}>{h.status}</span>
-                </td>
-                <td className="text-gray-500 dark:text-gray-400">{h.started_at}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="text-sm text-gray-400">No runs yet.</p>
-      )}
+      <DataTable<JobHistoryItem & Record<string, unknown>>
+        data={(history ?? []) as (JobHistoryItem & Record<string, unknown>)[]}
+        rowKey={(h) => String(h.run_id)}
+        emptyMessage="No runs yet."
+        columns={historyColumns}
+      />
     </div>
   );
 }

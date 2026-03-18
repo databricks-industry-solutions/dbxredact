@@ -1,13 +1,12 @@
 """GLiNER-based PHI/PII detection using HuggingFace transformers."""
 
-import json
 import logging
 import re
 from typing import Iterator, List, Tuple
 
 import pandas as pd
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import pandas_udf, col, from_json
+from pyspark.sql.functions import pandas_udf, col
 
 from .config import (
     DEFAULT_GLINER_MODEL,
@@ -17,6 +16,7 @@ from .config import (
     DEFAULT_GLINER_THRESHOLDS_BY_TYPE,
     GLINER_LABEL_MAP,
     should_ignore_entity,
+    _entity_schema,
 )
 from .utils import build_offset_map
 
@@ -172,8 +172,9 @@ def make_gliner_udf(
     The model loads lazily via module-level cache on each worker.
     """
     labels_list = list(labels or DEFAULT_GLINER_LABELS)
+    schema = _entity_schema()
 
-    @pandas_udf("string")
+    @pandas_udf(schema)
     def gliner_udf(
         batch_iter: Iterator[Tuple[pd.Series, pd.Series]],
     ) -> Iterator[pd.Series]:
@@ -183,7 +184,7 @@ def make_gliner_udf(
             results = []
             for doc_id, text in zip(doc_ids, texts):
                 if not text or pd.isna(text):
-                    results.append(json.dumps([]))
+                    results.append([])
                     continue
 
                 try:
@@ -206,18 +207,18 @@ def make_gliner_udf(
                         {
                             "entity": ent["text"],
                             "entity_type": _map_label(ent["label"]),
+                            "score": float(ent.get("score", 0.0)),
                             "start": ent["start"],
                             "end": ent["end"],
-                            "score": ent.get("score", 0.0),
                             "doc_id": str(doc_id),
                         }
                         for ent in entities
                         if not should_ignore_entity(ent["text"], _map_label(ent["label"]))
                     ]
-                    results.append(json.dumps(formatted))
-                except Exception as e:
-                    logger.warning(f"Error processing document {doc_id}: {e}")
-                    results.append(json.dumps([]))
+                    results.append(formatted)
+                except (RuntimeError, ValueError, KeyError, IndexError, TypeError) as e:
+                    logger.warning("GLiNER detection failed for doc %s: %s", doc_id, type(e).__name__)
+                    results.append([])
 
             yield pd.Series(results)
 
@@ -251,15 +252,7 @@ def run_gliner_detection(
 
     base_df = df.repartition(num_cores) if _repartition else df
     result_df = base_df.withColumn(
-        "gliner_results", gliner_udf(col(doc_id_column), col(text_column))
-    )
-
-    result_df = result_df.withColumn(
-        "gliner_results_struct",
-        from_json(
-            "gliner_results",
-            "array<struct<entity:string, entity_type:string, start:integer, end:integer, score:double, doc_id:string>>",
-        ),
+        "gliner_results_struct", gliner_udf(col(doc_id_column), col(text_column))
     )
 
     return result_df

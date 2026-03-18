@@ -13,9 +13,9 @@ class ConfigCreate(BaseModel):
     use_ai_query: bool = True
     use_gliner: bool = False
     endpoint: str = "databricks-gpt-oss-120b"
-    score_threshold: float = 0.5
+    score_threshold: float = Field(0.5, ge=0.1, le=1.0)
     gliner_model: str = "nvidia/gliner-PII"
-    gliner_threshold: float = 0.2
+    gliner_threshold: float = Field(0.2, ge=0.05, le=1.0)
     redaction_strategy: str = "typed"
     alignment_mode: str = "union"
     reasoning_effort: Optional[str] = "low"

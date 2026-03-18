@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from "react";
 import { Routes, Route } from "react-router-dom";
+import ToastProvider from "./components/ToastProvider";
 import Layout from "./components/Layout";
 import HomePage from "./pages/HomePage";
 import ConfigPage from "./pages/ConfigPage";
@@ -11,6 +12,7 @@ import ListsPage from "./pages/ListsPage";
 import LabelPage from "./pages/LabelPage";
 import ABTestPage from "./pages/ABTestPage";
 import ActiveLearnPage from "./pages/ActiveLearnPage";
+import NotFoundPage from "./pages/NotFoundPage";
 
 class AppErrorBoundary extends Component<
   { children: ReactNode },
@@ -53,20 +55,23 @@ class AppErrorBoundary extends Component<
 export default function App() {
   return (
     <AppErrorBoundary>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<HomePage />} />
-          <Route path="config" element={<ConfigPage />} />
-          <Route path="run" element={<RunPage />} />
-          <Route path="benchmark" element={<BenchmarkPage />} />
-          <Route path="review" element={<ReviewPage />} />
-          <Route path="metrics" element={<MetricsPage />} />
-          <Route path="lists" element={<ListsPage />} />
-          <Route path="labels" element={<LabelPage />} />
-          <Route path="ab-tests" element={<ABTestPage />} />
-          <Route path="active-learn" element={<ActiveLearnPage />} />
-        </Route>
-      </Routes>
+      <ToastProvider>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<HomePage />} />
+            <Route path="config" element={<ConfigPage />} />
+            <Route path="run" element={<RunPage />} />
+            <Route path="benchmark" element={<BenchmarkPage />} />
+            <Route path="review" element={<ReviewPage />} />
+            <Route path="metrics" element={<MetricsPage />} />
+            <Route path="lists" element={<ListsPage />} />
+            <Route path="labels" element={<LabelPage />} />
+            <Route path="ab-tests" element={<ABTestPage />} />
+            <Route path="active-learn" element={<ActiveLearnPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Route>
+        </Routes>
+      </ToastProvider>
     </AppErrorBoundary>
   );
 }

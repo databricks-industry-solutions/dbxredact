@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useGet, apiPost } from "../hooks/useApi";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import TablePicker from "../components/TablePicker";
+import TablePicker, { type TableRef, emptyTableRef, toQualified } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
+import { useToast } from "../hooks/useToast";
 import type { Config, ABTest } from "../types";
 
 export default function ABTestPage() {
@@ -11,34 +12,39 @@ export default function ABTestPage() {
   const [name, setName] = useState("");
   const [configA, setConfigA] = useState("");
   const [configB, setConfigB] = useState("");
-  const [sourceTable, setSourceTable] = useState("");
+  const [sourceTable, setSourceTable] = useState<TableRef>(emptyTableRef);
   const [sampleSize, setSampleSize] = useState(100);
   const [error, setError] = useState("");
+  const { toast } = useToast();
 
   useEffect(() => {
     if (testsError) setError(testsError);
     else if (configsError) setError(configsError);
   }, [testsError, configsError]);
 
+  const qualified = toQualified(sourceTable);
+
   async function create() {
     try {
       await apiPost("/ab-tests/", {
         name, config_a_id: configA, config_b_id: configB,
-        source_table: sourceTable, sample_size: sampleSize,
+        source_table: qualified, sample_size: sampleSize,
       });
       setName("");
+      toast("A/B test created");
       refetch();
-    } catch (e: any) {
-      setError(e.message || "Failed to create test");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to create test");
     }
   }
 
   async function runTest(testId: string) {
     try {
       await apiPost(`/ab-tests/${testId}/run`, {});
+      toast("Test started");
       refetch();
-    } catch (e: any) {
-      setError(e.message || "Failed to run test");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to run test");
     }
   }
 
@@ -116,7 +122,7 @@ export default function ABTestPage() {
             onChange={(e) => setSampleSize(parseInt(e.target.value))} />
         </div>
         <div className="col-span-2 pt-2">
-          <button className="btn-primary" disabled={!name || !configA || !configB || !sourceTable.includes(".")} onClick={create}>
+          <button className="btn-primary" disabled={!name || !configA || !configB || !sourceTable.table} onClick={create}>
             Create Test
           </button>
         </div>

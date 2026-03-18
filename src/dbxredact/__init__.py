@@ -25,6 +25,10 @@ from .config import (
     JUDGE_PROMPT_SKELETON,
     NEXT_ACTION_PROMPT_SKELETON,
     PROMPT_VERSION,
+    RedactionConfig,
+    _entity_schema,
+    MIN_SCORE_THRESHOLD,
+    MIN_GLINER_THRESHOLD,
 )
 
 from .utils import (
@@ -77,6 +81,7 @@ from .detection import (
 from .redaction import (
     redact_text,
     create_redaction_udf,
+    create_redaction_audit_udf,
     create_redacted_table,
     RedactionStrategy,
 )
@@ -134,6 +139,10 @@ __all__ = [
     "JUDGE_PROMPT_SKELETON",
     "NEXT_ACTION_PROMPT_SKELETON",
     "PROMPT_VERSION",
+    "RedactionConfig",
+    "_entity_schema",
+    "MIN_SCORE_THRESHOLD",
+    "MIN_GLINER_THRESHOLD",
     # Utils
     "is_fuzzy_match",
     "is_overlap",
@@ -171,6 +180,7 @@ __all__ = [
     # Redaction
     "redact_text",
     "create_redaction_udf",
+    "create_redaction_audit_udf",
     "create_redacted_table",
     "RedactionStrategy",
     # Metadata

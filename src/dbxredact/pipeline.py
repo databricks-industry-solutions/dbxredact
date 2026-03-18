@@ -1,13 +1,15 @@
 """End-to-end PHI/PII detection and redaction pipelines."""
 
+import json
 import logging
 import math
 import time
+import uuid
 from typing import Optional, Literal
 import pandas as pd
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.streaming import StreamingQuery
-from pyspark.sql.functions import col, array
+from pyspark.sql.functions import col, array, lit, when, size, explode, count as spark_count, current_timestamp
 from pyspark.sql.types import (
     ArrayType,
     StructType,
@@ -19,19 +21,78 @@ from pyspark.sql.types import (
 
 from .detection import run_detection
 from .alignment import align_entities_udf
-from .redaction import create_redaction_udf, RedactionStrategy
+from .redaction import create_redaction_udf, create_redaction_audit_udf, RedactionStrategy
 from .metadata import get_columns_by_tag
-from .config import DEFAULT_GLINER_MODEL, DEFAULT_GLINER_THRESHOLD, DEFAULT_GLINER_MAX_WORDS, DEFAULT_AI_REASONING_EFFORT
+from .config import DEFAULT_GLINER_MODEL, DEFAULT_GLINER_THRESHOLD, DEFAULT_GLINER_MAX_WORDS, DEFAULT_AI_REASONING_EFFORT, RedactionConfig
 from .entity_filter import EntityFilter, apply_safe_filter, apply_block_filter
 
 logger = logging.getLogger(__name__)
 
+_SENTINEL = object()
+
+
+def _apply_config(config: RedactionConfig, local_vars: dict) -> dict:
+    """Overlay RedactionConfig fields onto function locals.
+
+    Only fills in values that are still at their function-signature defaults
+    (i.e., were not explicitly supplied by the caller).  Since Python doesn't
+    distinguish "caller passed the default" from "caller omitted", this uses a
+    simple heuristic: config values replace locals that are ``_SENTINEL`` or
+    equal to the field's dataclass default.  In practice callers should prefer
+    passing *either* ``config=`` *or* individual kwargs, not both.
+    """
+    if config is None:
+        return local_vars
+    from dataclasses import fields as dc_fields
+    for f in dc_fields(config):
+        if f.name in local_vars:
+            local_vars[f.name] = getattr(config, f.name)
+    return local_vars
+
 OutputStrategy = Literal["validation", "production"]
+
+# Governance floor constants
+MIN_SCORE_THRESHOLD = 0.1
+MIN_GLINER_THRESHOLD = 0.05
 
 
 AlignmentMode = Literal["union", "consensus"]
 
 OutputMode = Literal["separate", "in_place"]
+
+
+def _check_validation_output(output_strategy: str, confirm_validation_output: bool) -> None:
+    """Raise if validation/debug output is requested without explicit opt-in."""
+    if output_strategy != "validation":
+        return
+    logger.warning(
+        "GOVERNANCE: output_strategy='validation' will persist raw PII "
+        "(original text, entity text, positions) to the output table. "
+        "Use output_strategy='production' unless debugging."
+    )
+    if not confirm_validation_output:
+        raise ValueError(
+            "output_strategy='validation' writes raw PII to the output table. "
+            "Pass confirm_validation_output=True to proceed, or use "
+            "output_strategy='production' for safe output."
+        )
+
+
+def _check_consensus_safety(alignment_mode: str, allow_consensus_redaction: bool) -> None:
+    """Raise if consensus alignment is used for redaction without explicit opt-in."""
+    if alignment_mode != "consensus":
+        return
+    logger.warning(
+        "SAFETY: consensus alignment mode requires multiple detectors to agree. "
+        "This reduces recall and may leave PII unredacted. "
+        "Use 'union' mode for production redaction."
+    )
+    if not allow_consensus_redaction:
+        raise ValueError(
+            "Consensus alignment mode is unsafe for redaction without explicit "
+            "opt-in. Pass allow_consensus_redaction=True to proceed, or use "
+            "alignment_mode='union' for safer recall."
+        )
 
 
 def _write_in_place(
@@ -148,19 +209,90 @@ def _apply_redaction(
     redaction_strategy: RedactionStrategy,
 ) -> DataFrame:
     """Apply redaction to text column.
-    
-    Args:
-        df: DataFrame with text and entities
-        text_column: Name of text column
-        entities_column: Name of entities column
-        redaction_strategy: 'generic' or 'typed'
-        
+
+    Uses the audit UDF so that ``_entity_count`` and ``_detection_status``
+    columns are available for downstream safety checks.
+
     Returns:
-        DataFrame with redacted text column added
+        DataFrame with ``{text_column}_redacted``, ``_entity_count``, and
+        ``_detection_status`` columns added.
     """
-    redact_udf = create_redaction_udf(strategy=redaction_strategy)
+    audit_udf = create_redaction_audit_udf(strategy=redaction_strategy)
     redacted_col_name = f"{text_column}_redacted"
-    return df.withColumn(redacted_col_name, redact_udf(col(text_column), col(entities_column)))
+    audit_col = "_redaction_audit"
+    result = (
+        df
+        .withColumn(audit_col, audit_udf(col(text_column), col(entities_column)))
+        .withColumn(redacted_col_name, col(f"{audit_col}.redacted_text"))
+        .withColumn("_entity_count", col(f"{audit_col}.entity_count"))
+        .drop(audit_col)
+    )
+    return _add_detection_status(result, entities_column)
+
+
+def _add_detection_status(df: DataFrame, entities_column: str) -> DataFrame:
+    """Derive ``_detection_status`` from entity count and optional error flags."""
+    status = when(col("_entity_count") > 0, lit("ok")).otherwise(lit("no_entities"))
+    if "_ai_detection_failed" in df.columns:
+        status = when(
+            col("_ai_detection_failed") & (col("_entity_count") == 0),
+            lit("detection_error"),
+        ).otherwise(status)
+    return df.withColumn("_detection_status", status)
+
+
+def _write_audit_log(
+    spark: SparkSession,
+    result_df: DataFrame,
+    doc_id_column: str,
+    entities_column: str,
+    audit_table: str,
+    run_id: str,
+    config_snapshot: str,
+    detectors_used: str,
+) -> None:
+    """Write entity-level audit stats (no raw PII) to the audit log table."""
+    try:
+        if entities_column not in result_df.columns:
+            logger.warning("Audit log: entities column '%s' not found, skipping.", entities_column)
+            return
+        status_col = "_detection_status" if "_detection_status" in result_df.columns else None
+
+        select_cols = [col(doc_id_column).alias("doc_id")]
+        if status_col:
+            select_cols.append(col(status_col).alias("detection_status"))
+        select_cols.append(explode(col(entities_column)).alias("ent"))
+        exploded = result_df.select(*select_cols)
+
+        audit_df = (
+            exploded
+            .groupBy("doc_id", exploded["ent.entity_type"].alias("entity_type"))
+            .agg(spark_count("*").alias("entity_count"))
+        )
+
+        if status_col:
+            status_lookup = (
+                result_df.select(col(doc_id_column).alias("doc_id"), col(status_col).alias("detection_status"))
+                .distinct()
+            )
+            audit_df = audit_df.join(status_lookup, "doc_id", "left")
+        else:
+            audit_df = audit_df.withColumn("detection_status", lit("unknown"))
+
+        audit_df = (
+            audit_df
+            .withColumn("run_id", lit(run_id))
+            .withColumn("detectors_used", lit(detectors_used))
+            .withColumn("config_snapshot", lit(config_snapshot))
+            .withColumn("created_at", current_timestamp())
+            .select("run_id", "doc_id", "entity_type", "entity_count",
+                     "detection_status", "detectors_used", "config_snapshot", "created_at")
+        )
+
+        audit_df.write.mode("append").saveAsTable(audit_table)
+        logger.info("Audit log: wrote %d rows to %s", audit_df.count(), audit_table)
+    except Exception as e:
+        logger.warning("Audit log write failed (non-fatal): %s", type(e).__name__)
 
 
 def _select_output_columns(
@@ -170,20 +302,15 @@ def _select_output_columns(
     output_strategy: OutputStrategy,
 ) -> DataFrame:
     """Select columns based on output strategy.
-    
-    Args:
-        df: DataFrame with all columns
-        doc_id_column: Name of document ID column
-        text_column: Name of original text column
-        output_strategy: 'validation' (all columns) or 'production' (minimal)
-        
-    Returns:
-        DataFrame with selected columns
+
+    Production mode now always includes ``_detection_status`` and
+    ``_entity_count`` alongside the redacted text.
     """
     redacted_col_name = f"{text_column}_redacted"
-    
+
     if output_strategy == "production":
-        return df.select(doc_id_column, redacted_col_name)
+        wanted = [doc_id_column, redacted_col_name, "_detection_status", "_entity_count"]
+        return df.select(*[c for c in wanted if c in df.columns])
     else:  # validation
         return df
 
@@ -224,37 +351,44 @@ def run_detection_pipeline(
     fuzzy_threshold: int = 50,
     entity_filter: Optional[EntityFilter] = None,
     row_count: Optional[int] = None,
+    config: Optional[RedactionConfig] = None,
 ) -> DataFrame:
-    """
-    Run complete detection pipeline with optional alignment.
-
-    Args:
-        spark: Active SparkSession
-        source_df: Input DataFrame with text to analyze
-        doc_id_column: Name of document ID column
-        text_column: Name of text column to analyze
-        use_presidio: Whether to run Presidio detection
-        use_ai_query: Whether to run AI Query detection
-        use_gliner: Whether to run GLiNER detection
-        endpoint: Databricks endpoint for AI detection
-        score_threshold: Minimum confidence score for Presidio
-        gliner_model: HuggingFace model for GLiNER
-        num_cores: Number of cores for repartitioning
-        align_results: If True and multiple methods enabled, align results
-        fail_on_presidio_error: If False, continue without Presidio if models unavailable
-        reasoning_effort: AI Query reasoning effort ("low", "medium", "high")
-        presidio_pattern_only: If True, use only pattern recognizers (no spaCy).
-        fuzzy_threshold: Fuzzy matching threshold for alignment (0-100, default 50)
-        entity_filter: Optional EntityFilter for deny/allow list processing
+    """Run complete detection pipeline with optional alignment.
 
     Returns:
         DataFrame with detection results and optional aligned entities
     """
+    if config is not None:
+        _v = _apply_config(config, {
+            "use_presidio": use_presidio, "use_ai_query": use_ai_query,
+            "use_gliner": use_gliner, "endpoint": endpoint,
+            "score_threshold": score_threshold, "gliner_model": gliner_model,
+            "gliner_threshold": gliner_threshold, "gliner_max_words": gliner_max_words,
+            "num_cores": num_cores, "fail_on_presidio_error": fail_on_presidio_error,
+            "reasoning_effort": reasoning_effort, "presidio_model_size": presidio_model_size,
+            "presidio_pattern_only": presidio_pattern_only, "ai_model_type": ai_model_type,
+            "alignment_mode": alignment_mode, "fuzzy_threshold": fuzzy_threshold,
+            "entity_filter": entity_filter,
+        })
+        (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
+         gliner_model, gliner_threshold, gliner_max_words, num_cores,
+         fail_on_presidio_error, reasoning_effort, presidio_model_size,
+         presidio_pattern_only, ai_model_type, alignment_mode, fuzzy_threshold,
+         entity_filter) = (
+            _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
+            _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
+            _v["gliner_threshold"], _v["gliner_max_words"], _v["num_cores"],
+            _v["fail_on_presidio_error"], _v["reasoning_effort"],
+            _v["presidio_model_size"], _v["presidio_pattern_only"],
+            _v["ai_model_type"], _v["alignment_mode"], _v["fuzzy_threshold"],
+            _v["entity_filter"],
+        )
+
     if not any([use_presidio, use_ai_query, use_gliner]):
         raise ValueError("At least one detection method must be enabled.")
 
     t0 = time.time()
-    print("1. Run detection pipeline.")
+    logger.info("1. Run detection pipeline.")
     result_df = run_detection(
         spark=spark,
         df=source_df,
@@ -277,12 +411,12 @@ def run_detection_pipeline(
         row_count=row_count,
     )
     t1 = time.time()
-    print(f"   Detection total [{t1 - t0:.1f}s]")
+    logger.info("Detection total [%.1fs]", t1 - t0)
 
     methods_used = sum([use_presidio, use_ai_query, use_gliner])
 
     if align_results and methods_used >= 1:
-        print(f"2. Aligning entity results from multiple sources (mode={alignment_mode})...")
+        logger.info("2. Aligning entity results (mode=%s)...", alignment_mode)
         result_df = _apply_alignment(
             result_df, doc_id_column, use_presidio, use_ai_query, use_gliner,
             alignment_mode=alignment_mode,
@@ -291,7 +425,7 @@ def run_detection_pipeline(
         result_df = result_df.cache()
         result_df.count()
         t2 = time.time()
-        print(f"   Alignment materialized [{t2 - t1:.1f}s]")
+        logger.info("Alignment materialized [%.1fs]", t2 - t1)
 
     if entity_filter is not None:
         from pyspark.sql.functions import pandas_udf as _pandas_udf
@@ -360,6 +494,10 @@ def run_redaction_pipeline(
     entity_filter: Optional[EntityFilter] = None,
     output_mode: OutputMode = "separate",
     confirm_destructive: bool = False,
+    allow_consensus_redaction: bool = False,
+    confirm_validation_output: bool = False,
+    audit_table: Optional[str] = None,
+    config: Optional[RedactionConfig] = None,
 ) -> DataFrame:
     """
     Run end-to-end detection and redaction pipeline.
@@ -380,7 +518,7 @@ def run_redaction_pipeline(
         num_cores: Number of cores for repartitioning
         use_aligned: If True, use aligned entities for redaction
         fail_on_presidio_error: If False, continue without Presidio if models unavailable
-        output_strategy: 'validation' (all columns) or 'production' (doc_id + redacted only)
+        output_strategy: 'validation' (all columns incl. raw PII) or 'production' (safe output)
         max_rows: Maximum rows to process after dedup. Set to None or 0 to process all rows. Default: 10000
         presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg')
         presidio_pattern_only: If True, use only pattern recognizers (no spaCy).
@@ -390,6 +528,11 @@ def run_redaction_pipeline(
         output_mode: ``"separate"`` writes to ``output_table``; ``"in_place"``
             destructively overwrites the text column in ``source_table``.
         confirm_destructive: Must be ``True`` when ``output_mode="in_place"``.
+        allow_consensus_redaction: Must be ``True`` to use ``alignment_mode="consensus"``
+            for redaction.  Consensus mode reduces recall and may leave PII unredacted.
+        confirm_validation_output: Must be ``True`` when ``output_strategy="validation"``
+            since validation mode persists raw PII (original text, entity values) to the
+            output table.
 
     Note:
         For tables exceeding 100k rows, consider ``run_redaction_pipeline_streaming``
@@ -398,8 +541,46 @@ def run_redaction_pipeline(
     Returns:
         DataFrame with redacted text
     """
+    if config is not None:
+        _v = _apply_config(config, {
+            "use_presidio": use_presidio, "use_ai_query": use_ai_query,
+            "use_gliner": use_gliner, "endpoint": endpoint,
+            "score_threshold": score_threshold, "gliner_model": gliner_model,
+            "gliner_threshold": gliner_threshold, "gliner_max_words": gliner_max_words,
+            "num_cores": num_cores, "fail_on_presidio_error": fail_on_presidio_error,
+            "reasoning_effort": reasoning_effort, "presidio_model_size": presidio_model_size,
+            "presidio_pattern_only": presidio_pattern_only, "ai_model_type": ai_model_type,
+            "alignment_mode": alignment_mode, "fuzzy_threshold": fuzzy_threshold,
+            "allow_consensus_redaction": allow_consensus_redaction,
+            "redaction_strategy": redaction_strategy, "output_strategy": output_strategy,
+            "output_mode": output_mode, "confirm_destructive": confirm_destructive,
+            "confirm_validation_output": confirm_validation_output,
+            "max_rows": max_rows, "entity_filter": entity_filter,
+        })
+        (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
+         gliner_model, gliner_threshold, gliner_max_words, num_cores,
+         fail_on_presidio_error, reasoning_effort, presidio_model_size,
+         presidio_pattern_only, ai_model_type, alignment_mode, fuzzy_threshold,
+         allow_consensus_redaction, redaction_strategy, output_strategy,
+         output_mode, confirm_destructive, confirm_validation_output,
+         max_rows, entity_filter) = (
+            _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
+            _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
+            _v["gliner_threshold"], _v["gliner_max_words"], _v["num_cores"],
+            _v["fail_on_presidio_error"], _v["reasoning_effort"],
+            _v["presidio_model_size"], _v["presidio_pattern_only"],
+            _v["ai_model_type"], _v["alignment_mode"], _v["fuzzy_threshold"],
+            _v["allow_consensus_redaction"], _v["redaction_strategy"],
+            _v["output_strategy"], _v["output_mode"], _v["confirm_destructive"],
+            _v["confirm_validation_output"],
+            _v["max_rows"], _v["entity_filter"],
+        )
+
     if not any([use_presidio, use_ai_query, use_gliner]):
         raise ValueError("At least one detection method must be enabled.")
+
+    _check_consensus_safety(alignment_mode, allow_consensus_redaction)
+    _check_validation_output(output_strategy, confirm_validation_output)
 
     from .metadata import _validate_identifier, _parse_table_name
 
@@ -427,11 +608,11 @@ def run_redaction_pipeline(
     if max_rows:
         row_count = source_df.count()
         if row_count > max_rows:
-            print(f"WARNING: Source has {row_count:,} rows (after dedup). Limiting to {max_rows:,} (ordered by {doc_id_column}).")
+            logger.warning("Source has %s rows (after dedup). Limiting to %s (ordered by %s).", f"{row_count:,}", f"{max_rows:,}", doc_id_column)
             source_df = source_df.orderBy(doc_id_column).limit(max_rows)
             row_count = max_rows
         if row_count > 100_000:
-            print(f"TIP: For {row_count:,}+ rows, consider run_redaction_pipeline_streaming for incremental processing.")
+            logger.info("TIP: For %s+ rows, consider run_redaction_pipeline_streaming for incremental processing.", f"{row_count:,}")
     else:
         row_count = None
 
@@ -441,7 +622,7 @@ def run_redaction_pipeline(
     if row_count is None:
         row_count = source_df.count()
     t_cache = time.time()
-    print(f"Cached {row_count:,} rows for detection. [{t_cache - t_pipeline_start:.1f}s]")
+    logger.info("Cached %s rows for detection. [%.1fs]", f"{row_count:,}", t_cache - t_pipeline_start)
 
     detection_df = run_detection_pipeline(
         spark=spark,
@@ -472,26 +653,45 @@ def run_redaction_pipeline(
     detection_df = detection_df.cache()
     detection_df.count()
     t_detect_done = time.time()
-    print(f"   Detection pipeline complete [{t_detect_done - t_cache:.1f}s]")
+    logger.info("Detection pipeline complete [%.1fs]", t_detect_done - t_cache)
 
     entities_column = _get_entities_column(detection_df, use_aligned)
 
     t_redact_start = time.time()
-    print("3. Applying redaction...")
+    logger.info("3. Applying redaction...")
     result_df = _apply_redaction(
         detection_df, text_column, entities_column, redaction_strategy
     )
 
     if output_mode == "in_place":
-        print(f"4. Updating {source_table}.{text_column} in-place...")
+        logger.info("4. Updating %s.%s in-place...", source_table, text_column)
         _write_in_place(spark, result_df, source_table, doc_id_column, text_column)
     else:
         output_df = _select_output_columns(result_df, doc_id_column, text_column, output_strategy)
-        print(f"4. Writing to {output_table}...")
+        logger.info("4. Writing to %s...", output_table)
         output_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(output_table)
 
+    if audit_table:
+        detectors = []
+        if use_presidio:
+            detectors.append("presidio")
+        if use_ai_query:
+            detectors.append("ai_query")
+        if use_gliner:
+            detectors.append("gliner")
+        config_snap = json.dumps({
+            "score_threshold": score_threshold, "gliner_threshold": gliner_threshold,
+            "alignment_mode": alignment_mode, "redaction_strategy": redaction_strategy,
+            "output_strategy": output_strategy, "output_mode": output_mode,
+        })
+        _write_audit_log(
+            spark, result_df, doc_id_column, entities_column, audit_table,
+            run_id=str(uuid.uuid4()), config_snapshot=config_snap,
+            detectors_used=",".join(detectors),
+        )
+
     t_write_done = time.time()
-    print(f"   Redaction + write: {t_write_done - t_redact_start:.1f}s  |  Total pipeline: {t_write_done - t_pipeline_start:.1f}s")
+    logger.info("Redaction + write: %.1fs | Total pipeline: %.1fs", t_write_done - t_redact_start, t_write_done - t_pipeline_start)
 
     return result_df
 
@@ -570,6 +770,9 @@ def run_redaction_pipeline_streaming(
     entity_filter=None,
     output_mode: OutputMode = "separate",
     confirm_destructive: bool = False,
+    allow_consensus_redaction: bool = False,
+    confirm_validation_output: bool = False,
+    config: Optional[RedactionConfig] = None,
 ) -> StreamingQuery:
     """
     Run streaming redaction pipeline with incremental processing.
@@ -606,28 +809,53 @@ def run_redaction_pipeline_streaming(
         output_table: Fully qualified output table name (required for ``output_mode="separate"``)
         checkpoint_path: Path for streaming checkpoints (e.g., /Volumes/catalog/schema/checkpoints/table)
         doc_id_column: Name of document ID column
-        use_presidio: Whether to run Presidio detection
-        use_ai_query: Whether to run AI Query detection
-        use_gliner: Whether to run GLiNER detection
-        redaction_strategy: Redaction strategy ('generic' or 'typed')
-        endpoint: Databricks endpoint for AI detection
-        score_threshold: Minimum confidence score for Presidio
-        gliner_model: HuggingFace model for GLiNER
-        num_cores: Number of cores for repartitioning
-        use_aligned: If True, use aligned entities for redaction
-        fail_on_presidio_error: If False, continue without Presidio if models unavailable
-        output_strategy: 'validation' (all columns) or 'production' (doc_id + redacted only)
-        presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg')
-        alignment_mode: 'union' (any detector) or 'consensus' (majority agreement)
-        max_files_per_trigger: Limit files per micro-batch (None for unlimited)
-        output_mode: ``"separate"`` writes to ``output_table``; ``"in_place"``
-            destructively overwrites the text column in ``source_table``.
+        output_strategy: 'validation' (all columns incl. raw PII) or 'production' (safe output)
         confirm_destructive: Must be ``True`` when ``output_mode="in_place"``.
+        allow_consensus_redaction: Must be ``True`` to use ``alignment_mode="consensus"``.
+        confirm_validation_output: Must be ``True`` when ``output_strategy="validation"``.
 
     Returns:
         StreamingQuery that can be awaited or monitored
     """
+    if config is not None:
+        _v = _apply_config(config, {
+            "use_presidio": use_presidio, "use_ai_query": use_ai_query,
+            "use_gliner": use_gliner, "endpoint": endpoint,
+            "score_threshold": score_threshold, "gliner_model": gliner_model,
+            "gliner_threshold": gliner_threshold, "gliner_max_words": gliner_max_words,
+            "num_cores": num_cores, "fail_on_presidio_error": fail_on_presidio_error,
+            "reasoning_effort": reasoning_effort, "presidio_model_size": presidio_model_size,
+            "presidio_pattern_only": presidio_pattern_only, "ai_model_type": ai_model_type,
+            "alignment_mode": alignment_mode,
+            "allow_consensus_redaction": allow_consensus_redaction,
+            "redaction_strategy": redaction_strategy, "output_strategy": output_strategy,
+            "output_mode": output_mode, "confirm_destructive": confirm_destructive,
+            "confirm_validation_output": confirm_validation_output,
+            "entity_filter": entity_filter,
+        })
+        (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
+         gliner_model, gliner_threshold, gliner_max_words, num_cores,
+         fail_on_presidio_error, reasoning_effort, presidio_model_size,
+         presidio_pattern_only, ai_model_type, alignment_mode,
+         allow_consensus_redaction, redaction_strategy, output_strategy,
+         output_mode, confirm_destructive, confirm_validation_output,
+         entity_filter) = (
+            _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
+            _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
+            _v["gliner_threshold"], _v["gliner_max_words"], _v["num_cores"],
+            _v["fail_on_presidio_error"], _v["reasoning_effort"],
+            _v["presidio_model_size"], _v["presidio_pattern_only"],
+            _v["ai_model_type"], _v["alignment_mode"],
+            _v["allow_consensus_redaction"], _v["redaction_strategy"],
+            _v["output_strategy"], _v["output_mode"], _v["confirm_destructive"],
+            _v["confirm_validation_output"],
+            _v["entity_filter"],
+        )
+
     from .metadata import _validate_identifier, _parse_table_name
+
+    _check_consensus_safety(alignment_mode, allow_consensus_redaction)
+    _check_validation_output(output_strategy, confirm_validation_output)
 
     if output_mode == "in_place":
         if not confirm_destructive:
@@ -674,19 +902,12 @@ def run_redaction_pipeline_streaming(
 
     if use_presidio:
         from .presidio import make_presidio_batch_udf
-        from pyspark.sql.functions import from_json
         presidio_udf = make_presidio_batch_udf(
             score_threshold=score_threshold, model_size=presidio_model_size,
             pattern_only=presidio_pattern_only,
         )
         stream_df = stream_df.withColumn(
-            "presidio_results", presidio_udf(col(doc_id_column), col(text_column))
-        ).withColumn(
-            "presidio_results_struct",
-            from_json(
-                "presidio_results",
-                "array<struct<entity:string, entity_type:string, score:double, start:integer, end:integer, doc_id:string>>",
-            ),
+            "presidio_results_struct", presidio_udf(col(doc_id_column), col(text_column))
         )
 
     if use_ai_query:
@@ -802,18 +1023,33 @@ def run_redaction_pipeline_streaming(
     _doc_id_col = doc_id_column
     _merge_target = _target_table
     _text_col = text_column
-    _has_ai_flag = "_ai_detection_failed" in stream_df.columns
+    _batch_stats: list = []
+    _stream_logger = logging.getLogger("dbxredact.streaming")
 
     def _write_batch(batch_df, batch_id):
         if batch_df.isEmpty():
             return
-        if _has_ai_flag:
-            failed = batch_df.filter(col("_ai_detection_failed"))
-            if not failed.isEmpty():
-                import logging
-                logging.getLogger("dbxredact.streaming").warning(
-                    f"Batch {batch_id}: some documents had AI detection failures (check _ai_detection_failed column)"
-                )
+
+        total = batch_df.count()
+        no_entities = 0
+        errors = 0
+        if "_detection_status" in batch_df.columns:
+            status_counts = {
+                r["_detection_status"]: r["count"]
+                for r in batch_df.groupBy("_detection_status").count().collect()
+            }
+            no_entities = status_counts.get("no_entities", 0)
+            errors = status_counts.get("detection_error", 0)
+        _batch_stats.append({
+            "batch_id": batch_id, "total": total,
+            "no_entities": no_entities, "errors": errors,
+        })
+        if no_entities + errors > 0:
+            _stream_logger.warning(
+                "Batch %d: %d/%d docs with no entities, %d detection errors",
+                batch_id, no_entities, total, errors,
+            )
+
         view_name = f"_dbxredact_batch_{batch_id}"
         batch_df.createOrReplaceTempView(view_name)
         if _is_in_place:
@@ -833,6 +1069,17 @@ def run_redaction_pipeline_streaming(
                 WHEN NOT MATCHED THEN INSERT *
             """)
 
+    def _log_streaming_summary():
+        if not _batch_stats:
+            return
+        total_docs = sum(s["total"] for s in _batch_stats)
+        total_no_ent = sum(s["no_entities"] for s in _batch_stats)
+        total_errs = sum(s["errors"] for s in _batch_stats)
+        _stream_logger.info(
+            "Streaming complete: %d batches, %d docs, %d no-entity, %d errors",
+            len(_batch_stats), total_docs, total_no_ent, total_errs,
+        )
+
     query = (
         stream_df
         .writeStream
@@ -842,6 +1089,9 @@ def run_redaction_pipeline_streaming(
         .foreachBatch(_write_batch)
         .start()
     )
+
+    query.awaitTermination()
+    _log_streaming_summary()
 
     return query
 
@@ -873,33 +1123,45 @@ def run_redaction_pipeline_by_tag(
     presidio_pattern_only: bool = False,
     output_mode: OutputMode = "separate",
     confirm_destructive: bool = False,
+    allow_consensus_redaction: bool = False,
+    config: Optional[RedactionConfig] = None,
 ) -> DataFrame:
     """
     Run redaction pipeline on columns identified by Unity Catalog tags.
 
-    Args:
-        spark: Active SparkSession
-        source_table: Fully qualified source table name
-        output_table: Fully qualified output table name
-        tag_name: Name of tag to filter by
-        tag_value: Value of tag to match
-        doc_id_column: Name of document ID column
-        use_presidio: Whether to run Presidio detection
-        use_ai_query: Whether to run AI Query detection
-        use_gliner: Whether to run GLiNER detection
-        redaction_strategy: Redaction strategy ('generic' or 'typed')
-        endpoint: Databricks endpoint for AI detection
-        score_threshold: Minimum confidence score for Presidio
-        gliner_model: HuggingFace model for GLiNER
-        num_cores: Number of cores for repartitioning
-        output_strategy: 'validation' (all columns) or 'production' (doc_id + redacted only)
-        max_rows: Maximum rows to process after dedup. Set to None or 0 to process all rows. Default: 10000
-        presidio_model_size: spaCy model size for Presidio ('sm', 'md', 'lg', 'trf')
-        ai_model_type: "foundation" or "external" (for Claude, etc.)
-
     Returns:
         DataFrame with redacted columns
     """
+    if config is not None:
+        _v = _apply_config(config, {
+            "use_presidio": use_presidio, "use_ai_query": use_ai_query,
+            "use_gliner": use_gliner, "endpoint": endpoint,
+            "score_threshold": score_threshold, "gliner_model": gliner_model,
+            "gliner_threshold": gliner_threshold, "gliner_max_words": gliner_max_words,
+            "num_cores": num_cores, "reasoning_effort": reasoning_effort,
+            "presidio_model_size": presidio_model_size, "ai_model_type": ai_model_type,
+            "alignment_mode": alignment_mode, "fuzzy_threshold": fuzzy_threshold,
+            "presidio_pattern_only": presidio_pattern_only,
+            "redaction_strategy": redaction_strategy, "output_strategy": output_strategy,
+            "output_mode": output_mode, "confirm_destructive": confirm_destructive,
+            "max_rows": max_rows, "allow_consensus_redaction": allow_consensus_redaction,
+        })
+        (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
+         gliner_model, gliner_threshold, gliner_max_words, num_cores,
+         reasoning_effort, presidio_model_size, ai_model_type,
+         alignment_mode, fuzzy_threshold, presidio_pattern_only,
+         redaction_strategy, output_strategy, output_mode,
+         confirm_destructive, max_rows, allow_consensus_redaction) = (
+            _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
+            _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
+            _v["gliner_threshold"], _v["gliner_max_words"], _v["num_cores"],
+            _v["reasoning_effort"], _v["presidio_model_size"],
+            _v["ai_model_type"], _v["alignment_mode"], _v["fuzzy_threshold"],
+            _v["presidio_pattern_only"], _v["redaction_strategy"],
+            _v["output_strategy"], _v["output_mode"], _v["confirm_destructive"],
+            _v["max_rows"], _v["allow_consensus_redaction"],
+        )
+
     protected_columns = get_columns_by_tag(
         spark=spark, table_name=source_table, tag_name=tag_name, tag_value=tag_value
     )
@@ -946,6 +1208,7 @@ def run_redaction_pipeline_by_tag(
             presidio_pattern_only=presidio_pattern_only,
             output_mode=output_mode,
             confirm_destructive=confirm_destructive,
+            allow_consensus_redaction=allow_consensus_redaction,
         )
 
     return result_df

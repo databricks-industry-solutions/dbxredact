@@ -1,4 +1,6 @@
 import { Link } from "react-router-dom";
+import { useGet } from "../hooks/useApi";
+import type { Config, JobHistoryItem, ActiveLearnStats } from "../types";
 
 const sections = [
   {
@@ -31,7 +33,30 @@ const sections = [
   },
 ];
 
+interface AuditSummary {
+  total_runs?: number;
+  total_docs?: number;
+  total_entities?: number;
+}
+
 export default function HomePage() {
+  const { data: configs } = useGet<Config[]>("/config/");
+  const { data: history } = useGet<JobHistoryItem[]>("/pipeline/history?limit=3");
+  const { data: alStats } = useGet<ActiveLearnStats>("/active-learn/stats");
+  const { data: auditSummary } = useGet<AuditSummary>("/admin/audit-summary");
+
+  const configCount = configs?.length ?? 0;
+  const recentRuns = history ?? [];
+  const hasConfigs = configCount > 0;
+  const hasRuns = recentRuns.length > 0;
+  const successRun = recentRuns.find((r) => r.status === "TERMINATED" || r.status === "SUCCESS");
+
+  const steps = [
+    { label: "Create a configuration", done: hasConfigs, to: "/config" },
+    { label: "Run a pipeline", done: hasRuns, to: "/run" },
+    { label: "Review results", done: !!successRun, to: "/review" },
+  ];
+
   return (
     <div>
       <div className="mb-8">
@@ -42,6 +67,45 @@ export default function HomePage() {
           iteratively improve quality through human-in-the-loop workflows.
         </p>
       </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <div className="stat-card">
+          <div className="stat-label">Configs</div>
+          <div className="stat-value">{configCount}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Recent Runs</div>
+          <div className="stat-value">{recentRuns.length}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Active Learn Queue</div>
+          <div className="stat-value">{alStats?.pending ?? 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Docs Redacted</div>
+          <div className="stat-value">{auditSummary?.total_docs ?? 0}</div>
+        </div>
+      </div>
+
+      {/* Getting Started Checklist */}
+      {!steps.every((s) => s.done) && (
+        <div className="card p-5 mb-8">
+          <h2 className="text-sm font-semibold mb-3">Getting Started</h2>
+          <div className="space-y-2">
+            {steps.map((s) => (
+              <Link key={s.label} to={s.to} className="flex items-center gap-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg p-2 -mx-2 transition-colors">
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                  s.done ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" : "bg-gray-100 dark:bg-gray-700 text-gray-400"
+                }`}>
+                  {s.done ? "\u2713" : "\u00B7"}
+                </span>
+                <span className={s.done ? "line-through text-gray-400" : ""}>{s.label}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-6">
         {sections.map((sec) => (

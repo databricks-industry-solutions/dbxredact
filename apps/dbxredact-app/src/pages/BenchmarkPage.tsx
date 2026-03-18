@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useGet, apiPost } from "../hooks/useApi";
-import TablePicker from "../components/TablePicker";
+import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
 import type { Config, RunStatus } from "../types";
 
 const TERMINAL_STATES = ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"];
 
 export default function BenchmarkPage() {
-  const [sourceTable, setSourceTable] = useState("");
+  const [sourceTable, setSourceTable] = useState<TableRef>(emptyTableRef);
   const [configId, setConfigId] = useState("");
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const [running, setRunning] = useState(false);
@@ -59,23 +59,24 @@ export default function BenchmarkPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [runStatus?.run_id, runStatus?.state]);
 
+  const qualified = toQualified(sourceTable);
+  const hasTable = isComplete(sourceTable);
+
   async function launch() {
     setRunning(true);
     try {
       const status = await apiPost<RunStatus>("/benchmark/run", {
-        source_table: sourceTable || undefined,
+        source_table: qualified || undefined,
         config_id: configId || undefined,
       });
       setRunStatus(status);
-    } catch (e: any) {
-      setError(e.message || "Failed to launch benchmark");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to launch benchmark");
     }
     setRunning(false);
   }
 
   const isActive = runStatus?.state && !TERMINAL_STATES.includes(runStatus.state);
-  const parts = sourceTable.split(".");
-  const hasTable = parts.length === 3 && parts[2] !== "";
   const selectedConfig = configs?.find((c) => c.config_id === configId);
 
   return (
@@ -119,7 +120,7 @@ export default function BenchmarkPage() {
 
         {hasTable && (
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Detection results will be written to <code className="font-mono text-xs">{sourceTable}_detection_results</code>
+            Detection results will be written to <code className="font-mono text-xs">{qualified}_detection_results</code>
           </p>
         )}
 
