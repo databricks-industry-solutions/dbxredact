@@ -87,6 +87,124 @@ AgeYearsOldRecognizer = PatternRecognizer(
     )],
 )
 
+# ---------------------------------------------------------------------------
+# HIPAA Safe Harbor recognizers -- high-precision patterns for identifiers
+# that have zero regex coverage from Presidio built-ins.
+# ---------------------------------------------------------------------------
+
+DeaNumberRecognizer = PatternRecognizer(
+    supported_entity="DEA_NUMBER",
+    patterns=[Pattern(name="dea_number", regex=r"\b[ABFGMRabfgmr][A-Za-z]\d{7}\b", score=0.9)],
+)
+
+NpiRecognizer = PatternRecognizer(
+    supported_entity="NPI_NUMBER",
+    patterns=[Pattern(name="npi_labeled", regex=r"\bNPI[:\s#]*\d{10}\b", score=0.9)],
+    context=["npi", "provider", "national provider"],
+)
+
+DobLabeledRecognizer = PatternRecognizer(
+    supported_entity="DATE_OF_BIRTH",
+    patterns=[Pattern(
+        name="dob_labeled",
+        regex=r"\b(?:DOB|D\.O\.B\.?)[:\s]*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b",
+        score=0.95,
+    )],
+    context=["dob", "date of birth", "born"],
+)
+
+FaxNumberRecognizer = PatternRecognizer(
+    supported_entity="FAX_NUMBER",
+    patterns=[Pattern(
+        name="fax_labeled",
+        regex=r"\b(?:FAX|Fax)[:\s#.]*\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b",
+        score=0.9,
+    )],
+    context=["fax"],
+)
+
+HealthPlanIdRecognizer = PatternRecognizer(
+    supported_entity="HEALTH_PLAN_ID",
+    patterns=[Pattern(
+        name="health_plan_id",
+        regex=r"\b(?:MEMBER|POLICY|SUBSCRIBER|GROUP|BENEFICIARY|PLAN)\s*(?:ID|#|NO\.?|NUMBER|:)[:\s#-]*[A-Z0-9]{4,15}\b",
+        score=0.8,
+    )],
+    context=["member", "policy", "subscriber", "beneficiary", "plan", "insurance"],
+)
+
+AccountNumberRecognizer = PatternRecognizer(
+    supported_entity="ACCOUNT_NUMBER",
+    patterns=[Pattern(
+        name="account_number",
+        regex=r"\b(?:ACCT|ACCOUNT)\s*(?:NO\.?|#|NUMBER)?[:\s#-]*\d{6,17}\b",
+        score=0.8,
+    )],
+    context=["account", "acct", "billing"],
+)
+
+VinRecognizer = PatternRecognizer(
+    supported_entity="VIN",
+    patterns=[Pattern(name="vin", regex=r"\b[A-HJ-NPR-Z0-9]{17}\b", score=0.85)],
+    context=["vin", "vehicle"],
+)
+
+MacAddressRecognizer = PatternRecognizer(
+    supported_entity="DEVICE_ID",
+    patterns=[Pattern(
+        name="mac_address",
+        regex=r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b",
+        score=0.9,
+    )],
+)
+
+EinRecognizer = PatternRecognizer(
+    supported_entity="US_EIN",
+    patterns=[Pattern(
+        name="ein_labeled",
+        regex=r"\b(?:EIN|TAX\s*ID|EMPLOYER\s*ID)[:\s#]*\d{2}-\d{7}\b",
+        score=0.9,
+    )],
+    context=["ein", "tax", "employer"],
+)
+
+SsnNoDashRecognizer = PatternRecognizer(
+    supported_entity="US_SSN",
+    patterns=[Pattern(
+        name="ssn_no_dash",
+        regex=r"\b(?:SSN|SOCIAL\s*SECURITY(?:\s*(?:NO\.?|NUMBER|#))?)[:\s#]*\d{9}\b",
+        score=0.85,
+    )],
+    context=["ssn", "social security"],
+)
+
+AgeOver89Recognizer = PatternRecognizer(
+    supported_entity="AGE",
+    patterns=[Pattern(
+        name="age_over_89",
+        regex=r"\b(?:AGE|AGED?)[:\s]*(?:9[0-9]|1[0-4]\d|150)\b",
+        score=0.9,
+    )],
+    context=["age", "years"],
+)
+
+LicenseNumberRecognizer = PatternRecognizer(
+    supported_entity="LICENSE_NUMBER",
+    patterns=[Pattern(
+        name="license_cert",
+        regex=r"\b(?:LICENSE|LIC|CERT(?:IFICATE)?)\s*(?:NO\.?|#|NUMBER)?[:\s#]*[A-Z0-9]{5,12}\b",
+        score=0.75,
+    )],
+    context=["license", "certificate", "certification"],
+)
+
+_HIPAA_SAFE_HARBOR_RECOGNIZERS = [
+    DeaNumberRecognizer, NpiRecognizer, DobLabeledRecognizer,
+    FaxNumberRecognizer, HealthPlanIdRecognizer, AccountNumberRecognizer,
+    VinRecognizer, MacAddressRecognizer, EinRecognizer,
+    SsnNoDashRecognizer, AgeOver89Recognizer, LicenseNumberRecognizer,
+]
+
 
 # Map language codes to open-source spaCy models (MIT licensed).
 # NER F1 benchmarks (en): sm=84.6%, lg=85.4%, trf=90.2%.
@@ -269,6 +387,8 @@ def get_analyzer_engine(
     analyzer.registry.add_recognizer(DateDMYRecognizer)
     analyzer.registry.add_recognizer(DayOfWeekRecognizer)
     analyzer.registry.add_recognizer(AgeYearsOldRecognizer)
+    for rec in _HIPAA_SAFE_HARBOR_RECOGNIZERS:
+        analyzer.registry.add_recognizer(rec)
     analyzer = add_recognizers_to_analyzer(analyzer)
     return analyzer
 
@@ -313,4 +433,6 @@ def get_pattern_only_analyzer(
     analyzer.registry.add_recognizer(DateDMYRecognizer)
     analyzer.registry.add_recognizer(DayOfWeekRecognizer)
     analyzer.registry.add_recognizer(AgeYearsOldRecognizer)
+    for rec in _HIPAA_SAFE_HARBOR_RECOGNIZERS:
+        analyzer.registry.add_recognizer(rec)
     return analyzer

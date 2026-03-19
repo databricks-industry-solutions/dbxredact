@@ -67,7 +67,8 @@ TABLE_DDLS = [
         use_ai_query BOOLEAN, use_gliner BOOLEAN, endpoint STRING, score_threshold DOUBLE,
         gliner_model STRING, gliner_threshold DOUBLE, redaction_strategy STRING,
         alignment_mode STRING, reasoning_effort STRING, gliner_max_words INT,
-        presidio_model_size STRING, extra_params STRING, created_at TIMESTAMP, updated_at TIMESTAMP
+        presidio_model_size STRING, presidio_pattern_only BOOLEAN,
+        extra_params STRING, created_at TIMESTAMP, updated_at TIMESTAMP
     )""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_block_list (
         entry_id STRING, value STRING, is_pattern BOOLEAN, entity_type STRING,

@@ -46,7 +46,19 @@ PRESIDIO_ENTITY_TYPES = [
     "US_DRIVER_LICENSE",
     "MEDICAL_RECORD_NUMBER",
     "AGE_GENDER",
+    "AGE",
     "NRP",
+    # HIPAA Safe Harbor recognizers
+    "DEA_NUMBER",
+    "NPI_NUMBER",
+    "DATE_OF_BIRTH",
+    "FAX_NUMBER",
+    "HEALTH_PLAN_ID",
+    "ACCOUNT_NUMBER",
+    "VIN",
+    "DEVICE_ID",
+    "US_EIN",
+    "LICENSE_NUMBER",
 ]
 
 # Extended list of label enums for AI-based detection

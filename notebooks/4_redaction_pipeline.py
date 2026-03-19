@@ -122,9 +122,9 @@ dbutils.widgets.text(
     label="9. AI Endpoint (for AI Query method)",
 )
 dbutils.widgets.text(
-    name="presidio_score_threshold",
+    name="score_threshold",
     defaultValue="0.5",
-    label="10. Presidio Score Threshold",
+    label="10. Score Threshold (Presidio minimum confidence)",
 )
 dbutils.widgets.text(name="num_cores", defaultValue="0", label="11. Number of Cores (0=auto)")
 dbutils.widgets.text(
@@ -204,6 +204,27 @@ dbutils.widgets.dropdown(
     choices=["true", "false"],
     label="24. Confirm Destructive (required for in_place)",
 )
+dbutils.widgets.dropdown(
+    name="presidio_pattern_only",
+    defaultValue="false",
+    choices=["true", "false"],
+    label="25. Presidio Pattern Only (regex-only, no spaCy NER)",
+)
+dbutils.widgets.text(
+    name="presidio_model_size",
+    defaultValue="trf",
+    label="26. Presidio Model Size (trf, lg, or md)",
+)
+dbutils.widgets.text(
+    name="gliner_threshold",
+    defaultValue="0.2",
+    label="27. GLiNER Confidence Threshold",
+)
+dbutils.widgets.text(
+    name="gliner_model",
+    defaultValue="nvidia/gliner-PII",
+    label="28. GLiNER Model Name",
+)
 
 # COMMAND ----------
 
@@ -225,7 +246,7 @@ use_ai_query = dbutils.widgets.get("use_ai_query") == "true"
 use_gliner = dbutils.widgets.get("use_gliner") == "true"
 redaction_strategy = dbutils.widgets.get("redaction_strategy")
 endpoint = dbutils.widgets.get("endpoint")
-score_threshold = float(dbutils.widgets.get("presidio_score_threshold"))
+score_threshold = float(dbutils.widgets.get("score_threshold"))
 num_cores = int(dbutils.widgets.get("num_cores"))
 if num_cores <= 0:
     try:
@@ -249,9 +270,12 @@ block_list_table = dbutils.widgets.get("block_list_table").strip()
 output_mode = dbutils.widgets.get("output_mode")
 confirm_destructive = dbutils.widgets.get("confirm_destructive") == "true"
 confirm_validation_output = dbutils.widgets.get("confirm_validation_output") == "true"
+presidio_pattern_only = dbutils.widgets.get("presidio_pattern_only") == "true"
+presidio_model_size = dbutils.widgets.get("presidio_model_size").strip() or None
+gliner_threshold = float(dbutils.widgets.get("gliner_threshold"))
+gliner_model = dbutils.widgets.get("gliner_model").strip()
 
-# Profile overrides
-presidio_pattern_only = False
+# Profile overrides (fast/deep force specific settings; custom uses widget values as-is)
 if detection_profile == "fast":
     use_presidio, use_ai_query, use_gliner = True, True, True
     reasoning_effort, gliner_max_words = "low", 256
@@ -260,6 +284,7 @@ if detection_profile == "fast":
 elif detection_profile == "deep":
     use_presidio, use_ai_query, use_gliner = True, True, True
     reasoning_effort, gliner_max_words = "medium", 256
+    presidio_pattern_only = False
     print("Profile: Deep Search -- all detectors, reasoning=medium, max_words=256")
 
 entity_filter = None
@@ -287,6 +312,8 @@ config = RedactionConfig(
     use_gliner=use_gliner,
     endpoint=endpoint if use_ai_query else None,
     score_threshold=score_threshold,
+    gliner_model=gliner_model,
+    gliner_threshold=gliner_threshold,
     gliner_max_words=gliner_max_words,
     num_cores=num_cores,
     redaction_strategy=redaction_strategy,
@@ -297,6 +324,7 @@ config = RedactionConfig(
     max_rows=max_rows,
     alignment_mode=alignment_mode,
     reasoning_effort=reasoning_effort,
+    presidio_model_size=presidio_model_size,
     presidio_pattern_only=presidio_pattern_only,
     entity_filter=entity_filter,
 )
