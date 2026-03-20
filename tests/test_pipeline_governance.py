@@ -217,3 +217,24 @@ class TestConfigDrivenGuards:
                 output_table="cat.sch.out",
                 config=cfg,
             )
+
+
+class TestApplyConfigOverride:
+    """Config fields unconditionally override matching kwargs."""
+
+    def test_config_overrides_explicit_kwargs(self):
+        cfg = RedactionConfig(use_presidio=False, use_ai_query=False, use_gliner=True)
+        result = _apply_config(cfg, {
+            "use_presidio": True,
+            "use_ai_query": True,
+            "use_gliner": False,
+        })
+        assert result["use_presidio"] is False
+        assert result["use_ai_query"] is False
+        assert result["use_gliner"] is True
+
+    def test_config_none_preserves_locals(self):
+        original = {"use_presidio": True, "score_threshold": 0.9}
+        result = _apply_config(None, original)
+        assert result["use_presidio"] is True
+        assert result["score_threshold"] == 0.9

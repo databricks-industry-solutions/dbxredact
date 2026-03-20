@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -48,7 +48,7 @@ class PipelineRunRequest(BaseModel):
     max_cost_usd: Optional[float] = None
     cluster_profile: str = "cpu_small"
     refresh_approach: str = "full"
-    output_mode: str = "separate"
+    output_mode: Literal["separate", "in_place"] = "separate"
 
 
 class RunStatusResponse(BaseModel):

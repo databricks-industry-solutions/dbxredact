@@ -40,7 +40,7 @@ async def database_error_handler(request: Request, exc: DatabaseError):
 
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):
-    logger.error("Unhandled error on %s: %s", request.url.path, type(exc).__name__)
+    logger.error("Unhandled error on %s: %s: %s", request.url.path, type(exc).__name__, exc)
     detail = str(exc) if _DEBUG else "Internal server error"
     return JSONResponse(status_code=500, content={"error": detail})
 
@@ -149,6 +149,7 @@ async def on_startup():
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (reasoning_effort STRING)",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (gliner_max_words INT)",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_model_size STRING)",
+        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_pattern_only BOOLEAN)",
     ]:
         try:
             execute(col_ddl)
@@ -162,12 +163,13 @@ async def on_startup():
                 (config_id, name, detection_profile, use_presidio, use_ai_query, use_gliner,
                  endpoint, score_threshold, gliner_model, gliner_threshold, redaction_strategy,
                  alignment_mode, reasoning_effort, gliner_max_words, presidio_model_size,
-                 extra_params, created_at, updated_at)
+                 presidio_pattern_only, extra_params, created_at, updated_at)
                 VALUES (%(config_id)s, %(name)s, %(detection_profile)s, %(use_presidio)s,
                         %(use_ai_query)s, %(use_gliner)s, %(endpoint)s, %(score_threshold)s,
                         %(gliner_model)s, %(gliner_threshold)s, %(redaction_strategy)s,
                         %(alignment_mode)s, %(reasoning_effort)s, %(gliner_max_words)s,
-                        %(presidio_model_size)s, NULL, current_timestamp(), current_timestamp())""",
+                        %(presidio_model_size)s, %(presidio_pattern_only)s,
+                        NULL, current_timestamp(), current_timestamp())""",
                 DEFAULT_CONFIG,
             )
             logger.info("Seeded default config")

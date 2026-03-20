@@ -44,9 +44,10 @@ class _StubNlpEngine(NlpEngine):
         return False
 
 
-# Custom recognizer for age/gender patterns common in clinical text (e.g. "65F", "32M")
+# Custom recognizer for age/gender patterns common in clinical text (e.g. "65F", "32M", "72Y")
+# Restricted to 10-159 to avoid false positives on "5M" (5 million), "3M" (company), etc.
 AGE_GENDER_PATTERN = Pattern(
-    name="age_gender_pattern", regex=r"\b\d{1,3}\s?[YyMmFf]\b", score=0.8
+    name="age_gender_pattern", regex=r"\b(?:1[0-5]\d|[1-9]\d)\s?[YFMyfm]\b", score=0.8
 )
 
 AgeGenderRecognizer = PatternRecognizer(
@@ -67,15 +68,6 @@ DateDMYRecognizer = PatternRecognizer(
     supported_entity="DATE_TIME",
     patterns=_DATE_DMY_PATTERNS,
     context=["date", "dob", "born", "admission", "discharge", "appointment"],
-)
-
-DayOfWeekRecognizer = PatternRecognizer(
-    supported_entity="DATE_TIME",
-    patterns=[Pattern(
-        name="day_of_week",
-        regex=r"\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b",
-        score=0.85,
-    )],
 )
 
 AgeYearsOldRecognizer = PatternRecognizer(
@@ -127,7 +119,7 @@ HealthPlanIdRecognizer = PatternRecognizer(
     supported_entity="HEALTH_PLAN_ID",
     patterns=[Pattern(
         name="health_plan_id",
-        regex=r"\b(?:MEMBER|POLICY|SUBSCRIBER|GROUP|BENEFICIARY|PLAN)\s*(?:ID|#|NO\.?|NUMBER|:)[:\s#-]*[A-Z0-9]{4,15}\b",
+        regex=r"(?i)\b(?:MEMBER|POLICY|SUBSCRIBER|GROUP|BENEFICIARY|PLAN)\s*(?:ID|#|NO\.?|NUMBER|:)[:\s#-]*[A-Z0-9]{4,15}\b",
         score=0.8,
     )],
     context=["member", "policy", "subscriber", "beneficiary", "plan", "insurance"],
@@ -137,7 +129,7 @@ AccountNumberRecognizer = PatternRecognizer(
     supported_entity="ACCOUNT_NUMBER",
     patterns=[Pattern(
         name="account_number",
-        regex=r"\b(?:ACCT|ACCOUNT)\s*(?:NO\.?|#|NUMBER)?[:\s#-]*\d{6,17}\b",
+        regex=r"(?i)\b(?:ACCT|ACCOUNT)\s*(?:NO\.?|#|NUMBER|:)[:\s#-]*\d{6,17}\b",
         score=0.8,
     )],
     context=["account", "acct", "billing"],
@@ -145,7 +137,7 @@ AccountNumberRecognizer = PatternRecognizer(
 
 VinRecognizer = PatternRecognizer(
     supported_entity="VIN",
-    patterns=[Pattern(name="vin", regex=r"\b[A-HJ-NPR-Z0-9]{17}\b", score=0.85)],
+    patterns=[Pattern(name="vin_labeled", regex=r"\bVIN[:\s#]*[A-HJ-NPR-Z0-9]{17}\b", score=0.9)],
     context=["vin", "vehicle"],
 )
 
@@ -162,7 +154,7 @@ EinRecognizer = PatternRecognizer(
     supported_entity="US_EIN",
     patterns=[Pattern(
         name="ein_labeled",
-        regex=r"\b(?:EIN|TAX\s*ID|EMPLOYER\s*ID)[:\s#]*\d{2}-\d{7}\b",
+        regex=r"(?i)\b(?:EIN|TAX\s*ID|EMPLOYER\s*ID)[:\s#]*\d{2}-\d{7}\b",
         score=0.9,
     )],
     context=["ein", "tax", "employer"],
@@ -172,7 +164,7 @@ SsnNoDashRecognizer = PatternRecognizer(
     supported_entity="US_SSN",
     patterns=[Pattern(
         name="ssn_no_dash",
-        regex=r"\b(?:SSN|SOCIAL\s*SECURITY(?:\s*(?:NO\.?|NUMBER|#))?)[:\s#]*\d{9}\b",
+        regex=r"(?i)\b(?:SSN|SOCIAL\s*SECURITY(?:\s*(?:NO\.?|NUMBER|#))?)[:\s#]*\d{9}\b",
         score=0.85,
     )],
     context=["ssn", "social security"],
@@ -182,7 +174,7 @@ AgeOver89Recognizer = PatternRecognizer(
     supported_entity="AGE",
     patterns=[Pattern(
         name="age_over_89",
-        regex=r"\b(?:AGE|AGED?)[:\s]*(?:9[0-9]|1[0-4]\d|150)\b",
+        regex=r"(?i)\b(?:AGE|AGED?)[:\s]*(?:9[0-9]|1[0-4]\d|150)\b",
         score=0.9,
     )],
     context=["age", "years"],
@@ -190,12 +182,69 @@ AgeOver89Recognizer = PatternRecognizer(
 
 LicenseNumberRecognizer = PatternRecognizer(
     supported_entity="LICENSE_NUMBER",
-    patterns=[Pattern(
-        name="license_cert",
-        regex=r"\b(?:LICENSE|LIC|CERT(?:IFICATE)?)\s*(?:NO\.?|#|NUMBER)?[:\s#]*[A-Z0-9]{5,12}\b",
-        score=0.75,
-    )],
+    patterns=[
+        Pattern(
+            name="license_cert_label",
+            regex=r"(?i)\b(?:LICENSE|LIC|CERT(?:IFICATE)?)\s*(?:NO\.?|#|NUMBER)[:\s#]*[A-Z0-9]{5,12}\b",
+            score=0.75,
+        ),
+        Pattern(
+            name="license_cert_digit",
+            regex=r"(?i)\b(?:LICENSE|LIC|CERT(?:IFICATE)?)[:\s#]+\d[A-Z0-9]{4,11}\b",
+            score=0.75,
+        ),
+    ],
     context=["license", "certificate", "certification"],
+)
+
+MbiRecognizer = PatternRecognizer(
+    supported_entity="HEALTH_PLAN_ID",
+    patterns=[Pattern(
+        name="mbi",
+        regex=r"\b[1-9][AC-HJ-KM-NP-RT-Y][AC-HJ-KM-NP-RT-Y0-9]\d[AC-HJ-KM-NP-RT-Y][AC-HJ-KM-NP-RT-Y0-9]\d[A-Z]{2}\d{2}\b",
+        score=0.9,
+    )],
+    context=["medicare", "mbi", "beneficiary"],
+)
+
+PassportRecognizer = PatternRecognizer(
+    supported_entity="ID_NUMBER",
+    patterns=[Pattern(
+        name="passport_labeled",
+        regex=r"(?i)\bPASSPORT[:\s#]+(?=[A-Z0-9]*\d)[A-Z0-9]{6,9}\b",
+        score=0.9,
+    )],
+    context=["passport", "travel"],
+)
+
+ZipLabeledRecognizer = PatternRecognizer(
+    supported_entity="LOCATION",
+    patterns=[Pattern(
+        name="zip_labeled",
+        regex=r"(?i)\bZIP(?:\s*CODE)?[:\s#]*\d{5}(?:-\d{4})?\b",
+        score=0.85,
+    )],
+    context=["zip", "postal", "address"],
+)
+
+RoutingRecognizer = PatternRecognizer(
+    supported_entity="ACCOUNT_NUMBER",
+    patterns=[Pattern(
+        name="routing_labeled",
+        regex=r"(?i)\b(?:ROUTING|ABA|RTN)[:\s#]*[0-3]\d{8}\b",
+        score=0.85,
+    )],
+    context=["routing", "aba", "bank", "wire"],
+)
+
+ItinRecognizer = PatternRecognizer(
+    supported_entity="US_SSN",
+    patterns=[Pattern(
+        name="itin_labeled",
+        regex=r"(?i)\bITIN[:\s#]*9\d{2}-?\d{2}-?\d{4}\b",
+        score=0.9,
+    )],
+    context=["itin", "taxpayer"],
 )
 
 _HIPAA_SAFE_HARBOR_RECOGNIZERS = [
@@ -203,6 +252,8 @@ _HIPAA_SAFE_HARBOR_RECOGNIZERS = [
     FaxNumberRecognizer, HealthPlanIdRecognizer, AccountNumberRecognizer,
     VinRecognizer, MacAddressRecognizer, EinRecognizer,
     SsnNoDashRecognizer, AgeOver89Recognizer, LicenseNumberRecognizer,
+    MbiRecognizer, PassportRecognizer, ZipLabeledRecognizer,
+    RoutingRecognizer, ItinRecognizer,
 ]
 
 
@@ -373,7 +424,7 @@ def get_analyzer_engine(
     ref_patterns = [
         Pattern(
             name="reference_number",
-            regex=r"\b[A-Z]{2,4}-[\d-]{4,}\b",
+            regex=r"\b(?!ICD|CPT|DSM|HER|COVID|SARS)[A-Z]{2,4}-\d[\d-]{3,}\b",
             score=0.6,
         ),
     ]
@@ -385,7 +436,6 @@ def get_analyzer_engine(
     analyzer.registry.add_recognizer(ref_recognizer)
 
     analyzer.registry.add_recognizer(DateDMYRecognizer)
-    analyzer.registry.add_recognizer(DayOfWeekRecognizer)
     analyzer.registry.add_recognizer(AgeYearsOldRecognizer)
     for rec in _HIPAA_SAFE_HARBOR_RECOGNIZERS:
         analyzer.registry.add_recognizer(rec)
@@ -425,13 +475,12 @@ def get_pattern_only_analyzer(
     # Business reference / case IDs
     analyzer.registry.add_recognizer(PatternRecognizer(
         supported_entity="ID_NUMBER",
-        patterns=[Pattern(name="reference_number", regex=r"\b[A-Z]{2,4}-[\d-]{4,}\b", score=0.6)],
+        patterns=[Pattern(name="reference_number", regex=r"\b(?!ICD|CPT|DSM|HER|COVID|SARS)[A-Z]{2,4}-\d[\d-]{3,}\b", score=0.6)],
         context=["reference", "case", "claim", "application", "wire", "dispute"],
     ))
 
     analyzer.registry.add_recognizer(AgeGenderRecognizer)
     analyzer.registry.add_recognizer(DateDMYRecognizer)
-    analyzer.registry.add_recognizer(DayOfWeekRecognizer)
     analyzer.registry.add_recognizer(AgeYearsOldRecognizer)
     for rec in _HIPAA_SAFE_HARBOR_RECOGNIZERS:
         analyzer.registry.add_recognizer(rec)

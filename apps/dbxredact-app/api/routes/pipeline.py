@@ -153,6 +153,8 @@ async def cancel_pipeline(run_id: int):
 
 @router.get("/history", response_model=List[JobHistoryItem])
 async def pipeline_history(limit: int = 50, offset: int = 0):
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
     return fetch_all(
         f"SELECT * FROM {_table('redact_job_history')} ORDER BY started_at DESC LIMIT %(limit)s OFFSET %(offset)s",
         {"limit": limit, "offset": offset},

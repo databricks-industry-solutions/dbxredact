@@ -402,8 +402,9 @@ class RedactionConfig:
     """Single configuration object for the redaction pipeline.
 
     Pass to ``run_redaction_pipeline(config=...)`` instead of listing 25+
-    keyword arguments.  Individual kwargs on the pipeline functions still work
-    and take precedence when both are supplied.
+    keyword arguments.  When ``config`` is supplied, its fields
+    unconditionally override any individual kwargs with matching names.
+    Pass *either* ``config=`` *or* individual kwargs, not both.
     """
     # Detection
     use_presidio: bool = True

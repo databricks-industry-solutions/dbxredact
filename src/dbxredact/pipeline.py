@@ -34,12 +34,10 @@ _SENTINEL = object()
 def _apply_config(config: RedactionConfig, local_vars: dict) -> dict:
     """Overlay RedactionConfig fields onto function locals.
 
-    Only fills in values that are still at their function-signature defaults
-    (i.e., were not explicitly supplied by the caller).  Since Python doesn't
-    distinguish "caller passed the default" from "caller omitted", this uses a
-    simple heuristic: config values replace locals that are ``_SENTINEL`` or
-    equal to the field's dataclass default.  In practice callers should prefer
-    passing *either* ``config=`` *or* individual kwargs, not both.
+    When ``config`` is provided, **all** matching fields from the config
+    unconditionally replace the corresponding entries in *local_vars*.
+    Callers should pass *either* ``config=`` *or* individual kwargs -- if
+    both are supplied, the config values win.
     """
     if config is None:
         return local_vars
@@ -112,6 +110,11 @@ def _write_in_place(
     rows that were excluded by ``max_rows`` or dedup remain unchanged.
     """
     from .metadata import _validate_identifier, _parse_table_name
+
+    logger.warning(
+        "DESTRUCTIVE OPERATION: in-place redaction will permanently overwrite "
+        "column '%s' in %s. This cannot be undone.", text_column, source_table,
+    )
 
     _parse_table_name(source_table)
     _validate_identifier(doc_id_column, "doc_id_column")
@@ -815,7 +818,8 @@ def run_redaction_pipeline_streaming(
         confirm_validation_output: Must be ``True`` when ``output_strategy="validation"``.
 
     Returns:
-        StreamingQuery that can be awaited or monitored
+        StreamingQuery (after blocking until all micro-batches complete, since
+        ``trigger(availableNow=True)`` is used).
     """
     if config is not None:
         _v = _apply_config(config, {
