@@ -7,7 +7,7 @@ from dbxredact.config import PHI_PROMPT_SKELETON
 from dbxredact.ai_detector import make_prompt
 from dbxredact.detection import check_presidio_available
 from dbxredact.analyzer import (
-    AgeGenderRecognizer,
+    AgeGenderRecognizer, REFERENCE_NUMBER_REGEX,
     DeaNumberRecognizer, NpiRecognizer, DobLabeledRecognizer,
     FaxNumberRecognizer, HealthPlanIdRecognizer, AccountNumberRecognizer,
     VinRecognizer, MacAddressRecognizer, EinRecognizer,
@@ -296,7 +296,7 @@ class TestAgeGenderPattern:
 class TestReferenceNumberPattern:
     """Reference number should exclude common medical code prefixes."""
 
-    _REF_PAT = re.compile(r"\b(?!ICD|CPT|DSM|HER|COVID|SARS)[A-Z]{2,4}-\d[\d-]{3,}\b", re.IGNORECASE)
+    _REF_PAT = re.compile(REFERENCE_NUMBER_REGEX, re.IGNORECASE)
 
     @pytest.mark.parametrize("text", [
         "AP-2024-09-3382", "WIRE-2024-081590", "REF-123456",

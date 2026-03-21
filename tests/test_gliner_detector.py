@@ -132,7 +132,12 @@ class TestChunkAndPredict:
                 return []
 
         result = _chunk_and_predict(MockModel(), text, ["person"], 0.5)
-        assert len(result) >= 1
+        assert len(result) >= 2
+        starts = sorted(e["start"] for e in result)
+        assert starts[0] == 0
+        assert starts[-1] > 0, "Later chunks should produce offset-adjusted entities"
+        for e in result:
+            assert e["end"] - e["start"] == 4
 
 
 class TestMapLabel:

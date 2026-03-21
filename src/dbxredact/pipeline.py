@@ -1128,6 +1128,8 @@ def run_redaction_pipeline_by_tag(
     output_mode: OutputMode = "separate",
     confirm_destructive: bool = False,
     allow_consensus_redaction: bool = False,
+    confirm_validation_output: bool = False,
+    entity_filter: Optional[EntityFilter] = None,
     config: Optional[RedactionConfig] = None,
 ) -> DataFrame:
     """
@@ -1149,13 +1151,16 @@ def run_redaction_pipeline_by_tag(
             "redaction_strategy": redaction_strategy, "output_strategy": output_strategy,
             "output_mode": output_mode, "confirm_destructive": confirm_destructive,
             "max_rows": max_rows, "allow_consensus_redaction": allow_consensus_redaction,
+            "confirm_validation_output": confirm_validation_output,
+            "entity_filter": entity_filter,
         })
         (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
          gliner_model, gliner_threshold, gliner_max_words, num_cores,
          reasoning_effort, presidio_model_size, ai_model_type,
          alignment_mode, fuzzy_threshold, presidio_pattern_only,
          redaction_strategy, output_strategy, output_mode,
-         confirm_destructive, max_rows, allow_consensus_redaction) = (
+         confirm_destructive, max_rows, allow_consensus_redaction,
+         confirm_validation_output, entity_filter) = (
             _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
             _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
             _v["gliner_threshold"], _v["gliner_max_words"], _v["num_cores"],
@@ -1164,6 +1169,7 @@ def run_redaction_pipeline_by_tag(
             _v["presidio_pattern_only"], _v["redaction_strategy"],
             _v["output_strategy"], _v["output_mode"], _v["confirm_destructive"],
             _v["max_rows"], _v["allow_consensus_redaction"],
+            _v["confirm_validation_output"], _v["entity_filter"],
         )
 
     protected_columns = get_columns_by_tag(
@@ -1213,6 +1219,8 @@ def run_redaction_pipeline_by_tag(
             output_mode=output_mode,
             confirm_destructive=confirm_destructive,
             allow_consensus_redaction=allow_consensus_redaction,
+            confirm_validation_output=confirm_validation_output,
+            entity_filter=entity_filter,
         )
 
     return result_df

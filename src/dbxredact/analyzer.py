@@ -10,6 +10,9 @@ class SpacyModelNotFoundError(Exception):
     pass
 
 
+REFERENCE_NUMBER_REGEX = r"\b(?!ICD|CPT|DSM|HER|COVID|SARS)[A-Z]{2,4}-\d[\d-]{3,}\b"
+
+
 class _StubNlpEngine(NlpEngine):
     """No-op NLP engine for pattern-only Presidio (skips spaCy entirely)."""
 
@@ -421,16 +424,9 @@ def get_analyzer_engine(
         analyzer.registry.add_recognizer(phi_recognizer)
 
     # Business reference / case IDs (AP-2024-09-3382, WIRE-2024-081590, etc.)
-    ref_patterns = [
-        Pattern(
-            name="reference_number",
-            regex=r"\b(?!ICD|CPT|DSM|HER|COVID|SARS)[A-Z]{2,4}-\d[\d-]{3,}\b",
-            score=0.6,
-        ),
-    ]
     ref_recognizer = PatternRecognizer(
         supported_entity="ID_NUMBER",
-        patterns=ref_patterns,
+        patterns=[Pattern(name="reference_number", regex=REFERENCE_NUMBER_REGEX, score=0.6)],
         context=["reference", "case", "claim", "application", "wire", "dispute"],
     )
     analyzer.registry.add_recognizer(ref_recognizer)
@@ -475,7 +471,7 @@ def get_pattern_only_analyzer(
     # Business reference / case IDs
     analyzer.registry.add_recognizer(PatternRecognizer(
         supported_entity="ID_NUMBER",
-        patterns=[Pattern(name="reference_number", regex=r"\b(?!ICD|CPT|DSM|HER|COVID|SARS)[A-Z]{2,4}-\d[\d-]{3,}\b", score=0.6)],
+        patterns=[Pattern(name="reference_number", regex=REFERENCE_NUMBER_REGEX, score=0.6)],
         context=["reference", "case", "claim", "application", "wire", "dispute"],
     ))
 

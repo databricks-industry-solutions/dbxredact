@@ -1,5 +1,6 @@
 """Pipeline job triggering and status routes."""
 
+import json
 import logging
 from typing import List
 from fastapi import APIRouter, HTTPException
@@ -61,7 +62,12 @@ async def run_pipeline(body: PipelineRunRequest):
         "block_list_table": f"{CATALOG}.{SCHEMA}.redact_block_list",
         "output_mode": body.output_mode,
         "confirm_destructive": "true" if is_in_place else "false",
+        "allow_consensus_redaction": "true" if config.get("alignment_mode", "union") == "consensus" else "false",
+        "audit_table": f"{CATALOG}.{SCHEMA}.redact_audit_log",
     }
+    ep = config.get("extra_params")
+    if ep:
+        notebook_params["extra_params"] = json.dumps(ep) if not isinstance(ep, str) else ep
 
     run_id = trigger_pipeline_run(notebook_params, cluster_profile=body.cluster_profile)
 

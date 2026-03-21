@@ -377,7 +377,7 @@ class TestPipelineRoutes:
     })
     @patch("api.routes.pipeline.execute", side_effect=_mock_execute)
     @patch("api.routes.pipeline.fetch_one", side_effect=_mock_fetch_one)
-    def test_run_pipeline_returns_status(self, _, __, ___, ____):
+    def test_run_pipeline_returns_status(self, _, __, ___, mock_trigger):
         resp = client.post("/api/pipeline/run", json={
             "config_id": "cfg-1",
             "source_table": "cat.sch.tbl",
@@ -387,6 +387,16 @@ class TestPipelineRoutes:
         body = resp.json()
         assert body["run_id"] == 999
         assert body["state"] == "RUNNING"
+
+        params = mock_trigger.call_args[0][0]
+        assert params["source_table"] == "cat.sch.tbl"
+        assert params["text_column"] == "text"
+        assert params["use_presidio"] == "true"
+        assert params["use_ai_query"] == "true"
+        assert params["alignment_mode"] == "union"
+        assert params["confirm_destructive"] == "false"
+        assert params["allow_consensus_redaction"] == "false"
+        assert "audit_table" in params
 
     @patch("api.routes.pipeline.fetch_one", return_value=None)
     def test_run_pipeline_404_when_config_missing(self, _):
@@ -404,7 +414,7 @@ class TestPipelineRoutes:
     })
     @patch("api.routes.pipeline.execute", side_effect=_mock_execute)
     @patch("api.routes.pipeline.fetch_one", side_effect=_mock_fetch_one)
-    def test_run_in_place_sets_confirm_destructive(self, _, mock_exec, __, ___):
+    def test_run_in_place_sets_confirm_destructive(self, _, mock_exec, __, mock_trigger):
         resp = client.post("/api/pipeline/run", json={
             "config_id": "cfg-1",
             "source_table": "cat.sch.tbl",
@@ -414,6 +424,27 @@ class TestPipelineRoutes:
         assert resp.status_code == 200
         insert_call = [c for c in mock_exec.call_args_list if "INSERT" in str(c)]
         assert len(insert_call) >= 1
+
+        params = mock_trigger.call_args[0][0]
+        assert params["confirm_destructive"] == "true"
+        assert params["output_mode"] == "in_place"
+
+    @patch("api.routes.pipeline.trigger_pipeline_run", return_value=999)
+    @patch("api.routes.pipeline.get_run_status", return_value={
+        "run_id": 999, "state": "RUNNING", "result_state": None,
+        "start_time": 1000, "end_time": None, "run_page_url": None,
+    })
+    @patch("api.routes.pipeline.execute", side_effect=_mock_execute)
+    @patch("api.routes.pipeline.fetch_one", return_value={**_CONFIG_ROW, "alignment_mode": "consensus"})
+    def test_consensus_alignment_sets_allow_flag(self, _, __, ___, mock_trigger):
+        resp = client.post("/api/pipeline/run", json={
+            "config_id": "cfg-1",
+            "source_table": "cat.sch.tbl",
+            "text_column": "text",
+        })
+        assert resp.status_code == 200
+        params = mock_trigger.call_args[0][0]
+        assert params["allow_consensus_redaction"] == "true"
 
     @patch("api.routes.pipeline.get_run_status", return_value={
         "run_id": 123, "state": "TERMINATED", "result_state": "SUCCESS",

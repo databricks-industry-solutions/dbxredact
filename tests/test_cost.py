@@ -2,6 +2,7 @@
 
 import logging
 import pytest
+from unittest.mock import MagicMock
 
 from dbxredact.cost import (
     TOKENS_PER_CHAR,
@@ -9,6 +10,7 @@ from dbxredact.cost import (
     COST_PER_1K_OUTPUT_TOKENS,
     PROMPT_OVERHEAD_CHARS,
     ESTIMATED_OUTPUT_RATIO,
+    estimate_ai_query_cost,
     print_cost_estimate,
 )
 
@@ -90,3 +92,51 @@ class TestCostMath:
         one_row_tokens = int(1 * PROMPT_OVERHEAD_CHARS * TOKENS_PER_CHAR)
         hundred_row_tokens = int(100 * PROMPT_OVERHEAD_CHARS * TOKENS_PER_CHAR)
         assert hundred_row_tokens == 100 * one_row_tokens
+
+
+class TestEstimateAiQueryCost:
+    """Call the real estimate_ai_query_cost with a mocked DataFrame."""
+
+    @staticmethod
+    def _mock_df(total_chars, row_count):
+        mock_row = {"total_chars": total_chars, "row_count": row_count}
+        df = MagicMock()
+        df.select.return_value.first.return_value = mock_row
+        return df
+
+    @pytest.fixture(autouse=True)
+    def _patch_spark_fns(self):
+        """Patch pyspark column-builder functions that need an active SparkContext."""
+        from unittest.mock import patch
+        with patch("dbxredact.cost.col", return_value=MagicMock()), \
+             patch("dbxredact.cost.length", return_value=MagicMock()), \
+             patch("dbxredact.cost.spark_sum", return_value=MagicMock()), \
+             patch("dbxredact.cost.spark_count", return_value=MagicMock()):
+            yield
+
+    def test_basic_cost_calculation(self):
+        df = self._mock_df(total_chars=10000, row_count=10)
+        result = estimate_ai_query_cost(df, "text", "databricks-gpt-4o-mini")
+        assert result["row_count"] == 10
+        assert result["total_chars"] == 10000
+        assert result["estimated_input_tokens"] == 16250
+        assert result["estimated_output_tokens"] == 4875
+        assert result["estimated_cost_usd"] > 0
+        assert result["endpoint"] == "databricks-gpt-4o-mini"
+
+    def test_zero_chars(self):
+        df = self._mock_df(total_chars=0, row_count=5)
+        result = estimate_ai_query_cost(df, "text", "databricks-gpt-4o-mini")
+        assert result["total_chars"] == 0
+        assert result["estimated_input_tokens"] > 0
+
+    def test_unknown_endpoint_uses_defaults(self):
+        df = self._mock_df(total_chars=1000, row_count=1)
+        result = estimate_ai_query_cost(df, "text", "unknown-endpoint")
+        assert result["estimated_cost_usd"] > 0
+
+    def test_none_total_chars_treated_as_zero(self):
+        df = self._mock_df(total_chars=None, row_count=1)
+        result = estimate_ai_query_cost(df, "text", "databricks-gpt-4o-mini")
+        assert result["total_chars"] == 0
+        assert result["estimated_input_tokens"] > 0

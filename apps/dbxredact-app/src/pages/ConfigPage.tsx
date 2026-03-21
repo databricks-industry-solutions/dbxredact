@@ -15,6 +15,7 @@ const PROFILE_PRESETS: Record<string, Partial<typeof DEFAULTS>> = {
   deep: {
     use_presidio: true, use_ai_query: true, use_gliner: true,
     reasoning_effort: "medium", gliner_max_words: 256, presidio_model_size: "trf",
+    presidio_pattern_only: false,
   },
 };
 
@@ -258,6 +259,27 @@ export default function ConfigPage() {
                 <option value="trf">en_core_web_trf (best accuracy)</option>
                 <option value="lg">en_core_web_lg (faster)</option>
               </select>
+            </div>
+            <div>
+              <label className={`flex items-center gap-2 text-sm mt-2 ${isPreset ? "opacity-60" : "cursor-pointer"}`}>
+                <input type="checkbox" className="rounded" checked={form.presidio_pattern_only}
+                  disabled={isPreset}
+                  onChange={(e) => set("presidio_pattern_only", e.target.checked)} />
+                Presidio Pattern-Only (regex-only, no spaCy NER)
+              </label>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">GLiNER Model</label>
+              <input className="input-field" value={form.gliner_model}
+                disabled={isPreset}
+                onChange={(e) => set("gliner_model", e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">GLiNER Threshold</label>
+              <input type="number" step={0.05} min={0.05} max={1} className="input-field"
+                value={form.gliner_threshold}
+                disabled={isPreset}
+                onChange={(e) => set("gliner_threshold", parseFloat(e.target.value))} />
             </div>
           </>
         )}

@@ -56,8 +56,10 @@ class TestInPlaceGuard:
                     confirm_destructive=True,
                     use_ai_query=False, use_gliner=False,
                 )
-            except Exception:
-                pass
+            except ValueError:
+                pytest.fail("governance guard should not fire for confirm_destructive=True")
+            except (AttributeError, TypeError):
+                pass  # expected -- mocked Spark can't complete the pipeline
             mock_spark.table.assert_called_once()
 
 
