@@ -75,6 +75,63 @@ def get_protected_columns(
     return get_columns_by_tag(spark, table_name, tag_name, "protected")
 
 
+def discover_pii_columns(
+    spark: SparkSession,
+    table_name: str,
+    classification_tag: str = "data_classification",
+    classification_value: str = "protected",
+    type_tag: str = "pii_type",
+) -> dict:
+    """
+    Classify columns by treatment type using UC tags.
+
+    Uses a two-tag scheme:
+    - ``classification_tag=classification_value`` marks a column as containing PII.
+    - ``type_tag`` declares the semantic type for structured masking (e.g. ssn, phone).
+
+    STRING columns tagged protected with no ``type_tag`` (or ``type_tag=free_text``)
+    route to NER text detection.  Columns with an explicit ``type_tag`` route to
+    rule-based structured masking.
+
+    Returns:
+        dict with keys ``text_columns``, ``structured_columns``,
+        ``doc_id_candidates``, ``warnings``.
+    """
+    metadata = get_table_metadata(spark, table_name)
+
+    text_columns: List[str] = []
+    structured_columns: Dict[str, str] = {}
+    doc_id_candidates: List[str] = []
+    warnings: List[str] = []
+
+    for col_name, info in metadata.items():
+        tags = info.get("tags", {})
+        col_type = info.get("type", "").upper()
+        is_protected = tags.get(classification_tag) == classification_value
+        pii_type = tags.get(type_tag)
+
+        if is_protected:
+            if pii_type and pii_type != "free_text":
+                structured_columns[col_name] = pii_type
+            elif col_type == "STRING":
+                text_columns.append(col_name)
+            else:
+                warnings.append(
+                    f"Column '{col_name}' is tagged {classification_tag}={classification_value} "
+                    f"but has no {type_tag} and is {col_type} type -- skipped"
+                )
+        else:
+            if col_name.endswith("_id") or col_name in ("id", "doc_id", "patient_id", "encounter_id"):
+                doc_id_candidates.append(col_name)
+
+    return {
+        "text_columns": text_columns,
+        "structured_columns": structured_columns,
+        "doc_id_candidates": doc_id_candidates,
+        "warnings": warnings,
+    }
+
+
 def get_table_metadata(
     spark: SparkSession, table_name: str
 ) -> Dict[str, Dict[str, str]]:

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
 import { useGet } from "../hooks/useApi";
@@ -58,6 +58,18 @@ export default function ReviewPage() {
     { enabled: isOutputReady, deps: [outQualified] },
   );
 
+  const redactedColumns = useMemo(() => {
+    if (!outputInfo) return [];
+    return outputInfo.columns.filter((c) => c.endsWith("_redacted"));
+  }, [outputInfo]);
+
+  const structuredColumns = useMemo(() => {
+    if (!outputInfo || !sourceInfo) return [];
+    return outputInfo.columns.filter((c) =>
+      !c.endsWith("_redacted") && c !== "doc_id" && !c.endsWith("_id") && sourceInfo.columns.includes(c)
+    );
+  }, [outputInfo, sourceInfo]);
+
   useEffect(() => {
     if (!sourceInfo) return;
     if (sourceInfo.columns.includes("text")) setSourceCol("text");
@@ -67,10 +79,25 @@ export default function ReviewPage() {
 
   useEffect(() => {
     if (!outputInfo) return;
-    if (outputInfo.columns.includes("text_redacted")) setOutputCol("text_redacted");
-    else if (outputInfo.columns.includes("redacted_text")) setOutputCol("redacted_text");
-    else if (outputInfo.columns.length) setOutputCol(outputInfo.columns[0]);
-  }, [outputInfo]);
+    if (redactedColumns.length > 0) {
+      setOutputCol(redactedColumns[0]);
+      const baseName = redactedColumns[0].replace(/_redacted$/, "");
+      if (sourceInfo?.columns.includes(baseName)) setSourceCol(baseName);
+    } else if (outputInfo.columns.includes("text_redacted")) {
+      setOutputCol("text_redacted");
+    } else if (outputInfo.columns.includes("redacted_text")) {
+      setOutputCol("redacted_text");
+    } else if (outputInfo.columns.length) {
+      setOutputCol(outputInfo.columns[0]);
+    }
+  }, [outputInfo, redactedColumns]);
+
+  function handleOutputColChange(col: string) {
+    setOutputCol(col);
+    setOffset(0);
+    const baseName = col.replace(/_redacted$/, "");
+    if (sourceInfo?.columns.includes(baseName)) setSourceCol(baseName);
+  }
 
   const compareParams = new URLSearchParams({
     source_table: srcQualified, source_column: sourceCol,
@@ -124,13 +151,48 @@ export default function ReviewPage() {
             {outputCols.length > 0 && (
               <div className="mt-2">
                 <label className="block text-xs font-medium mb-1 text-gray-500 dark:text-gray-400">Redacted text column</label>
-                <select className="input-field text-sm" value={outputCol} onChange={(e) => setOutputCol(e.target.value)}>
+                <select className="input-field text-sm" value={outputCol} onChange={(e) => handleOutputColChange(e.target.value)}>
                   {outputCols.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
             )}
           </div>
         </div>
+
+        {redactedColumns.length > 1 && (
+          <div className="border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50/50 dark:bg-blue-900/10 p-3">
+            <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-2">
+              Multi-column output detected ({redactedColumns.length} redacted columns)
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {redactedColumns.map((rc) => (
+                <button key={rc} type="button"
+                  className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
+                    outputCol === rc
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-blue-400"
+                  }`}
+                  onClick={() => handleOutputColChange(rc)}
+                >
+                  {rc}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {structuredColumns.length > 0 && (
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+              Structured columns (masked in place):
+            </p>
+            <div className="flex flex-wrap gap-2 text-xs text-gray-600 dark:text-gray-300">
+              {structuredColumns.map((c) => (
+                <span key={c} className="bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">{c}</span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {loading && <p className="text-sm text-gray-500 dark:text-gray-400 animate-pulse">Loading...</p>}

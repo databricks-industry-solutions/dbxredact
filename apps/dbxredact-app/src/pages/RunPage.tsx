@@ -5,7 +5,7 @@ import ErrorBanner from "../components/ErrorBanner";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
 import { useToast } from "../hooks/useToast";
-import type { Config, RunStatus, JobHistoryItem } from "../types";
+import type { Config, RunStatus, JobHistoryItem, ColumnDiscovery, CostEstimatePerColumn } from "../types";
 
 interface TableInfo {
   columns: string[];
@@ -24,6 +24,7 @@ interface CostEstimate {
   endpoint: string;
   cluster_profile: string;
   use_ai_query: boolean;
+  per_column?: CostEstimatePerColumn[];
 }
 
 const TERMINAL_STATES = ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"];
@@ -47,6 +48,12 @@ export default function RunPage() {
   const [error, setError] = useState("");
   const { toast } = useToast();
 
+  // Full Table mode state
+  const [redactionScope, setRedactionScope] = useState<"single_column" | "full_table">("single_column");
+  const [selectedTextCols, setSelectedTextCols] = useState<Record<string, boolean>>({});
+  const [selectedStructCols, setSelectedStructCols] = useState<Record<string, boolean>>({});
+  const [maskingStrategy, setMaskingStrategy] = useState<"mask" | "hash" | "encrypt">("mask");
+
   const displayError = error || configsError || historyError || "";
   const hasTable = isComplete(sourceTable);
   const qualified = toQualified(sourceTable);
@@ -54,6 +61,11 @@ export default function RunPage() {
   const { data: tableInfo, loading: loadingTable } = useGet<TableInfo>(
     `/pipeline/table-info?table=${encodeURIComponent(qualified)}`,
     { enabled: hasTable, deps: [qualified] },
+  );
+
+  const { data: discovery, loading: loadingDiscovery } = useGet<ColumnDiscovery>(
+    `/pipeline/discover-columns?table=${encodeURIComponent(qualified)}`,
+    { enabled: hasTable && redactionScope === "full_table", deps: [qualified, redactionScope] },
   );
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -71,15 +83,37 @@ export default function RunPage() {
     else if (tableInfo.columns.length) setDocIdCol(tableInfo.columns[0]);
   }, [tableInfo]);
 
+  // Auto-select all discovered columns
+  useEffect(() => {
+    if (!discovery) return;
+    const tc: Record<string, boolean> = {};
+    discovery.text_columns.forEach((c) => (tc[c] = true));
+    setSelectedTextCols(tc);
+    const sc: Record<string, boolean> = {};
+    Object.keys(discovery.structured_columns).forEach((c) => (sc[c] = true));
+    setSelectedStructCols(sc);
+    if (discovery.doc_id_candidates.length) setDocIdCol(discovery.doc_id_candidates[0]);
+  }, [discovery]);
+
   const selectedConfig = configs?.find((c) => c.config_id === configId);
   const usesAiQuery = selectedConfig?.use_ai_query ?? false;
   const usesGliner = selectedConfig?.use_gliner ?? false;
   const clusterProfile = `${useGpu ? "gpu" : "cpu"}_${clusterSize}`;
   const showCostPanel = usesAiQuery || usesGliner;
 
+  const activeTextCols = Object.entries(selectedTextCols).filter(([, v]) => v).map(([k]) => k);
+  const activeStructCols = Object.fromEntries(
+    Object.entries(selectedStructCols).filter(([, v]) => v).map(([k]) => [k, discovery?.structured_columns[k] ?? ""])
+  );
+
+  const costTextColumns = redactionScope === "full_table" && activeTextCols.length > 0
+    ? activeTextCols.join(",")
+    : undefined;
+
   const costParams = new URLSearchParams({
     table: qualified,
     text_column: textCol,
+    ...(costTextColumns ? { text_columns: costTextColumns } : {}),
     endpoint: selectedConfig?.endpoint || "databricks-gpt-oss-120b",
     max_rows: String(maxRows),
     cluster_profile: clusterProfile,
@@ -92,7 +126,7 @@ export default function RunPage() {
     `/pipeline/cost-estimate?${costParams}`,
     {
       enabled: hasTable && showCostPanel && !!selectedConfig,
-      deps: [qualified, textCol, selectedConfig?.endpoint, maxRows, clusterProfile, usesGliner, usesAiQuery, selectedConfig?.detection_profile],
+      deps: [qualified, textCol, costTextColumns, selectedConfig?.endpoint, maxRows, clusterProfile, usesGliner, usesAiQuery, selectedConfig?.detection_profile],
     },
   );
 
@@ -137,17 +171,26 @@ export default function RunPage() {
   async function launch() {
     setRunning(true);
     try {
-      const status = await apiPost<RunStatus>("/pipeline/run", {
+      const payload: Record<string, unknown> = {
         config_id: configId,
         source_table: qualified,
         output_table: outputMode === "in_place" ? undefined : (outputTable || undefined),
-        text_column: textCol,
-        doc_id_column: docIdCol,
         max_rows: maxRows,
         cluster_profile: clusterProfile,
         refresh_approach: refreshApproach,
         output_mode: outputMode,
-      });
+        redaction_scope: redactionScope,
+      };
+      if (redactionScope === "single_column") {
+        payload.text_column = textCol;
+        payload.doc_id_column = docIdCol;
+      } else {
+        payload.doc_id_column = docIdCol;
+        payload.text_columns = activeTextCols;
+        payload.structured_columns = activeStructCols;
+        payload.masking_strategy = maskingStrategy;
+      }
+      const status = await apiPost<RunStatus>("/pipeline/run", payload);
       setRunStatus(status);
       toast("Pipeline launched");
       refetchHistory();
@@ -159,6 +202,7 @@ export default function RunPage() {
 
   const columnOptions = tableInfo?.columns || [];
   const isRunning = runStatus?.state && !TERMINAL_STATES.includes(runStatus.state);
+  const totalSelectedCols = activeTextCols.length + Object.keys(activeStructCols).length;
 
   const historyColumns: Column<JobHistoryItem & Record<string, unknown>>[] = [
     { key: "run_id", header: "Run ID", render: (h) => <span className="font-mono text-xs">{h.run_id}</span> },
@@ -173,6 +217,10 @@ export default function RunPage() {
     )},
     { key: "started_at", header: "Started", render: (h) => <span className="text-gray-500 dark:text-gray-400">{h.started_at}</span> },
   ];
+
+  const confirmMessage = redactionScope === "full_table"
+    ? `This will permanently overwrite ${totalSelectedCols} column(s) in ${qualified}. This cannot be undone.`
+    : `This will permanently overwrite the "${textCol}" column in ${qualified}. This cannot be undone.`;
 
   return (
     <div>
@@ -199,6 +247,36 @@ export default function RunPage() {
             </p>
           )}
         </div>
+
+        {/* Redaction Scope Toggle */}
+        <div className="col-span-2">
+          <label className="block text-sm font-medium mb-1.5">Redaction Scope</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                redactionScope === "single_column"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-blue-400"
+              }`}
+              onClick={() => setRedactionScope("single_column")}
+            >
+              Single Column
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                redactionScope === "full_table"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-blue-400"
+              }`}
+              onClick={() => setRedactionScope("full_table")}
+            >
+              Full Table
+            </button>
+          </div>
+        </div>
+
         {outputMode === "separate" && (
           <div className="col-span-2">
             <label className="block text-sm font-medium mb-1.5">
@@ -208,35 +286,130 @@ export default function RunPage() {
               onChange={(e) => setOutputTable(e.target.value)} placeholder="catalog.schema.output_table" />
           </div>
         )}
-        {outputMode === "in_place" && (
+
+        {outputMode === "in_place" && redactionScope === "full_table" && (
+          <div className="col-span-2 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 p-3 text-sm text-red-800 dark:text-red-200">
+            <strong>Destructive operation:</strong> This will permanently overwrite ALL selected columns in the source table.
+          </div>
+        )}
+        {outputMode === "in_place" && redactionScope === "single_column" && (
           <div className="col-span-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 p-3 text-sm text-amber-800 dark:text-amber-200">
             <strong>Destructive operation:</strong> The <code>{textCol}</code> column in the source table will be permanently overwritten with redacted text.
           </div>
         )}
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Text Column</label>
-          {columnOptions.length ? (
-            <select className="input-field" value={textCol}
-              onChange={(e) => setTextCol(e.target.value)}>
-              {columnOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          ) : (
-            <input className="input-field" value={textCol}
-              onChange={(e) => setTextCol(e.target.value)} />
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Doc ID Column</label>
-          {columnOptions.length ? (
-            <select className="input-field" value={docIdCol}
-              onChange={(e) => setDocIdCol(e.target.value)}>
-              {columnOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          ) : (
-            <input className="input-field" value={docIdCol}
-              onChange={(e) => setDocIdCol(e.target.value)} />
-          )}
-        </div>
+
+        {/* Single Column Mode */}
+        {redactionScope === "single_column" && (
+          <>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Text Column</label>
+              {columnOptions.length ? (
+                <select className="input-field" value={textCol}
+                  onChange={(e) => setTextCol(e.target.value)}>
+                  {columnOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              ) : (
+                <input className="input-field" value={textCol}
+                  onChange={(e) => setTextCol(e.target.value)} />
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Doc ID Column</label>
+              {columnOptions.length ? (
+                <select className="input-field" value={docIdCol}
+                  onChange={(e) => setDocIdCol(e.target.value)}>
+                  {columnOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              ) : (
+                <input className="input-field" value={docIdCol}
+                  onChange={(e) => setDocIdCol(e.target.value)} />
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Full Table Mode - Discovery Panel */}
+        {redactionScope === "full_table" && (
+          <div className="col-span-2 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3">
+            <h4 className="text-sm font-semibold">Column Discovery</h4>
+            {loadingDiscovery && <p className="text-xs text-gray-400 animate-pulse">Discovering PII columns...</p>}
+
+            {discovery && !discovery.text_columns.length && !Object.keys(discovery.structured_columns).length && (
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-700 dark:text-amber-300">
+                No columns tagged with <code>data_classification=protected</code>. Tag columns in Unity Catalog or switch to Single Column mode.
+              </div>
+            )}
+
+            {discovery && discovery.text_columns.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Text columns (NER detection):</p>
+                <div className="flex flex-wrap gap-2">
+                  {discovery.text_columns.map((c) => (
+                    <label key={c} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input type="checkbox" checked={!!selectedTextCols[c]}
+                        onChange={(e) => setSelectedTextCols((prev) => ({ ...prev, [c]: e.target.checked }))}
+                        className="rounded border-gray-300" />
+                      {c}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {discovery && Object.keys(discovery.structured_columns).length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Structured columns (rule masking):</p>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(discovery.structured_columns).map(([c, piiType]) => (
+                    <label key={c} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input type="checkbox" checked={!!selectedStructCols[c]}
+                        onChange={(e) => setSelectedStructCols((prev) => ({ ...prev, [c]: e.target.checked }))}
+                        className="rounded border-gray-300" />
+                      {c} <span className="text-xs text-gray-400">({piiType})</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {discovery && discovery.warnings.length > 0 && (
+              <div className="text-xs text-amber-600 dark:text-amber-400 space-y-0.5">
+                {discovery.warnings.map((w, i) => <p key={i}>{w}</p>)}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div>
+                <label className="block text-xs font-medium mb-1 text-gray-500 dark:text-gray-400">Doc ID Column</label>
+                {columnOptions.length ? (
+                  <select className="input-field text-sm" value={docIdCol}
+                    onChange={(e) => setDocIdCol(e.target.value)}>
+                    {columnOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                ) : (
+                  <input className="input-field text-sm" value={docIdCol}
+                    onChange={(e) => setDocIdCol(e.target.value)} />
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1 text-gray-500 dark:text-gray-400">Structured Masking Strategy</label>
+                <select className="input-field text-sm" value={maskingStrategy}
+                  onChange={(e) => setMaskingStrategy(e.target.value as "mask" | "hash" | "encrypt")}>
+                  <option value="mask">Mask (label replacement)</option>
+                  <option value="hash">Hash (SHA-256)</option>
+                  <option value="encrypt">Encrypt (AES)</option>
+                </select>
+              </div>
+            </div>
+
+            {activeTextCols.length >= 5 && (
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-2 text-xs text-amber-700 dark:text-amber-300">
+                {activeTextCols.length} text columns selected -- NER detection will run {activeTextCols.length} times. Consider running in batches for large tables.
+              </div>
+            )}
+          </div>
+        )}
+
         <div>
           <label className="block text-sm font-medium mb-1.5">
             Max Rows
@@ -302,18 +475,40 @@ export default function RunPage() {
             <div className="px-3 pb-3">
               {loadingCost && <p className="text-xs text-gray-400 animate-pulse">Calculating...</p>}
               {costEstimate && !loadingCost && (
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  <div><span className="text-gray-500">Rows:</span> <span className="font-medium">{costEstimate.row_count.toLocaleString()}</span></div>
-                  <div><span className="text-gray-500">Characters:</span> <span className="font-medium">{costEstimate.total_chars.toLocaleString()}</span></div>
-                  <div><span className="text-gray-500">Est. runtime:</span> <span className="font-medium">{costEstimate.estimated_minutes} min</span></div>
-                  {costEstimate.use_ai_query && <>
-                    <div><span className="text-gray-500">Endpoint:</span> <span className="font-medium">{costEstimate.endpoint}</span></div>
-                    <div><span className="text-gray-500">Input tokens:</span> <span className="font-medium">{costEstimate.estimated_input_tokens.toLocaleString()}</span></div>
-                    <div><span className="text-gray-500">Output tokens:</span> <span className="font-medium">{costEstimate.estimated_output_tokens.toLocaleString()}</span></div>
-                    <div><span className="text-gray-500">AI Query cost:</span> <span className="font-medium">${costEstimate.ai_query_cost_usd.toFixed(4)}</span></div>
-                  </>}
-                  <div><span className="text-gray-500">Compute cost:</span> <span className="font-medium">${costEstimate.compute_cost_usd.toFixed(4)}</span></div>
-                  <div><span className="text-gray-500">Total est.:</span> <span className="font-bold text-blue-700 dark:text-blue-300">${costEstimate.estimated_cost_usd.toFixed(4)}</span></div>
+                <div className="space-y-2">
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div><span className="text-gray-500">Rows:</span> <span className="font-medium">{costEstimate.row_count.toLocaleString()}</span></div>
+                    <div><span className="text-gray-500">Characters:</span> <span className="font-medium">{costEstimate.total_chars.toLocaleString()}</span></div>
+                    <div><span className="text-gray-500">Est. runtime:</span> <span className="font-medium">{costEstimate.estimated_minutes} min</span></div>
+                    {costEstimate.use_ai_query && <>
+                      <div><span className="text-gray-500">Endpoint:</span> <span className="font-medium">{costEstimate.endpoint}</span></div>
+                      <div><span className="text-gray-500">Input tokens:</span> <span className="font-medium">{costEstimate.estimated_input_tokens.toLocaleString()}</span></div>
+                      <div><span className="text-gray-500">Output tokens:</span> <span className="font-medium">{costEstimate.estimated_output_tokens.toLocaleString()}</span></div>
+                      <div><span className="text-gray-500">AI Query cost:</span> <span className="font-medium">${costEstimate.ai_query_cost_usd.toFixed(4)}</span></div>
+                    </>}
+                    <div><span className="text-gray-500">Compute cost:</span> <span className="font-medium">${costEstimate.compute_cost_usd.toFixed(4)}</span></div>
+                    <div><span className="text-gray-500">Total est.:</span> <span className="font-bold text-blue-700 dark:text-blue-300">${costEstimate.estimated_cost_usd.toFixed(4)}</span></div>
+                  </div>
+                  {costEstimate.per_column && costEstimate.per_column.length > 1 && (
+                    <div className="border-t border-blue-200 dark:border-blue-800 pt-2">
+                      <p className="text-xs font-medium text-gray-500 mb-1">Per-column breakdown:</p>
+                      <div className="space-y-1">
+                        {costEstimate.per_column.map((pc) => (
+                          <div key={pc.column} className="flex justify-between text-xs">
+                            <span className="font-mono">{pc.column}</span>
+                            <span className="text-gray-500">
+                              ~${pc.ai_query_cost_usd.toFixed(2)}, ~{pc.estimated_minutes}min
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {redactionScope === "full_table" && Object.keys(activeStructCols).length > 0 && (
+                    <p className="text-xs text-gray-400">
+                      + {Object.keys(activeStructCols).length} structured column(s) (instant, no AI cost)
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -332,7 +527,7 @@ export default function RunPage() {
         open={confirmOpen}
         variant="danger"
         title="Confirm In-Place Redaction"
-        message={`This will permanently overwrite the "${textCol}" column in ${qualified}. This cannot be undone.`}
+        message={confirmMessage}
         confirmLabel="Redact In-Place"
         onConfirm={() => { setConfirmOpen(false); launch(); }}
         onCancel={() => setConfirmOpen(false)}

@@ -45,7 +45,9 @@ from dbxredact import (
     run_redaction_pipeline,
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
+    run_table_redaction,
     get_columns_by_tag,
+    discover_pii_columns,
     load_filter_from_table,
     EntityFilter,
     RedactionConfig,
@@ -63,6 +65,18 @@ dbutils.widgets.dropdown(
     defaultValue="fast",
     choices=["fast", "deep", "custom"],
     label="0. Detection Profile",
+)
+dbutils.widgets.dropdown(
+    name="redaction_scope",
+    defaultValue="single_column",
+    choices=["single_column", "all_tagged", "custom"],
+    label="0a. Redaction Scope",
+)
+dbutils.widgets.dropdown(
+    name="masking_strategy",
+    defaultValue="mask",
+    choices=["mask", "hash", "encrypt"],
+    label="0b. Structured Masking Strategy",
 )
 dbutils.widgets.dropdown(
     name="input_mode",
@@ -295,6 +309,8 @@ allow_consensus_redaction = dbutils.widgets.get("allow_consensus_redaction") == 
 audit_table = dbutils.widgets.get("audit_table").strip() or None
 _extra_params_raw = dbutils.widgets.get("extra_params").strip()
 extra_params = json.loads(_extra_params_raw) if _extra_params_raw else None
+redaction_scope = dbutils.widgets.get("redaction_scope")
+masking_strategy = dbutils.widgets.get("masking_strategy")
 
 # Profile overrides (fast/deep force specific settings; custom uses widget values as-is)
 if detection_profile == "fast":
@@ -431,9 +447,13 @@ else:
 print("=" * 80)
 print("STARTING REDACTION PIPELINE")
 print("=" * 80)
+print(f"Redaction Scope: {redaction_scope}")
 print(f"Detection Profile: {detection_profile}")
 print(f"Source Table: {source_table}")
-print(f"Text Column: {text_column}")
+if redaction_scope == "single_column":
+    print(f"Text Column: {text_column}")
+else:
+    print(f"Masking Strategy: {masking_strategy}")
 print(f"Use Presidio: {use_presidio}")
 print(f"Use AI Query: {use_ai_query}")
 print(f"Use GLiNER: {use_gliner}")
@@ -456,10 +476,32 @@ print("=" * 80)
 
 # COMMAND ----------
 
-if refresh_approach == "incremental":
+if redaction_scope in ("all_tagged", "custom"):
+    # Multi-column / structured masking pipeline
+    print(f"Using TABLE REDACTION (scope={redaction_scope}, masking={masking_strategy})...")
+
+    _text_cols = None
+    _struct_cols = None
+    if redaction_scope == "custom" and extra_params:
+        _text_cols = extra_params.get("text_columns")
+        _struct_cols = extra_params.get("structured_columns")
+
+    result_df = run_table_redaction(
+        spark=spark,
+        source_table=source_table,
+        output_table=output_table,
+        doc_id_column=doc_id_column,
+        text_columns=_text_cols,
+        structured_columns=_struct_cols,
+        masking_strategy=masking_strategy,
+        config=config,
+        audit_table=audit_table,
+        output_mode=output_mode,
+        confirm_destructive=confirm_destructive,
+    )
+
+elif refresh_approach == "incremental":
     # Streaming approach - incremental processing
-    # TIP: For tables over 100k rows, streaming (incremental) is recommended for
-    # lower memory pressure, no row-count limits, and incremental updates.
     print("Using INCREMENTAL (streaming) approach...")
 
     query = run_redaction_pipeline_streaming(
@@ -473,14 +515,11 @@ if refresh_approach == "incremental":
         config=config,
     )
 
-    # Wait for completion (availableNow trigger processes all then stops)
     query.awaitTermination()
-
-    # Load result for display
     result_df = spark.table(output_table)
 
 else:
-    # Batch approach - full refresh
+    # Batch approach - single column
     print("Using FULL (batch) approach...")
 
     if input_mode == "table_tag":

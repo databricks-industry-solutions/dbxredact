@@ -22,7 +22,7 @@ from pyspark.sql.types import (
 from .detection import run_detection
 from .alignment import align_entities_udf
 from .redaction import create_redaction_udf, create_redaction_audit_udf, RedactionStrategy
-from .metadata import get_columns_by_tag
+from .metadata import get_columns_by_tag, discover_pii_columns
 from .config import DEFAULT_GLINER_MODEL, DEFAULT_GLINER_THRESHOLD, DEFAULT_GLINER_MAX_WORDS, DEFAULT_AI_REASONING_EFFORT, RedactionConfig
 from .entity_filter import EntityFilter, apply_safe_filter, apply_block_filter
 
@@ -1132,95 +1132,288 @@ def run_redaction_pipeline_by_tag(
     entity_filter: Optional[EntityFilter] = None,
     config: Optional[RedactionConfig] = None,
 ) -> DataFrame:
-    """
-    Run redaction pipeline on columns identified by Unity Catalog tags.
+    """Run redaction pipeline on columns identified by Unity Catalog tags.
+
+    .. deprecated::
+        Use :func:`run_table_redaction` instead, which supports both text
+        (NER) and structured (rule-based) column masking in a single pass.
 
     Returns:
         DataFrame with redacted columns
     """
-    if config is not None:
-        _v = _apply_config(config, {
-            "use_presidio": use_presidio, "use_ai_query": use_ai_query,
-            "use_gliner": use_gliner, "endpoint": endpoint,
-            "score_threshold": score_threshold, "gliner_model": gliner_model,
-            "gliner_threshold": gliner_threshold, "gliner_max_words": gliner_max_words,
-            "num_cores": num_cores, "reasoning_effort": reasoning_effort,
-            "presidio_model_size": presidio_model_size, "ai_model_type": ai_model_type,
-            "alignment_mode": alignment_mode, "fuzzy_threshold": fuzzy_threshold,
-            "presidio_pattern_only": presidio_pattern_only,
-            "redaction_strategy": redaction_strategy, "output_strategy": output_strategy,
-            "output_mode": output_mode, "confirm_destructive": confirm_destructive,
-            "max_rows": max_rows, "allow_consensus_redaction": allow_consensus_redaction,
-            "confirm_validation_output": confirm_validation_output,
-            "entity_filter": entity_filter,
-        })
-        (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
-         gliner_model, gliner_threshold, gliner_max_words, num_cores,
-         reasoning_effort, presidio_model_size, ai_model_type,
-         alignment_mode, fuzzy_threshold, presidio_pattern_only,
-         redaction_strategy, output_strategy, output_mode,
-         confirm_destructive, max_rows, allow_consensus_redaction,
-         confirm_validation_output, entity_filter) = (
-            _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
-            _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
-            _v["gliner_threshold"], _v["gliner_max_words"], _v["num_cores"],
-            _v["reasoning_effort"], _v["presidio_model_size"],
-            _v["ai_model_type"], _v["alignment_mode"], _v["fuzzy_threshold"],
-            _v["presidio_pattern_only"], _v["redaction_strategy"],
-            _v["output_strategy"], _v["output_mode"], _v["confirm_destructive"],
-            _v["max_rows"], _v["allow_consensus_redaction"],
-            _v["confirm_validation_output"], _v["entity_filter"],
-        )
-
-    protected_columns = get_columns_by_tag(
-        spark=spark, table_name=source_table, tag_name=tag_name, tag_value=tag_value
+    import warnings
+    warnings.warn(
+        "run_redaction_pipeline_by_tag is deprecated; use run_table_redaction instead.",
+        DeprecationWarning,
+        stacklevel=2,
     )
 
-    if not protected_columns:
-        raise ValueError(
-            f"No columns found with {tag_name}={tag_value} in {source_table}"
-        )
+    text_columns = get_columns_by_tag(
+        spark=spark, table_name=source_table, tag_name=tag_name, tag_value=tag_value
+    )
+    if not text_columns:
+        raise ValueError(f"No columns found with {tag_name}={tag_value} in {source_table}")
 
-    logger.info(f"Found {len(protected_columns)} protected column(s): {protected_columns}")
-
-    result_df = None
-    for text_column in protected_columns:
-        if output_mode == "in_place":
-            col_output_table = None
-            logger.info(f"Processing column: {text_column} (in-place)")
-        else:
-            col_output_table = f"{output_table}_{text_column}" if len(protected_columns) > 1 else output_table
-            logger.info(f"Processing column: {text_column} -> {col_output_table}")
-
-        result_df = run_redaction_pipeline(
-            spark=spark,
-            source_table=source_table,
-            text_column=text_column,
-            output_table=col_output_table,
-            doc_id_column=doc_id_column,
-            use_presidio=use_presidio,
-            use_ai_query=use_ai_query,
-            use_gliner=use_gliner,
-            redaction_strategy=redaction_strategy,
-            endpoint=endpoint,
-            score_threshold=score_threshold,
-            gliner_model=gliner_model,
-            gliner_threshold=gliner_threshold,
-            gliner_max_words=gliner_max_words,
-            num_cores=num_cores,
-            output_strategy=output_strategy,
-            max_rows=max_rows,
-            reasoning_effort=reasoning_effort,
-            presidio_model_size=presidio_model_size,
-            ai_model_type=ai_model_type,
-            alignment_mode=alignment_mode,
-            fuzzy_threshold=fuzzy_threshold,
+    return run_table_redaction(
+        spark=spark,
+        source_table=source_table,
+        output_table=output_table,
+        doc_id_column=doc_id_column,
+        text_columns=text_columns,
+        config=config or RedactionConfig(
+            use_presidio=use_presidio, use_ai_query=use_ai_query,
+            use_gliner=use_gliner, endpoint=endpoint,
+            score_threshold=score_threshold, gliner_model=gliner_model,
+            gliner_threshold=gliner_threshold, gliner_max_words=gliner_max_words,
+            num_cores=num_cores, reasoning_effort=reasoning_effort,
+            presidio_model_size=presidio_model_size, ai_model_type=ai_model_type,
+            alignment_mode=alignment_mode, fuzzy_threshold=fuzzy_threshold,
             presidio_pattern_only=presidio_pattern_only,
-            output_mode=output_mode,
-            confirm_destructive=confirm_destructive,
-            allow_consensus_redaction=allow_consensus_redaction,
+            redaction_strategy=redaction_strategy, output_strategy=output_strategy,
+            output_mode=output_mode, confirm_destructive=confirm_destructive,
+            max_rows=max_rows, allow_consensus_redaction=allow_consensus_redaction,
             confirm_validation_output=confirm_validation_output,
             entity_filter=entity_filter,
+        ),
+        output_mode=output_mode,
+        confirm_destructive=confirm_destructive,
+    )
+
+
+def run_table_redaction(
+    spark: SparkSession,
+    source_table: str,
+    output_table: Optional[str] = None,
+    doc_id_column: str = "doc_id",
+    classification_tag: str = "data_classification",
+    classification_value: str = "protected",
+    type_tag: str = "pii_type",
+    text_columns: Optional[list] = None,
+    structured_columns: Optional[dict] = None,
+    masking_strategy: "Literal['mask','hash','encrypt']" = "mask",
+    encryption_key: Optional[str] = None,
+    config: Optional[RedactionConfig] = None,
+    audit_table: Optional[str] = None,
+    output_mode: OutputMode = "separate",
+    confirm_destructive: bool = False,
+) -> DataFrame:
+    """Unified multi-column redaction pipeline.
+
+    Discovers tagged columns via UC metadata (or uses explicit lists), runs
+    NER detection on text columns, applies rule-based masking to structured
+    columns, and writes a single unified output table.
+
+    Args:
+        spark: Active SparkSession.
+        source_table: Fully qualified source table name.
+        output_table: Fully qualified output table name (required for separate mode).
+        doc_id_column: Document ID column name.
+        classification_tag: UC tag name for PII classification.
+        classification_value: UC tag value marking a column as PII.
+        type_tag: UC tag name declaring the semantic PII type.
+        text_columns: Explicit list of text columns for NER (skips discovery).
+        structured_columns: Explicit ``{col: pii_type}`` map (skips discovery).
+        masking_strategy: ``"mask"``, ``"hash"``, or ``"encrypt"`` for structured cols.
+        encryption_key: Required when ``masking_strategy="encrypt"``.
+        config: ``RedactionConfig`` with detection settings.
+        audit_table: Optional audit log table.
+        output_mode: ``"separate"`` or ``"in_place"``.
+        confirm_destructive: Must be ``True`` for in-place mode.
+
+    Returns:
+        DataFrame with all columns (redacted text + masked structured + passthrough).
+    """
+    from .metadata import _validate_identifier, _parse_table_name
+    from .masking import apply_structured_masking
+
+    if output_mode == "in_place":
+        if not confirm_destructive:
+            raise ValueError("confirm_destructive must be True for in_place mode.")
+        _parse_table_name(source_table)
+    else:
+        if not output_table:
+            raise ValueError("output_table is required when output_mode='separate'.")
+        _parse_table_name(output_table)
+
+    _validate_identifier(doc_id_column, "doc_id_column")
+    t_start = time.time()
+
+    # --- Column discovery ---
+    if text_columns is None and structured_columns is None:
+        discovery = discover_pii_columns(
+            spark, source_table, classification_tag, classification_value, type_tag
+        )
+        text_columns = discovery["text_columns"]
+        structured_columns = discovery["structured_columns"]
+        for w in discovery.get("warnings", []):
+            logger.warning(w)
+        logger.info(
+            "Discovered %d text column(s), %d structured column(s)",
+            len(text_columns), len(structured_columns),
+        )
+    text_columns = text_columns or []
+    structured_columns = structured_columns or {}
+
+    if not text_columns and not structured_columns:
+        raise ValueError(
+            f"No PII columns found for {source_table}. Tag columns with "
+            f"{classification_tag}={classification_value} or pass explicit lists."
         )
 
-    return result_df
+    # Build config if not provided
+    if config is None:
+        config = RedactionConfig()
+
+    # --- Read and cache source once ---
+    source_df = spark.table(source_table)
+    if config.max_rows:
+        row_count = source_df.count()
+        if row_count > config.max_rows:
+            logger.warning(
+                "Source has %s rows. Limiting to %s.",
+                f"{row_count:,}", f"{config.max_rows:,}",
+            )
+            source_df = source_df.orderBy(doc_id_column).limit(config.max_rows)
+
+    source_df = source_df.cache()
+    cached_count = source_df.count()
+    logger.info("Cached %s rows for table redaction. [%.1fs]", f"{cached_count:,}", time.time() - t_start)
+
+    result_df = source_df
+    failed_columns = []
+
+    # --- Process text columns (NER detection + redaction) ---
+    for i, text_col in enumerate(text_columns):
+        logger.info("Processing text column %d/%d: %s", i + 1, len(text_columns), text_col)
+        t_col = time.time()
+        try:
+            two_col_df = result_df.select(doc_id_column, text_col).distinct()
+
+            detection_df = run_detection_pipeline(
+                spark=spark,
+                source_df=two_col_df,
+                doc_id_column=doc_id_column,
+                text_column=text_col,
+                use_presidio=config.use_presidio,
+                use_ai_query=config.use_ai_query,
+                use_gliner=config.use_gliner,
+                endpoint=config.endpoint,
+                score_threshold=config.score_threshold,
+                gliner_model=config.gliner_model,
+                gliner_threshold=config.gliner_threshold,
+                gliner_max_words=config.gliner_max_words,
+                num_cores=config.num_cores,
+                align_results=True,
+                fail_on_presidio_error=config.fail_on_presidio_error,
+                reasoning_effort=config.reasoning_effort,
+                presidio_model_size=config.presidio_model_size,
+                presidio_pattern_only=config.presidio_pattern_only,
+                ai_model_type=config.ai_model_type,
+                alignment_mode=config.alignment_mode,
+                fuzzy_threshold=config.fuzzy_threshold,
+                entity_filter=config.entity_filter,
+                row_count=cached_count,
+            )
+
+            entities_column = _get_entities_column(detection_df, use_aligned=True)
+            redacted_df = _apply_redaction(
+                detection_df, text_col, entities_column, config.redaction_strategy
+            )
+            redacted_col_name = f"{text_col}_redacted"
+            redacted_pair = redacted_df.select(
+                col(doc_id_column), col(redacted_col_name)
+            )
+
+            result_df = result_df.join(redacted_pair, on=doc_id_column, how="left")
+            logger.info("Column %s done [%.1fs]", text_col, time.time() - t_col)
+
+        except Exception:
+            logger.exception("Failed to process text column %s -- skipping", text_col)
+            failed_columns.append(text_col)
+
+    # --- Apply structured masking in one pass ---
+    if structured_columns:
+        logger.info("Applying structured masking to %d column(s)...", len(structured_columns))
+        result_df = apply_structured_masking(
+            result_df,
+            column_type_map=structured_columns,
+            strategy=masking_strategy,
+            redaction_strategy=config.redaction_strategy,
+            encryption_key=encryption_key,
+        )
+
+    # --- Select output columns ---
+    output_cols = [doc_id_column]
+    for tc in text_columns:
+        if tc not in failed_columns:
+            output_cols.append(f"{tc}_redacted")
+    for sc in structured_columns:
+        top_col = sc.split(".")[0]
+        if top_col not in output_cols:
+            output_cols.append(top_col)
+    for c in result_df.columns:
+        if c not in output_cols and c not in text_columns:
+            output_cols.append(c)
+
+    present = set(result_df.columns)
+    output_cols = [c for c in output_cols if c in present]
+    output_df = result_df.select(*output_cols)
+
+    # --- Write ---
+    if output_mode == "in_place":
+        for tc in text_columns:
+            if tc not in failed_columns:
+                _write_in_place(spark, result_df, source_table, doc_id_column, tc)
+        # Structured columns already replaced in the df; MERGE them too
+        if structured_columns:
+            struct_cols = [sc.split(".")[0] for sc in structured_columns]
+            for sc_top in set(struct_cols):
+                merge_cols = f"target.`{sc_top}` = source.`{sc_top}`"
+                merge_sql = (
+                    f"MERGE INTO {source_table} AS target "
+                    f"USING __run_table_redaction_struct AS source "
+                    f"ON target.`{doc_id_column}` = source.`{doc_id_column}` "
+                    f"WHEN MATCHED THEN UPDATE SET {merge_cols}"
+                )
+                result_df.select(doc_id_column, sc_top).createOrReplaceTempView(
+                    "__run_table_redaction_struct"
+                )
+                spark.sql(merge_sql)
+    else:
+        logger.info("Writing unified output to %s...", output_table)
+        output_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(output_table)
+
+    # --- Audit ---
+    if audit_table and text_columns:
+        detectors = []
+        if config.use_presidio:
+            detectors.append("presidio")
+        if config.use_ai_query:
+            detectors.append("ai_query")
+        if config.use_gliner:
+            detectors.append("gliner")
+        config_snap = json.dumps({
+            "text_columns": text_columns,
+            "structured_columns": structured_columns,
+            "masking_strategy": masking_strategy,
+            "redaction_strategy": config.redaction_strategy,
+        })
+        _write_audit_log(
+            spark, result_df, doc_id_column,
+            _get_entities_column(result_df, use_aligned=True) if "aligned_entities" in result_df.columns else None,
+            audit_table,
+            run_id=str(uuid.uuid4()),
+            config_snapshot=config_snap,
+            detectors_used=",".join(detectors),
+        )
+
+    source_df.unpersist()
+    t_end = time.time()
+    logger.info(
+        "Table redaction complete: %d text cols, %d struct cols, %d failed [%.1fs total]",
+        len(text_columns), len(structured_columns), len(failed_columns), t_end - t_start,
+    )
+    if failed_columns:
+        logger.warning("Failed columns: %s", failed_columns)
+
+    return output_df

@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from api.models.schemas import PipelineRunRequest, RunStatusResponse, JobHistoryItem
 from api.services.db import fetch_all, fetch_one, execute, _table, quote_table, validate_identifier, CATALOG, SCHEMA
@@ -64,9 +64,22 @@ async def run_pipeline(body: PipelineRunRequest):
         "confirm_destructive": "true" if is_in_place else "false",
         "allow_consensus_redaction": "true" if config.get("alignment_mode", "union") == "consensus" else "false",
         "audit_table": f"{CATALOG}.{SCHEMA}.redact_audit_log",
+        "redaction_scope": body.redaction_scope,
+        "masking_strategy": body.masking_strategy or "mask",
     }
+
+    if body.redaction_scope == "full_table":
+        notebook_params["redaction_scope"] = "all_tagged"
+        extra = {}
+        if body.text_columns:
+            extra["text_columns"] = body.text_columns
+        if body.structured_columns:
+            extra["structured_columns"] = body.structured_columns
+        if extra:
+            notebook_params["extra_params"] = json.dumps(extra)
+
     ep = config.get("extra_params")
-    if ep:
+    if ep and "extra_params" not in notebook_params:
         notebook_params["extra_params"] = json.dumps(ep) if not isinstance(ep, str) else ep
 
     run_id = trigger_pipeline_run(notebook_params, cluster_profile=body.cluster_profile)
@@ -214,6 +227,7 @@ _PROFILE_SPEED_FACTOR = {"fast": 1.4, "deep": 1.0, "custom": 1.0}
 async def cost_estimate(
     table: str,
     text_column: str = "text",
+    text_columns: Optional[str] = None,
     endpoint: str = "databricks-gpt-oss-120b",
     max_rows: int = 10000,
     cluster_profile: str = "cpu_small",
@@ -221,46 +235,138 @@ async def cost_estimate(
     use_ai_query: bool = True,
     detection_profile: str = "fast",
 ):
-    validate_identifier(text_column)
+    columns = [c.strip() for c in text_columns.split(",") if c.strip()] if text_columns else [text_column]
+    for c in columns:
+        validate_identifier(c)
     qualified = quote_table(table)
-    row = fetch_one(
-        f"SELECT sum(length(`{text_column}`)) as total_chars, count(*) as cnt "
-        f"FROM (SELECT `{text_column}` FROM {qualified} LIMIT {int(max_rows)})"
-    )
-    total_chars = int(row.get("total_chars") or 0) if row else 0
-    row_count = int(row.get("cnt") or 0) if row else 0
-
-    if use_ai_query:
-        input_chars = total_chars + (row_count * _COST_PROMPT_OVERHEAD)
-        input_tokens = int(input_chars * _COST_TOKENS_PER_CHAR)
-        output_tokens = int(input_tokens * _COST_OUTPUT_RATIO)
-        in_cost = _COST_INPUT.get(endpoint, 0.001)
-        out_cost = _COST_OUTPUT.get(endpoint, 0.002)
-        ai_query_cost = (input_tokens / 1000 * in_cost) + (output_tokens / 1000 * out_cost)
-    else:
-        input_tokens = 0
-        output_tokens = 0
-        ai_query_cost = 0.0
 
     speed_factor = _PROFILE_SPEED_FACTOR.get(detection_profile, 1.0)
     profile = COMPUTE_PROFILES.get(cluster_profile, COMPUTE_PROFILES["cpu_small"])
     effective_cpm = profile["chars_per_min"] * speed_factor
-    est_minutes = profile["startup"] + profile["overhead"] + total_chars / max(effective_cpm, 1)
+    in_cost = _COST_INPUT.get(endpoint, 0.001)
+    out_cost = _COST_OUTPUT.get(endpoint, 0.002)
+
+    per_column = []
+    agg_chars = 0
+    agg_ai_cost = 0.0
+    agg_input_tokens = 0
+    agg_output_tokens = 0
+    row_count = 0
+
+    for tc in columns:
+        row = fetch_one(
+            f"SELECT sum(length(`{tc}`)) as total_chars, count(*) as cnt "
+            f"FROM (SELECT `{tc}` FROM {qualified} LIMIT {int(max_rows)})"
+        )
+        chars = int(row.get("total_chars") or 0) if row else 0
+        cnt = int(row.get("cnt") or 0) if row else 0
+        row_count = max(row_count, cnt)
+        agg_chars += chars
+
+        if use_ai_query:
+            inp_chars = chars + (cnt * _COST_PROMPT_OVERHEAD)
+            inp_tok = int(inp_chars * _COST_TOKENS_PER_CHAR)
+            out_tok = int(inp_tok * _COST_OUTPUT_RATIO)
+            col_ai_cost = (inp_tok / 1000 * in_cost) + (out_tok / 1000 * out_cost)
+        else:
+            inp_tok = out_tok = 0
+            col_ai_cost = 0.0
+
+        col_minutes = chars / max(effective_cpm, 1)
+        agg_ai_cost += col_ai_cost
+        agg_input_tokens += inp_tok
+        agg_output_tokens += out_tok
+
+        per_column.append({
+            "column": tc,
+            "total_chars": chars,
+            "ai_query_cost_usd": round(col_ai_cost, 4),
+            "estimated_minutes": round(col_minutes, 1),
+        })
+
+    est_minutes = profile["startup"] + profile["overhead"] + agg_chars / max(effective_cpm, 1)
     compute_cost = profile["dbu_per_hr"] * (est_minutes / 60)
 
-    return {
+    result = {
         "row_count": row_count,
-        "total_chars": total_chars,
-        "estimated_input_tokens": input_tokens,
-        "estimated_output_tokens": output_tokens,
-        "ai_query_cost_usd": round(ai_query_cost, 4),
+        "total_chars": agg_chars,
+        "estimated_input_tokens": agg_input_tokens,
+        "estimated_output_tokens": agg_output_tokens,
+        "ai_query_cost_usd": round(agg_ai_cost, 4),
         "compute_cost_usd": round(compute_cost, 4),
-        "estimated_cost_usd": round(ai_query_cost + compute_cost, 4),
+        "estimated_cost_usd": round(agg_ai_cost + compute_cost, 4),
         "estimated_minutes": round(est_minutes, 1),
         "endpoint": endpoint,
         "cluster_profile": cluster_profile,
         "detection_profile": detection_profile,
         "use_ai_query": use_ai_query,
+    }
+    if len(columns) > 1:
+        result["per_column"] = per_column
+    return result
+
+
+@router.get("/discover-columns")
+async def discover_columns(table: str):
+    """Discover PII columns via UC tags for full-table redaction mode."""
+    qualified = quote_table(table)
+    cols = fetch_all(f"DESCRIBE TABLE {qualified}")
+    col_meta = {}
+    for c in cols:
+        name = c["col_name"]
+        if name.startswith("#"):
+            continue
+        col_meta[name] = {"type": c.get("data_type", ""), "tags": {}}
+
+    # Fetch all tags for this table
+    parts = table.split(".")
+    if len(parts) == 3:
+        tag_rows = fetch_all(
+            f"""SELECT column_name, tag_name, tag_value
+                FROM system.information_schema.column_tags
+                WHERE table_catalog = %(catalog)s
+                  AND table_schema = %(schema)s
+                  AND table_name = %(table)s""",
+            {"catalog": parts[0], "schema": parts[1], "table": parts[2]},
+        )
+        for row in tag_rows:
+            cn = row["column_name"]
+            if cn in col_meta:
+                col_meta[cn]["tags"][row["tag_name"]] = row["tag_value"]
+
+    text_columns = []
+    structured_columns = {}
+    untagged_columns = []
+    doc_id_candidates = []
+    warnings = []
+
+    for col_name, info in col_meta.items():
+        tags = info["tags"]
+        col_type = info["type"].upper()
+        is_protected = tags.get("data_classification") == "protected"
+        pii_type = tags.get("pii_type")
+
+        if is_protected:
+            if pii_type and pii_type != "free_text":
+                structured_columns[col_name] = pii_type
+            elif col_type == "STRING":
+                text_columns.append(col_name)
+            else:
+                warnings.append(
+                    f"Column '{col_name}' is tagged protected but has no pii_type "
+                    f"and is {col_type} type -- skipped"
+                )
+        else:
+            untagged_columns.append(col_name)
+            if col_name.endswith("_id") or col_name in ("id", "doc_id", "patient_id", "encounter_id"):
+                doc_id_candidates.append(col_name)
+
+    return {
+        "text_columns": text_columns,
+        "structured_columns": structured_columns,
+        "untagged_columns": untagged_columns,
+        "doc_id_candidates": doc_id_candidates,
+        "warnings": warnings,
     }
 
 

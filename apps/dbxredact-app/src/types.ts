@@ -40,6 +40,21 @@ export interface JobHistoryItem {
   completed_at?: string;
 }
 
+export interface ColumnDiscovery {
+  text_columns: string[];
+  structured_columns: Record<string, string>;
+  untagged_columns: string[];
+  doc_id_candidates: string[];
+  warnings: string[];
+}
+
+export interface CostEstimatePerColumn {
+  column: string;
+  total_chars: number;
+  ai_query_cost_usd: number;
+  estimated_minutes: number;
+}
+
 export interface ListEntry {
   entry_id: string;
   list_type: string;

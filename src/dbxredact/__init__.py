@@ -90,6 +90,13 @@ from .metadata import (
     get_columns_by_tag,
     get_protected_columns,
     get_table_metadata,
+    discover_pii_columns,
+)
+
+from .masking import (
+    apply_structured_masking,
+    MaskingStrategy,
+    MASKING_RULES,
 )
 
 from .active_learning import (
@@ -115,6 +122,7 @@ from .pipeline import (
     run_redaction_pipeline,
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
+    run_table_redaction,
     OutputStrategy,
     OutputMode,
     AlignmentMode,
@@ -187,6 +195,11 @@ __all__ = [
     "get_columns_by_tag",
     "get_protected_columns",
     "get_table_metadata",
+    "discover_pii_columns",
+    # Masking
+    "apply_structured_masking",
+    "MaskingStrategy",
+    "MASKING_RULES",
     # Active Learning
     "compute_document_uncertainty",
     "build_review_queue",
@@ -207,6 +220,7 @@ __all__ = [
     "run_redaction_pipeline",
     "run_redaction_pipeline_streaming",
     "run_redaction_pipeline_by_tag",
+    "run_table_redaction",
     "OutputStrategy",
     "OutputMode",
     "AlignmentMode",

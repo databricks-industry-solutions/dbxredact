@@ -41,8 +41,12 @@ class ConfigResponse(ConfigCreate):
 class PipelineRunRequest(BaseModel):
     config_id: str
     source_table: str
+    redaction_scope: Literal["single_column", "full_table"] = "single_column"
     text_column: str = "text"
     doc_id_column: str = "doc_id"
+    text_columns: Optional[List[str]] = None
+    structured_columns: Optional[Dict[str, str]] = None
+    masking_strategy: Optional[str] = "mask"
     output_table: Optional[str] = None
     max_rows: Optional[int] = Field(default=10000, le=1_000_000)
     max_cost_usd: Optional[float] = None
