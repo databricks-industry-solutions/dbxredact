@@ -4,11 +4,28 @@ from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 
 
+def _best_score(ent_alias: str = "ent") -> F.Column:
+    """Derive the best available score from presidio/gliner/ai score fields."""
+    return F.coalesce(
+        F.col(f"{ent_alias}.presidio_score"),
+        F.col(f"{ent_alias}.gliner_score"),
+        F.col(f"{ent_alias}.ai_score"),
+    )
+
+
+def _num_sources(ent_alias: str = "ent") -> F.Column:
+    """Count how many detectors contributed by checking non-null score fields."""
+    return (
+        F.when(F.col(f"{ent_alias}.presidio_score").isNotNull(), F.lit(1)).otherwise(F.lit(0))
+        + F.when(F.col(f"{ent_alias}.gliner_score").isNotNull(), F.lit(1)).otherwise(F.lit(0))
+        + F.when(F.col(f"{ent_alias}.ai_score").isNotNull(), F.lit(1)).otherwise(F.lit(0))
+    )
+
+
 def compute_document_uncertainty(
     detection_df: DataFrame,
     doc_id_column: str = "doc_id",
     entities_column: str = "aligned_entities",
-    score_field: str = "score",
 ) -> DataFrame:
     """Score each document by detection uncertainty.
 
@@ -20,11 +37,13 @@ def compute_document_uncertainty(
         F.explode_outer(F.col(entities_column)).alias("ent"),
     )
 
+    score_col = _best_score("ent")
+
     agg = exploded.groupBy(doc_id_column).agg(
-        F.avg(F.col(f"ent.{score_field}")).alias("avg_score"),
-        F.min(F.col(f"ent.{score_field}")).alias("min_score"),
+        F.avg(score_col).alias("avg_score"),
+        F.min(score_col).alias("min_score"),
         F.count(F.col("ent")).alias("entity_count"),
-        F.sum(F.when(F.col(f"ent.{score_field}") < 0.5, 1).otherwise(0)).alias("low_confidence_count"),
+        F.sum(F.when(score_col < 0.5, 1).otherwise(0)).alias("low_confidence_count"),
     )
 
     return agg.withColumn(
@@ -53,8 +72,9 @@ def compute_detector_disagreement(
 ) -> DataFrame:
     """Score documents by disagreement between detectors.
 
-    Looks at per-entity source counts. A document where entities are only
-    found by one detector gets a higher disagreement score.
+    Counts contributing detectors per entity via non-null score fields
+    (presidio_score, gliner_score, ai_score). Documents where entities
+    are only found by one detector get a higher disagreement score.
     """
     if "aligned_entities" not in detection_df.columns:
         raise ValueError("aligned_entities column required -- run alignment first")
@@ -66,7 +86,7 @@ def compute_detector_disagreement(
 
     per_entity = exploded.select(
         F.col(doc_id_column),
-        F.size(F.col("ent.sources")).alias("num_sources"),
+        _num_sources("ent").alias("num_sources"),
     )
 
     return per_entity.groupBy(doc_id_column).agg(

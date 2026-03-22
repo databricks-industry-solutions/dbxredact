@@ -601,6 +601,7 @@ def run_redaction_pipeline(
         _parse_table_name(output_table)
 
     _validate_identifier(doc_id_column, "doc_id_column")
+    _validate_identifier(text_column, "text_column")
 
     t_pipeline_start = time.time()
 

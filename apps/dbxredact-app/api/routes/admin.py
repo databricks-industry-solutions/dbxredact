@@ -112,12 +112,14 @@ async def audit_summary(
         params,
     )
     total_row = fetch_one(
-        f"SELECT count(DISTINCT doc_id) as total_docs, count(DISTINCT run_id) as total_runs "
+        f"SELECT count(DISTINCT doc_id) as total_docs, count(DISTINCT run_id) as total_runs, "
+        f"coalesce(sum(entity_count), 0) as total_entities "
         f"FROM {_table('redact_audit_log')} {where}",
         params,
     )
     return {
         "total_docs": int(total_row.get("total_docs", 0)) if total_row else 0,
         "total_runs": int(total_row.get("total_runs", 0)) if total_row else 0,
+        "total_entities": int(total_row.get("total_entities", 0)) if total_row else 0,
         "by_entity_type": summary,
     }
