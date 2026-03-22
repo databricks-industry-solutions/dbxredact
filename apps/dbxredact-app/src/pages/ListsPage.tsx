@@ -131,18 +131,20 @@ export default function ListsPage() {
       />
 
       <SuggestionsSection
-        onApprove={(val, listType) => {
-          apiPost(`/lists/${listType}`, { value: val, is_pattern: false, entity_type: null })
-            .then(() => { refetchBlock(); refetchSafe(); });
+        onApprove={async (val, listType) => {
+          await apiPost(`/lists/${listType}`, { value: val, is_pattern: false, entity_type: null });
+          refetchBlock(); refetchSafe();
+          toast(`Added to ${listType} list`);
         }}
       />
     </div>
   );
 }
 
-function SuggestionsSection({ onApprove }: { onApprove: (value: string, listType: "block" | "safe") => void }) {
+function SuggestionsSection({ onApprove }: { onApprove: (value: string, listType: "block" | "safe") => Promise<void> }) {
   const [sourceTable, setSourceTable] = useState<TableRef>(emptyTableRef);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+  const [approveError, setApproveError] = useState("");
 
   const hasTable = isComplete(sourceTable);
   const recsTable = `${toQualified(sourceTable)}_recommendations`;
@@ -164,6 +166,9 @@ function SuggestionsSection({ onApprove }: { onApprove: (value: string, listType
         <TablePicker value={sourceTable} onChange={(v) => { setSourceTable(v); setDismissed(new Set()); }} label="Benchmark Source Table" />
       </div>
       {loading && <p className="text-xs text-gray-400 animate-pulse">Loading suggestions...</p>}
+      {approveError && (
+        <div className="text-xs text-red-600 dark:text-red-400 mb-2">{approveError}</div>
+      )}
       {visible?.length ? (
         <div className="space-y-3">
           {suggestions!.map((s, i) => dismissed.has(i) ? null : (
@@ -174,9 +179,15 @@ function SuggestionsSection({ onApprove }: { onApprove: (value: string, listType
               </div>
               <div className="flex gap-2 shrink-0">
                 <button className="text-xs font-medium px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 hover:bg-red-100 transition-colors"
-                  onClick={() => { onApprove(s.action, "block"); setDismissed(prev => new Set(prev).add(i)); }}>Add to Block</button>
+                  onClick={async () => {
+                    try { await onApprove(s.action, "block"); setDismissed(prev => new Set(prev).add(i)); }
+                    catch (e) { setApproveError(e instanceof Error ? e.message : "Failed to add to block list"); }
+                  }}>Add to Block</button>
                 <button className="text-xs font-medium px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 transition-colors"
-                  onClick={() => { onApprove(s.action, "safe"); setDismissed(prev => new Set(prev).add(i)); }}>Add to Safe</button>
+                  onClick={async () => {
+                    try { await onApprove(s.action, "safe"); setDismissed(prev => new Set(prev).add(i)); }
+                    catch (e) { setApproveError(e instanceof Error ? e.message : "Failed to add to safe list"); }
+                  }}>Add to Safe</button>
                 <button className="text-xs font-medium px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 transition-colors"
                   onClick={() => setDismissed(prev => new Set(prev).add(i))}>Dismiss</button>
               </div>

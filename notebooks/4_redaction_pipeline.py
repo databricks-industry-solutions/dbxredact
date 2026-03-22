@@ -38,6 +38,7 @@
 
 # COMMAND ----------
 
+import json
 import os
 
 from dbxredact import (
@@ -225,6 +226,22 @@ dbutils.widgets.text(
     defaultValue="nvidia/gliner-PII",
     label="28. GLiNER Model Name",
 )
+dbutils.widgets.dropdown(
+    name="allow_consensus_redaction",
+    defaultValue="false",
+    choices=["true", "false"],
+    label="29. Allow Consensus Redaction (required for consensus alignment)",
+)
+dbutils.widgets.text(
+    name="audit_table",
+    defaultValue="",
+    label="30. Audit Table (optional, fully qualified)",
+)
+dbutils.widgets.text(
+    name="extra_params",
+    defaultValue="",
+    label="31. Extra Parameters (JSON, optional)",
+)
 
 # COMMAND ----------
 
@@ -274,6 +291,10 @@ presidio_pattern_only = dbutils.widgets.get("presidio_pattern_only") == "true"
 presidio_model_size = dbutils.widgets.get("presidio_model_size").strip() or None
 gliner_threshold = float(dbutils.widgets.get("gliner_threshold"))
 gliner_model = dbutils.widgets.get("gliner_model").strip()
+allow_consensus_redaction = dbutils.widgets.get("allow_consensus_redaction") == "true"
+audit_table = dbutils.widgets.get("audit_table").strip() or None
+_extra_params_raw = dbutils.widgets.get("extra_params").strip()
+extra_params = json.loads(_extra_params_raw) if _extra_params_raw else None
 
 # Profile overrides (fast/deep force specific settings; custom uses widget values as-is)
 if detection_profile == "fast":
@@ -327,6 +348,7 @@ config = RedactionConfig(
     presidio_model_size=presidio_model_size,
     presidio_pattern_only=presidio_pattern_only,
     entity_filter=entity_filter,
+    allow_consensus_redaction=allow_consensus_redaction,
 )
 
 if not any([use_presidio, use_ai_query, use_gliner]):
@@ -478,6 +500,7 @@ else:
             text_column=text_column,
             output_table=output_table,
             doc_id_column=doc_id_column,
+            audit_table=audit_table,
             config=config,
         )
 

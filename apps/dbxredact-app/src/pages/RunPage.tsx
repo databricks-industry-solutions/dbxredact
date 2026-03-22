@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useGet, apiPost } from "../hooks/useApi";
 import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
+import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
 import { useToast } from "../hooks/useToast";
 import type { Config, RunStatus, JobHistoryItem } from "../types";
@@ -42,6 +43,7 @@ export default function RunPage() {
   const [outputMode, setOutputMode] = useState<"separate" | "in_place">("separate");
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const [running, setRunning] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState("");
   const { toast } = useToast();
 
@@ -319,11 +321,22 @@ export default function RunPage() {
         )}
 
         <div className="col-span-2 pt-2">
-          <button className="btn-success" disabled={running || !configId || !hasTable} onClick={launch}>
+          <button className="btn-success" disabled={running || !configId || !hasTable}
+            onClick={() => outputMode === "in_place" ? setConfirmOpen(true) : launch()}>
             {running ? "Launching..." : "Run Pipeline"}
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        variant="danger"
+        title="Confirm In-Place Redaction"
+        message={`This will permanently overwrite the "${textCol}" column in ${qualified}. This cannot be undone.`}
+        confirmLabel="Redact In-Place"
+        onConfirm={() => { setConfirmOpen(false); launch(); }}
+        onCancel={() => setConfirmOpen(false)}
+      />
 
       {runStatus && (
         <div className={`status-banner mb-6 ${isRunning ? "status-running"

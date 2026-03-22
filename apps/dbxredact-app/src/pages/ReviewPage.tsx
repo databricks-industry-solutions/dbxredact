@@ -35,11 +35,11 @@ export default function ReviewPage() {
   const isSourceReady = isComplete(sourceTable);
   const isOutputReady = isComplete(outputTable);
 
-  const { data: historyData } = useGet<JobHistoryItem[]>("/pipeline/history", { enabled: !suggested });
+  const { data: historyData, error: historyError } = useGet<JobHistoryItem[]>("/pipeline/history", { enabled: !suggested });
 
   useEffect(() => {
     if (suggested || !historyData) return;
-    const completed = historyData.find((h) => h.status === "TERMINATED");
+    const completed = historyData.find((h) => h.status === "SUCCESS");
     if (completed) {
       const srcParts = completed.source_table.split(".");
       const outParts = completed.output_table.split(".");
@@ -78,11 +78,12 @@ export default function ReviewPage() {
     doc_id_column: docIdCol, limit: "1", offset: String(offset),
   }).toString();
 
-  const { data: compareData, loading } = useGet<CompareData>(
+  const { data: compareData, loading, error: compareError } = useGet<CompareData>(
     `/review/compare?${compareParams}`,
     { enabled: isSourceReady && isOutputReady, deps: [srcQualified, sourceCol, outQualified, outputCol, docIdCol, offset] },
   );
 
+  const displayError = error || compareError || historyError || "";
   const doc = compareData?.rows?.[0];
   const total = compareData?.total ?? 0;
   const sourceCols = sourceInfo?.columns ?? [];
@@ -90,7 +91,7 @@ export default function ReviewPage() {
 
   return (
     <div>
-      <ErrorBanner message={error} onDismiss={() => setError("")} />
+      <ErrorBanner message={displayError} onDismiss={() => setError("")} />
       <h2 className="page-title">Review Redaction Output</h2>
       <p className="page-desc">
         Compare original text side-by-side with the redacted output. Pick a source table and a redacted output table,

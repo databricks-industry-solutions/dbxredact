@@ -28,7 +28,7 @@ export default function MetricsPage() {
   };
 
   const detEnc = encodeURIComponent(tableMap.detection);
-  const { data: summary, loading: loadSum } = useGet<DetectionSummary>(
+  const { data: summary, loading: loadSum, error: summaryError } = useGet<DetectionSummary>(
     `/metrics/summary?output_table=${detEnc}`, { enabled: hasTable && tab === "detection", deps: [qualified] },
   );
   const { data: byType, loading: loadType } = useGet<EntityByType[]>(
@@ -42,16 +42,17 @@ export default function MetricsPage() {
   );
 
   const evalEnc = encodeURIComponent(tableMap.evaluation);
-  const { data: evalRows, loading: loadEval } = useGet<EvalRow[]>(
+  const { data: evalRows, loading: loadEval, error: evalError } = useGet<EvalRow[]>(
     `/metrics/evaluation?eval_table=${evalEnc}`, { enabled: hasTable && tab === "evaluation", deps: [qualified] },
   );
 
   const judgeEnc = encodeURIComponent(tableMap.judge);
-  const { data: judgeRows, loading: loadJudge } = useGet<JudgeRow[]>(
+  const { data: judgeRows, loading: loadJudge, error: judgeError } = useGet<JudgeRow[]>(
     `/metrics/judge?judge_table=${judgeEnc}`, { enabled: hasTable && tab === "judge", deps: [qualified] },
   );
 
   const [error, setError] = useState("");
+  const displayError = error || summaryError || evalError || judgeError || "";
 
   const detLoading = loadSum || loadType || loadConf || loadEx;
 
@@ -64,7 +65,7 @@ export default function MetricsPage() {
   return (
     <div>
       <h2 className="page-title">Metrics Dashboard</h2>
-      <ErrorBanner message={error} onDismiss={() => setError("")} />
+      <ErrorBanner message={displayError} onDismiss={() => setError("")} />
       <p className="page-desc">
         Pick the original source table (e.g. <code className="text-xs font-mono">jsl_benchmark</code>).
         All result tables are derived automatically with standard suffixes.
