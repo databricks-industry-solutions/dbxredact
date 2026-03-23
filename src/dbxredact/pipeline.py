@@ -293,10 +293,10 @@ def _write_audit_log(
                      "detection_status", "detectors_used", "config_snapshot", "created_at")
         )
 
-        audit_df.write.mode("append").saveAsTable(audit_table)
-        logger.info("Audit log: wrote %d rows to %s", audit_df.count(), audit_table)
+        audit_df.write.mode("append").option("mergeSchema", "true").saveAsTable(audit_table)
+        logger.info("Audit log: wrote to %s", audit_table)
     except Exception as e:
-        logger.warning("Audit log write failed (non-fatal): %s", type(e).__name__)
+        logger.warning("Audit log write failed (non-fatal): %s", e)
 
 
 def _select_output_columns(
