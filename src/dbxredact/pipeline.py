@@ -900,11 +900,12 @@ def run_redaction_pipeline_streaming(
             logger.warning(f"Presidio detection skipped - {error_msg}")
             use_presidio = False
 
-    # Read source as stream -- repartition once here, detectors skip their own
+    # Read source as stream -- natural Delta file partitioning controls parallelism.
+    # maxFilesPerTrigger caps both data volume and partition count per micro-batch.
     reader = spark.readStream
-    _mfpt = max_files_per_trigger if max_files_per_trigger is not None else 10
+    _mfpt = max_files_per_trigger if max_files_per_trigger is not None else 5
     reader = reader.option("maxFilesPerTrigger", _mfpt)
-    stream_df = reader.table(source_table).repartition(num_cores)
+    stream_df = reader.table(source_table)
 
     if use_presidio:
         from .presidio import make_presidio_batch_udf
@@ -1033,7 +1034,7 @@ def run_redaction_pipeline_streaming(
     _stream_logger = logging.getLogger("dbxredact.streaming")
 
     def _write_batch(batch_df, batch_id):
-        batch_df = batch_df.persist(StorageLevel.DISK_ONLY)
+        batch_df = batch_df.persist(StorageLevel.MEMORY_AND_DISK)
         try:
             no_entities = 0
             errors = 0
