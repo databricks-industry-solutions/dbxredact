@@ -7,6 +7,7 @@ import time
 import uuid
 from typing import Optional, Literal
 import pandas as pd
+from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.streaming import StreamingQuery
 from pyspark.sql.functions import col, array, lit, when, size, explode, count as spark_count, current_timestamp
@@ -901,8 +902,8 @@ def run_redaction_pipeline_streaming(
 
     # Read source as stream -- repartition once here, detectors skip their own
     reader = spark.readStream
-    if max_files_per_trigger is not None:
-        reader = reader.option("maxFilesPerTrigger", max_files_per_trigger)
+    _mfpt = max_files_per_trigger if max_files_per_trigger is not None else 10
+    reader = reader.option("maxFilesPerTrigger", _mfpt)
     stream_df = reader.table(source_table).repartition(num_cores)
 
     if use_presidio:
@@ -1032,47 +1033,53 @@ def run_redaction_pipeline_streaming(
     _stream_logger = logging.getLogger("dbxredact.streaming")
 
     def _write_batch(batch_df, batch_id):
-        if batch_df.isEmpty():
-            return
+        batch_df = batch_df.persist(StorageLevel.DISK_ONLY)
+        try:
+            no_entities = 0
+            errors = 0
+            total = 0
+            if "_detection_status" in batch_df.columns:
+                status_rows = batch_df.groupBy("_detection_status").count().collect()
+                status_counts = {r["_detection_status"]: r["count"] for r in status_rows}
+                total = sum(status_counts.values())
+                no_entities = status_counts.get("no_entities", 0)
+                errors = status_counts.get("detection_error", 0)
+            else:
+                total = batch_df.count()
 
-        total = batch_df.count()
-        no_entities = 0
-        errors = 0
-        if "_detection_status" in batch_df.columns:
-            status_counts = {
-                r["_detection_status"]: r["count"]
-                for r in batch_df.groupBy("_detection_status").count().collect()
-            }
-            no_entities = status_counts.get("no_entities", 0)
-            errors = status_counts.get("detection_error", 0)
-        _batch_stats.append({
-            "batch_id": batch_id, "total": total,
-            "no_entities": no_entities, "errors": errors,
-        })
-        if no_entities + errors > 0:
-            _stream_logger.warning(
-                "Batch %d: %d/%d docs with no entities, %d detection errors",
-                batch_id, no_entities, total, errors,
-            )
+            if total == 0:
+                return
 
-        view_name = f"_dbxredact_batch_{batch_id}"
-        batch_df.createOrReplaceTempView(view_name)
-        if _is_in_place:
-            _rcol = f"{_text_col}_redacted"
-            batch_df.sparkSession.sql(f"""
-                MERGE INTO {_merge_target} t
-                USING {view_name} s
-                ON t.`{_doc_id_col}` = s.`{_doc_id_col}`
-                WHEN MATCHED THEN UPDATE SET t.`{_text_col}` = s.`{_rcol}`
-            """)
-        else:
-            batch_df.sparkSession.sql(f"""
-                MERGE INTO {_merge_target} t
-                USING {view_name} s
-                ON t.`{_doc_id_col}` = s.`{_doc_id_col}`
-                WHEN MATCHED THEN UPDATE SET *
-                WHEN NOT MATCHED THEN INSERT *
-            """)
+            _batch_stats.append({
+                "batch_id": batch_id, "total": total,
+                "no_entities": no_entities, "errors": errors,
+            })
+            if no_entities + errors > 0:
+                _stream_logger.warning(
+                    "Batch %d: %d/%d docs with no entities, %d detection errors",
+                    batch_id, no_entities, total, errors,
+                )
+
+            view_name = f"_dbxredact_batch_{batch_id}"
+            batch_df.createOrReplaceTempView(view_name)
+            if _is_in_place:
+                _rcol = f"{_text_col}_redacted"
+                batch_df.sparkSession.sql(f"""
+                    MERGE INTO {_merge_target} t
+                    USING {view_name} s
+                    ON t.`{_doc_id_col}` = s.`{_doc_id_col}`
+                    WHEN MATCHED THEN UPDATE SET t.`{_text_col}` = s.`{_rcol}`
+                """)
+            else:
+                batch_df.sparkSession.sql(f"""
+                    MERGE INTO {_merge_target} t
+                    USING {view_name} s
+                    ON t.`{_doc_id_col}` = s.`{_doc_id_col}`
+                    WHEN MATCHED THEN UPDATE SET *
+                    WHEN NOT MATCHED THEN INSERT *
+                """)
+        finally:
+            batch_df.unpersist()
 
     def _log_streaming_summary():
         if not _batch_stats:
