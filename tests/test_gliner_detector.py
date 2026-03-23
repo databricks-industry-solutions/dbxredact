@@ -52,22 +52,34 @@ class TestBuildOffsetMap:
     def test_simple_text(self):
         mapping = _build_offset_map("hello world")
         assert len(mapping) == 11
+        assert mapping[0] == 0   # 'h'
+        assert mapping[5] == 5   # ' '
+        assert mapping[6] == 6   # 'w'
 
     def test_leading_trailing_whitespace(self):
+        # "  hello  " normalizes to "hello" (len 5)
         mapping = _build_offset_map("  hello  ")
         assert len(mapping) == 5
+        assert mapping[0] == 2   # 'h' at original pos 2
+        assert mapping[4] == 6   # 'o' at original pos 6
 
     def test_collapsed_interior_whitespace(self):
+        # "a  b" normalizes to "a b" (len 3)
         mapping = _build_offset_map("a  b")
         assert len(mapping) == 3
+        assert mapping[0] == 0   # 'a' at original pos 0
+        assert mapping[1] == 1   # ' ' maps to first space at original pos 1
+        assert mapping[2] == 3   # 'b' at original pos 3
 
     def test_empty_string(self):
-        mapping = _build_offset_map("")
-        assert mapping == []
+        assert _build_offset_map("") == []
 
     def test_tabs_and_newlines(self):
+        # "a\t\nb" normalizes to "a b" (len 3)
         mapping = _build_offset_map("a\t\nb")
         assert len(mapping) == 3
+        assert mapping[0] == 0   # 'a'
+        assert mapping[2] == 3   # 'b'
 
 
 class TestChunkAndPredict:
@@ -120,7 +132,12 @@ class TestChunkAndPredict:
                 return []
 
         result = _chunk_and_predict(MockModel(), text, ["person"], 0.5)
-        assert len(result) >= 1
+        assert len(result) >= 2
+        starts = sorted(e["start"] for e in result)
+        assert starts[0] == 0
+        assert starts[-1] > 0, "Later chunks should produce offset-adjusted entities"
+        for e in result:
+            assert e["end"] - e["start"] == 4
 
 
 class TestMapLabel:

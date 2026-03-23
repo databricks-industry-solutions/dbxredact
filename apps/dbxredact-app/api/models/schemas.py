@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -13,9 +13,9 @@ class ConfigCreate(BaseModel):
     use_ai_query: bool = True
     use_gliner: bool = False
     endpoint: str = "databricks-gpt-oss-120b"
-    score_threshold: float = 0.5
+    score_threshold: float = Field(0.5, ge=0.1, le=1.0)
     gliner_model: str = "nvidia/gliner-PII"
-    gliner_threshold: float = 0.2
+    gliner_threshold: float = Field(0.2, ge=0.05, le=1.0)
     redaction_strategy: str = "typed"
     alignment_mode: str = "union"
     reasoning_effort: Optional[str] = "low"
@@ -48,6 +48,7 @@ class PipelineRunRequest(BaseModel):
     max_cost_usd: Optional[float] = None
     cluster_profile: str = "cpu_small"
     refresh_approach: str = "full"
+    output_mode: Literal["separate", "in_place"] = "separate"
 
 
 class RunStatusResponse(BaseModel):
@@ -68,6 +69,8 @@ class JobHistoryItem(BaseModel):
     cost_estimate_usd: Optional[float] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
+    run_page_url: Optional[str] = None
+    job_type: Optional[str] = None
 
 
 class AnnotationCreate(BaseModel):
@@ -159,3 +162,16 @@ class ActiveLearnStats(BaseModel):
     pending: int
     skipped: int
     avg_priority: Optional[float] = None
+
+
+class LabelCreate(BaseModel):
+    entity_text: str
+    entity_type: str
+    start: int = Field(ge=0)
+    end_pos: int = Field(ge=0)
+
+
+class BatchLabelRequest(BaseModel):
+    doc_id: str
+    source_table: str
+    labels: List[LabelCreate]

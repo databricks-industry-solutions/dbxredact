@@ -132,7 +132,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -167,7 +167,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -202,7 +202,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -237,7 +237,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -272,7 +272,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -307,7 +307,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"

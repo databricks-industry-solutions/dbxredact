@@ -16,6 +16,7 @@ from dbxredact.alignment import (
     _merge_overlapping_spans,
 )
 from dbxredact.config import EXACT_MATCH_SCORE, OVERLAP_MATCH_SCORE
+from dbxredact.redaction import redact_text
 
 
 class TestEntityNormalization:
@@ -424,3 +425,116 @@ class TestMergeOverlappingSpans:
         assert "[LOCATION]" in result
         assert result.replace("[LOCATION]", "").find("N]") == -1
         assert result.count("[LOCATION]") == 1
+
+
+class TestAlignmentStress:
+    """Tests exercising alignment beyond trivial 1-2 entity cases."""
+
+    def test_same_text_different_positions_stay_separate(self):
+        """'John' at position 0 and 'John' at position 50 should remain two
+        separate entities, not merged into one."""
+        aligner = MultiSourceAligner()
+        presidio_entities = [
+            {"entity": "John", "start": 0, "end": 4, "entity_type": "PERSON", "score": 0.9},
+            {"entity": "John", "start": 50, "end": 54, "entity_type": "PERSON", "score": 0.8},
+        ]
+        result = aligner.align(
+            doc_id="d1",
+            presidio_entities=presidio_entities,
+            ai_entities=None,
+            gliner_entities=None,
+        )
+        assert len(result) == 2
+        starts = {r["start"] for r in result}
+        assert starts == {0, 50}
+
+    def test_multi_source_five_entities(self):
+        """Five entities from two sources -- verify all are present and matched
+        correctly where positions overlap."""
+        aligner = MultiSourceAligner()
+        presidio_entities = [
+            {"entity": "John Smith", "start": 0, "end": 10, "entity_type": "PERSON", "score": 0.95},
+            {"entity": "test@email.com", "start": 25, "end": 39, "entity_type": "EMAIL_ADDRESS", "score": 0.99},
+            {"entity": "123-45-6789", "start": 50, "end": 61, "entity_type": "US_SSN", "score": 0.92},
+        ]
+        ai_entities = [
+            {"entity": "John Smith", "start": 0, "end": 10, "entity_type": "PERSON"},
+            {"entity": "test@email.com", "start": 25, "end": 39, "entity_type": "EMAIL_ADDRESS"},
+            {"entity": "123-45-6789", "start": 50, "end": 61, "entity_type": "US_SSN"},
+            {"entity": "San Francisco", "start": 70, "end": 83, "entity_type": "LOCATION"},
+            {"entity": "2024-01-15", "start": 90, "end": 100, "entity_type": "DATE_TIME"},
+        ]
+        result = aligner.align(
+            doc_id="d1",
+            presidio_entities=presidio_entities,
+            ai_entities=ai_entities,
+            gliner_entities=None,
+        )
+        entity_texts = {r["entity"] for r in result}
+        assert "John Smith" in entity_texts
+        assert "test@email.com" in entity_texts
+        assert "123-45-6789" in entity_texts
+        assert "San Francisco" in entity_texts
+        assert "2024-01-15" in entity_texts
+        assert len(result) == 5
+
+    def test_near_overlap_does_not_spuriously_merge(self):
+        """Two entities close together but not overlapping should not merge."""
+        aligner = MultiSourceAligner()
+        presidio_entities = [
+            {"entity": "John", "start": 0, "end": 4, "entity_type": "PERSON", "score": 0.9},
+        ]
+        ai_entities = [
+            {"entity": "Smith", "start": 5, "end": 10, "entity_type": "PERSON"},
+        ]
+        result = aligner.align(
+            doc_id="d1",
+            presidio_entities=presidio_entities,
+            ai_entities=ai_entities,
+            gliner_entities=None,
+        )
+        assert len(result) == 2
+        texts = {r["entity"] for r in result}
+        assert texts == {"John", "Smith"}
+
+
+class TestSchemaContract:
+    """End-to-end: entities in the format produced by format_entity_response_object_udf
+    must flow through alignment and into redact_text without key mismatches."""
+
+    def test_detection_to_alignment_to_redaction(self):
+        text = "Patient John Smith (SSN: 123-45-6789) visited Dr. Jones."
+
+        ai_detection_output = [
+            {"entity": "John Smith", "entity_type": "PERSON", "score": 0.85,
+             "start": 8, "end": 18, "doc_id": None},
+            {"entity": "123-45-6789", "entity_type": "US_SSN", "score": 0.85,
+             "start": 25, "end": 36, "doc_id": None},
+        ]
+        presidio_detection_output = [
+            {"entity": "John Smith", "entity_type": "PERSON", "score": 0.95,
+             "start": 8, "end": 18},
+            {"entity": "123-45-6789", "entity_type": "US_SSN", "score": 0.99,
+             "start": 25, "end": 36},
+            {"entity": "Dr. Jones", "entity_type": "PERSON", "score": 0.7,
+             "start": 46, "end": 55},
+        ]
+
+        aligned = align_entities_multi_source(
+            presidio_entities=presidio_detection_output,
+            ai_entities=ai_detection_output,
+            gliner_entities=None,
+            doc_id="d1",
+        )
+
+        assert len(aligned) >= 3
+        for ent in aligned:
+            assert "start" in ent
+            assert "end" in ent
+            assert "entity_type" in ent
+
+        result = redact_text(text, aligned, strategy="typed")
+        assert "John Smith" not in result
+        assert "123-45-6789" not in result
+        assert "[PERSON]" in result
+        assert "[US_SSN]" in result

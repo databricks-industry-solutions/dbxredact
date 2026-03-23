@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Literal
 logger = logging.getLogger(__name__)
 import pandas as pd
 import numpy as np
-from pyspark.sql import DataFrame
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import col, contains, asc_nulls_last, struct, lower
 
 _SAFE_METRIC_NAME = re.compile(r"^[a-zA-Z0-9_]+$")
@@ -693,3 +693,37 @@ def diagnose_strict_failures(
         )
         pdf = pdf.head(max_results)
     return pdf
+
+
+def build_ground_truth_from_labels(
+    spark: SparkSession,
+    label_table: str,
+    source_table: str,
+    text_column: str = "text",
+    doc_id_column: str = "doc_id",
+) -> DataFrame:
+    """Convert labels in ``redact_ground_truths`` format into the schema
+    expected by :func:`evaluate_detection`.
+
+    The label table has columns ``entity_text, start, end_pos`` whereas
+    ``evaluate_detection`` expects ``chunk, begin, end``.  This function
+    renames the columns and joins with the source table to carry ``text``
+    forward (needed for corpus-level token counts).
+
+    Returns:
+        DataFrame with columns ``doc_id, text, chunk, begin, end`` (plus
+        ``entity_type`` if present).
+    """
+    labels = (
+        spark.table(label_table)
+        .filter(col("source_table") == source_table)
+        .withColumnRenamed("entity_text", "chunk")
+        .withColumnRenamed("start", "begin")
+        .withColumnRenamed("end_pos", "end")
+        .select("doc_id", "chunk", "begin", "end", "entity_type")
+    )
+    src = spark.table(source_table).select(
+        col(doc_id_column).cast("string").alias("doc_id"),
+        col(text_column).alias("text"),
+    )
+    return labels.join(src, on="doc_id", how="left")

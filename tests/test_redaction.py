@@ -1,8 +1,19 @@
 """Unit tests for redaction functions."""
 
+import sys
+from unittest.mock import MagicMock
+
+_pyspark_mods = [
+    "pyspark", "pyspark.sql", "pyspark.sql.functions", "pyspark.sql.types",
+    "pyspark.sql.streaming",
+]
+for _mod in _pyspark_mods:
+    if _mod not in sys.modules:
+        sys.modules[_mod] = MagicMock()
+
 import pytest
 
-from dbxredact.redaction import redact_text
+from dbxredact.redaction import redact_text, _safe_entity_list
 
 
 class TestRedactText:
@@ -114,3 +125,79 @@ class TestRedactText:
 
         # Should use REDACTED as default type
         assert "[REDACTED]" in result
+
+    def test_overlapping_spans_both_redacted(self):
+        """Overlapping spans should be merged so all PII is covered."""
+        text = "John Smith lives here"
+        entities = [
+            {"start": 0, "end": 4, "entity_type": "FIRST_NAME"},
+            {"start": 0, "end": 10, "entity_type": "PERSON"},
+        ]
+        result = redact_text(text, entities, strategy="generic")
+        assert "John" not in result
+        assert "Smith" not in result
+        assert result.count("[REDACTED]") == 1
+
+    def test_adjacent_spans_merged(self):
+        """Adjacent/touching spans should be merged into one redaction."""
+        text = "AB CD EF"
+        entities = [
+            {"start": 0, "end": 2, "entity_type": "X"},
+            {"start": 2, "end": 5, "entity_type": "Y"},
+        ]
+        result = redact_text(text, entities, strategy="generic")
+        assert result.count("[REDACTED]") == 1
+
+    def test_bounds_clamping_end_beyond_text(self):
+        """Entity end beyond text length should be clamped, not error."""
+        text = "Hello"
+        entities = [{"start": 0, "end": 999, "entity_type": "PERSON"}]
+        result = redact_text(text, entities, strategy="generic")
+        assert result == "[REDACTED]"
+
+    def test_bounds_clamping_negative_start(self):
+        """Negative start should be clamped to 0."""
+        text = "Alice here"
+        entities = [{"start": -5, "end": 5, "entity_type": "PERSON"}]
+        result = redact_text(text, entities, strategy="generic")
+        assert result == "[REDACTED] here"
+
+    def test_zero_length_span_skipped(self):
+        """Span with start >= end after clamping should be silently skipped."""
+        text = "Hello world"
+        entities = [{"start": 5, "end": 5, "entity_type": "X"}]
+        result = redact_text(text, entities, strategy="generic")
+        assert result == "Hello world"
+
+
+class TestSafeEntityList:
+    """_safe_entity_list converts UDF inputs to list-of-dicts. A bug here
+    means redaction silently does nothing (PII leaks)."""
+
+    def test_none_returns_empty(self):
+        assert _safe_entity_list(None) == []
+
+    def test_empty_list_returns_empty(self):
+        assert _safe_entity_list([]) == []
+
+    def test_dict_list_passthrough(self):
+        entities = [{"entity": "John", "start": 0, "end": 4}]
+        result = _safe_entity_list(entities)
+        assert result == entities
+
+    def test_mock_row_converted_to_dict(self):
+        class FakeRow:
+            def asDict(self):
+                return {"entity": "Alice", "start": 0, "end": 5}
+        result = _safe_entity_list([FakeRow()])
+        assert len(result) == 1
+        assert result[0] == {"entity": "Alice", "start": 0, "end": 5}
+
+    def test_non_iterable_returns_empty(self):
+        assert _safe_entity_list(42) == []
+
+    def test_tuple_of_dicts_converted(self):
+        entities = ({"entity": "X", "start": 0, "end": 1},)
+        result = _safe_entity_list(entities)
+        assert len(result) == 1
+        assert result[0]["entity"] == "X"

@@ -2,6 +2,7 @@
 
 import logging
 import pytest
+from unittest.mock import MagicMock
 
 from dbxredact.cost import (
     TOKENS_PER_CHAR,
@@ -9,6 +10,7 @@ from dbxredact.cost import (
     COST_PER_1K_OUTPUT_TOKENS,
     PROMPT_OVERHEAD_CHARS,
     ESTIMATED_OUTPUT_RATIO,
+    estimate_ai_query_cost,
     print_cost_estimate,
 )
 
@@ -56,30 +58,85 @@ class TestPrintCostEstimate:
 
 
 class TestCostMath:
-    """Verify the math that estimate_ai_query_cost would do, without Spark."""
+    """Verify cost math against hand-computed expected values.
 
-    def _compute(self, total_chars, row_count, endpoint, overhead=PROMPT_OVERHEAD_CHARS, ratio=ESTIMATED_OUTPUT_RATIO):
-        input_chars = total_chars + (row_count * overhead)
+    Formula: input_chars = total_chars + row_count * OVERHEAD
+             input_tokens = int(input_chars * 0.25)
+             output_tokens = int(input_tokens * 0.3)
+             cost = input_tokens/1000 * input_rate + output_tokens/1000 * output_rate
+    """
+
+    def test_gpt4o_mini_10rows_10k_chars(self):
+        # input_chars = 10000 + 10*5500 = 65000
+        # input_tokens = int(65000 * 0.25) = 16250
+        # output_tokens = int(16250 * 0.3) = 4875
+        # cost = 16.25*0.00015 + 4.875*0.0006 = 0.0024375 + 0.002925 = 0.0053625
+        assert TOKENS_PER_CHAR == 0.25
+        assert COST_PER_1K_INPUT_TOKENS["databricks-gpt-4o-mini"] == 0.00015
+        assert COST_PER_1K_OUTPUT_TOKENS["databricks-gpt-4o-mini"] == 0.0006
+        input_chars = 10000 + 10 * PROMPT_OVERHEAD_CHARS
         input_tokens = int(input_chars * TOKENS_PER_CHAR)
-        output_tokens = int(input_tokens * ratio)
-        input_cost_per_1k = COST_PER_1K_INPUT_TOKENS.get(endpoint, 0.001)
-        output_cost_per_1k = COST_PER_1K_OUTPUT_TOKENS.get(endpoint, 0.002)
-        cost = (input_tokens / 1000 * input_cost_per_1k) + (output_tokens / 1000 * output_cost_per_1k)
-        return round(cost, 4)
+        assert input_tokens == 16250
+        output_tokens = int(input_tokens * ESTIMATED_OUTPUT_RATIO)
+        assert output_tokens == 4875
 
-    def test_known_endpoint(self):
-        cost = self._compute(total_chars=10000, row_count=10, endpoint="databricks-gpt-4o-mini")
-        assert cost > 0
+    def test_zero_chars_overhead_still_produces_cost(self):
+        # With 10 rows and 0 chars, overhead alone = 55000 chars -> 13750 tokens
+        input_tokens = int(10 * PROMPT_OVERHEAD_CHARS * TOKENS_PER_CHAR)
+        assert input_tokens == 13750
+        output_tokens = int(input_tokens * ESTIMATED_OUTPUT_RATIO)
+        assert output_tokens == 4125
+
+    def test_cost_scales_linearly_with_rows(self):
+        # 1 row vs 100 rows with 0 chars: cost should scale ~100x
+        one_row_tokens = int(1 * PROMPT_OVERHEAD_CHARS * TOKENS_PER_CHAR)
+        hundred_row_tokens = int(100 * PROMPT_OVERHEAD_CHARS * TOKENS_PER_CHAR)
+        assert hundred_row_tokens == 100 * one_row_tokens
+
+
+class TestEstimateAiQueryCost:
+    """Call the real estimate_ai_query_cost with a mocked DataFrame."""
+
+    @staticmethod
+    def _mock_df(total_chars, row_count):
+        mock_row = {"total_chars": total_chars, "row_count": row_count}
+        df = MagicMock()
+        df.select.return_value.first.return_value = mock_row
+        return df
+
+    @pytest.fixture(autouse=True)
+    def _patch_spark_fns(self):
+        """Patch pyspark column-builder functions that need an active SparkContext."""
+        from unittest.mock import patch
+        with patch("dbxredact.cost.col", return_value=MagicMock()), \
+             patch("dbxredact.cost.length", return_value=MagicMock()), \
+             patch("dbxredact.cost.spark_sum", return_value=MagicMock()), \
+             patch("dbxredact.cost.spark_count", return_value=MagicMock()):
+            yield
+
+    def test_basic_cost_calculation(self):
+        df = self._mock_df(total_chars=10000, row_count=10)
+        result = estimate_ai_query_cost(df, "text", "databricks-gpt-4o-mini")
+        assert result["row_count"] == 10
+        assert result["total_chars"] == 10000
+        assert result["estimated_input_tokens"] == 16250
+        assert result["estimated_output_tokens"] == 4875
+        assert result["estimated_cost_usd"] > 0
+        assert result["endpoint"] == "databricks-gpt-4o-mini"
+
+    def test_zero_chars(self):
+        df = self._mock_df(total_chars=0, row_count=5)
+        result = estimate_ai_query_cost(df, "text", "databricks-gpt-4o-mini")
+        assert result["total_chars"] == 0
+        assert result["estimated_input_tokens"] > 0
 
     def test_unknown_endpoint_uses_defaults(self):
-        cost = self._compute(total_chars=10000, row_count=10, endpoint="unknown-endpoint")
-        assert cost > 0
+        df = self._mock_df(total_chars=1000, row_count=1)
+        result = estimate_ai_query_cost(df, "text", "unknown-endpoint")
+        assert result["estimated_cost_usd"] > 0
 
-    def test_zero_chars_still_has_overhead(self):
-        cost = self._compute(total_chars=0, row_count=10, endpoint="databricks-gpt-4o-mini")
-        assert cost > 0
-
-    def test_scales_with_rows(self):
-        small = self._compute(total_chars=1000, row_count=10, endpoint="databricks-gpt-4o-mini")
-        large = self._compute(total_chars=1000, row_count=1000, endpoint="databricks-gpt-4o-mini")
-        assert large > small
+    def test_none_total_chars_treated_as_zero(self):
+        df = self._mock_df(total_chars=None, row_count=1)
+        result = estimate_ai_query_cost(df, "text", "databricks-gpt-4o-mini")
+        assert result["total_chars"] == 0
+        assert result["estimated_input_tokens"] > 0

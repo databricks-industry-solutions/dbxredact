@@ -205,6 +205,7 @@ elif confirm "Grant UC permissions to app service principal '${APP_NAME}' for ${
             "GRANT MODIFY ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
         )
 
+        GRANT_FAILED=false
         for STMT in "${GRANT_STATEMENTS[@]}"; do
             echo "  Running: ${STMT}"
             RESULT=$(databricks api post /api/2.0/sql/statements \
@@ -214,11 +215,19 @@ elif confirm "Grant UC permissions to app service principal '${APP_NAME}' for ${
                 echo "    OK"
             else
                 echo "    FAILED (status: ${STATUS})"
-                echo "    Response: ${RESULT}"
-                exit 1
+                GRANT_FAILED=true
             fi
         done
-        echo "All grants applied successfully."
+        if [ "${GRANT_FAILED}" = true ]; then
+            echo ""
+            echo "WARNING: Some UC grants failed. This is common when your user does not"
+            echo "have permission to grant USE CATALOG or manage schema-level grants."
+            echo "The deployment will continue. You or a catalog admin can apply the"
+            echo "missing grants manually later. The app needs these permissions to"
+            echo "read/write tables in ${CATALOG}.${SCHEMA}."
+        else
+            echo "All grants applied successfully."
+        fi
     fi
 fi
 

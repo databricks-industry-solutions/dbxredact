@@ -1,14 +1,17 @@
 """Benchmark job triggering routes."""
 
 import logging
+from typing import List, Optional
 from pydantic import BaseModel
-from typing import Optional
 from fastapi import APIRouter, HTTPException
-from api.services.jobs import trigger_benchmark_run, get_run_status
-from api.services.db import fetch_one, _table
+from api.models.schemas import JobHistoryItem
+from api.services.jobs import trigger_benchmark_run, get_run_status, cancel_run
+from api.services.db import fetch_all, fetch_one, execute, _table
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+TERMINAL_STATES = {"TERMINATED", "SKIPPED", "INTERNAL_ERROR"}
 
 
 class BenchmarkRequest(BaseModel):
@@ -56,9 +59,75 @@ async def run_benchmark(body: BenchmarkRequest):
 
     logger.info("Benchmark job_parameters: %s", params)
     run_id = trigger_benchmark_run(params or None)
-    return get_run_status(run_id)
+    status = get_run_status(run_id)
+
+    output_table = f"{body.source_table}_detection_results" if body.source_table else ""
+    execute(
+        f"""INSERT INTO {_table('redact_job_history')}
+        (run_id, config_id, source_table, output_table, status, started_at, run_page_url, job_type)
+        VALUES (%(run_id)s, %(config_id)s, %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp(), %(url)s, 'benchmark')""",
+        {"run_id": run_id, "config_id": body.config_id or "",
+         "source_table": body.source_table or "", "output_table": output_table,
+         "url": status.get("run_page_url")},
+    )
+
+    return status
 
 
 @router.get("/status/{run_id}")
 async def benchmark_status(run_id: int):
-    return get_run_status(run_id)
+    status = get_run_status(run_id)
+    if status.get("state") in TERMINAL_STATES:
+        result_val = status.get("result_state", "") or status.get("state", "")
+        execute(
+            f"""UPDATE {_table('redact_job_history')}
+            SET status = %(status)s, completed_at = current_timestamp(),
+                run_page_url = COALESCE(run_page_url, %(url)s)
+            WHERE run_id = %(run_id)s AND completed_at IS NULL""",
+            {"run_id": run_id, "status": result_val, "url": status.get("run_page_url")},
+        )
+    return status
+
+
+@router.post("/cancel/{run_id}", status_code=204)
+async def cancel_benchmark(run_id: int):
+    cancel_run(run_id)
+    execute(
+        f"UPDATE {_table('redact_job_history')} SET status='CANCELLED', completed_at=current_timestamp() WHERE run_id = %(run_id)s",
+        {"run_id": run_id},
+    )
+
+
+@router.get("/history", response_model=List[JobHistoryItem])
+async def benchmark_history(limit: int = 50, offset: int = 0):
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
+    rows = fetch_all(
+        f"""SELECT * FROM {_table('redact_job_history')}
+        WHERE job_type = 'benchmark'
+        ORDER BY started_at DESC LIMIT %(limit)s OFFSET %(offset)s""",
+        {"limit": limit, "offset": offset},
+    )
+    for row in rows:
+        if row.get("status") != "RUNNING":
+            continue
+        try:
+            live = get_run_status(int(row["run_id"]))
+            state = live.get("state", "")
+            if state not in TERMINAL_STATES:
+                if live.get("run_page_url") and not row.get("run_page_url"):
+                    row["run_page_url"] = live["run_page_url"]
+                continue
+            result = live.get("result_state", "") or state
+            row["status"] = result
+            row["run_page_url"] = row.get("run_page_url") or live.get("run_page_url")
+            execute(
+                f"""UPDATE {_table('redact_job_history')}
+                SET status = %(status)s, completed_at = current_timestamp(),
+                    run_page_url = COALESCE(run_page_url, %(url)s)
+                WHERE run_id = %(run_id)s AND completed_at IS NULL""",
+                {"run_id": row["run_id"], "status": result, "url": live.get("run_page_url")},
+            )
+        except Exception as exc:
+            logger.warning("Failed to reconcile benchmark run %s: %s", row.get("run_id"), exc)
+    return rows

@@ -1,5 +1,6 @@
 """Pipeline job triggering and status routes."""
 
+import json
 import logging
 from typing import List
 from fastapi import APIRouter, HTTPException
@@ -20,7 +21,8 @@ async def run_pipeline(body: PipelineRunRequest):
     if not config:
         raise HTTPException(404, "Config not found")
 
-    output_table = body.output_table or f"{body.source_table}_redacted"
+    is_in_place = body.output_mode == "in_place"
+    output_table = "" if is_in_place else (body.output_table or f"{body.source_table}_redacted")
     # Pre-run cost guardrail
     if body.max_cost_usd is not None and str(config.get("use_ai_query", "false")).lower() == "true":
         est = await cost_estimate(
@@ -41,32 +43,46 @@ async def run_pipeline(body: PipelineRunRequest):
         "doc_id_column": body.doc_id_column,
         "output_table": output_table,
         "detection_profile": config.get("detection_profile", "fast"),
-        "use_presidio": str(config.get("use_presidio", True)),
-        "use_ai_query": str(config.get("use_ai_query", True)),
-        "use_gliner": str(config.get("use_gliner", False)),
+        "use_presidio": str(config.get("use_presidio", True)).lower(),
+        "use_ai_query": str(config.get("use_ai_query", True)).lower(),
+        "use_gliner": str(config.get("use_gliner", False)).lower(),
         "endpoint": config.get("endpoint", ""),
         "score_threshold": str(config.get("score_threshold", 0.5)),
         "redaction_strategy": config.get("redaction_strategy", "typed"),
+        "alignment_mode": config.get("alignment_mode", "union"),
         "reasoning_effort": config.get("reasoning_effort", "low"),
+        "gliner_model": config.get("gliner_model", "nvidia/gliner-PII"),
         "gliner_max_words": str(config.get("gliner_max_words", 256)),
+        "gliner_threshold": str(config.get("gliner_threshold", 0.2)),
         "presidio_model_size": config.get("presidio_model_size", "trf"),
-        "presidio_pattern_only": str(config.get("presidio_pattern_only", "false")).lower(),
+        "presidio_pattern_only": str(config.get("presidio_pattern_only", False)).lower(),
         "max_rows": str(body.max_rows or 10000),
+        "refresh_approach": body.refresh_approach,
         "safe_list_table": f"{CATALOG}.{SCHEMA}.redact_safe_list",
         "block_list_table": f"{CATALOG}.{SCHEMA}.redact_block_list",
+        "output_mode": body.output_mode,
+        "confirm_destructive": "true" if is_in_place else "false",
+        "allow_consensus_redaction": "true" if config.get("alignment_mode", "union") == "consensus" else "false",
+        "audit_table": f"{CATALOG}.{SCHEMA}.redact_audit_log",
     }
+    ep = config.get("extra_params")
+    if ep:
+        notebook_params["extra_params"] = json.dumps(ep) if not isinstance(ep, str) else ep
 
     run_id = trigger_pipeline_run(notebook_params, cluster_profile=body.cluster_profile)
+    status = get_run_status(run_id)
 
+    history_output = f"{body.source_table} (in-place)" if is_in_place else output_table
     execute(
         f"""INSERT INTO {_table('redact_job_history')}
-        (run_id, config_id, source_table, output_table, status, started_at)
-        VALUES (%(run_id)s, %(config_id)s, %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp())""",
+        (run_id, config_id, source_table, output_table, status, started_at, run_page_url, job_type)
+        VALUES (%(run_id)s, %(config_id)s, %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp(), %(url)s, 'pipeline')""",
         {"run_id": run_id, "config_id": body.config_id,
-         "source_table": body.source_table, "output_table": output_table},
+         "source_table": body.source_table, "output_table": history_output,
+         "url": status.get("run_page_url")},
     )
 
-    return get_run_status(run_id)
+    return status
 
 
 TERMINAL_STATES = {"TERMINATED", "SKIPPED", "INTERNAL_ERROR"}
@@ -127,9 +143,11 @@ async def pipeline_status(run_id: int):
         cost = _compute_post_run_cost(run_id)
         execute(
             f"""UPDATE {_table('redact_job_history')}
-            SET status = %(status)s, cost_estimate_usd = %(cost)s, completed_at = current_timestamp()
+            SET status = %(status)s, cost_estimate_usd = %(cost)s, completed_at = current_timestamp(),
+                run_page_url = COALESCE(run_page_url, %(url)s)
             WHERE run_id = %(run_id)s AND completed_at IS NULL""",
-            {"run_id": run_id, "status": result_val or state_val, "cost": cost},
+            {"run_id": run_id, "status": result_val or state_val, "cost": cost,
+             "url": status.get("run_page_url")},
         )
     return status
 
@@ -144,8 +162,43 @@ async def cancel_pipeline(run_id: int):
 
 
 @router.get("/history", response_model=List[JobHistoryItem])
-async def pipeline_history():
-    return fetch_all(f"SELECT * FROM {_table('redact_job_history')} ORDER BY started_at DESC LIMIT 10")
+async def pipeline_history(limit: int = 50, offset: int = 0):
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
+    rows = fetch_all(
+        f"""SELECT * FROM {_table('redact_job_history')}
+        WHERE job_type = 'pipeline' OR job_type IS NULL
+        ORDER BY started_at DESC LIMIT %(limit)s OFFSET %(offset)s""",
+        {"limit": limit, "offset": offset},
+    )
+    return _reconcile_stale_rows(rows)
+
+
+def _reconcile_stale_rows(rows: list[dict]) -> list[dict]:
+    """Check RUNNING rows against the Jobs API and update any that have finished."""
+    for row in rows:
+        if row.get("status") != "RUNNING":
+            continue
+        try:
+            live = get_run_status(int(row["run_id"]))
+            state = live.get("state", "")
+            if state not in TERMINAL_STATES:
+                if live.get("run_page_url") and not row.get("run_page_url"):
+                    row["run_page_url"] = live["run_page_url"]
+                continue
+            result = live.get("result_state", "") or state
+            row["status"] = result
+            row["run_page_url"] = row.get("run_page_url") or live.get("run_page_url")
+            execute(
+                f"""UPDATE {_table('redact_job_history')}
+                SET status = %(status)s, completed_at = current_timestamp(),
+                    run_page_url = COALESCE(run_page_url, %(url)s)
+                WHERE run_id = %(run_id)s AND completed_at IS NULL""",
+                {"run_id": row["run_id"], "status": result, "url": live.get("run_page_url")},
+            )
+        except Exception as exc:
+            logger.warning("Failed to reconcile run %s: %s", row.get("run_id"), exc)
+    return rows
 
 
 # Cost constants -- canonical source is src/dbxredact/cost.py. Keep in sync.

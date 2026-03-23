@@ -28,7 +28,7 @@
 # MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
 # MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_lg-3.8.0/es_core_news_lg-3.8.0-py3-none-any.whl
 # MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
-# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.0-py3-none-any.whl
+# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.1-py3-none-any.whl
 # MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
 # MAGIC %restart_python
 
@@ -37,7 +37,7 @@
 import os
 from pyspark.sql.functions import col
 
-from dbxredact import run_detection_pipeline, load_filter_from_table, EntityFilter
+from dbxredact import run_detection_pipeline, load_filter_from_table, EntityFilter, RedactionConfig
 
 # COMMAND ----------
 
@@ -234,23 +234,27 @@ if max_rows and source_df_count > max_rows:
 
 # COMMAND ----------
 
-results_df = run_detection_pipeline(
-    spark=spark,
-    source_df=source_df,
-    doc_id_column=doc_id_column,
-    text_column=text_column,
+config = RedactionConfig(
     use_presidio=use_presidio,
     use_ai_query=use_ai_query,
     use_gliner=use_gliner,
     endpoint=endpoint if use_ai_query else None,
     score_threshold=score_threshold,
-    num_cores=num_cores,
-    align_results=True,
-    alignment_mode=alignment_mode,
-    entity_filter=entity_filter,
-    reasoning_effort=reasoning_effort,
     gliner_max_words=gliner_max_words,
+    num_cores=num_cores,
+    alignment_mode=alignment_mode,
+    reasoning_effort=reasoning_effort,
     presidio_pattern_only=presidio_pattern_only,
+    entity_filter=entity_filter,
+)
+
+results_df = run_detection_pipeline(
+    spark=spark,
+    source_df=source_df,
+    doc_id_column=doc_id_column,
+    text_column=text_column,
+    align_results=True,
+    config=config,
 )
 
 # COMMAND ----------

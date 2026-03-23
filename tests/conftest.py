@@ -2,12 +2,17 @@
 
 import pytest
 
+# Pre-import pyspark submodules so they occupy sys.modules before test files
+# that conditionally mock them with MagicMock (test_ai_detector, test_config, etc.).
+import pyspark.sql.functions  # noqa: F401
+import pyspark.sql.types  # noqa: F401
+import pyspark.sql.streaming  # noqa: F401
+from pyspark.sql import SparkSession
+
 
 @pytest.fixture(scope="session")
 def spark():
-    """Session-scoped local SparkSession for integration tests."""
-    from pyspark.sql import SparkSession
-
+    """Session-scoped local SparkSession for unit and integration tests."""
     session = (
         SparkSession.builder
         .master("local[2]")

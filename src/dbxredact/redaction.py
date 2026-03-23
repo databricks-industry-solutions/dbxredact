@@ -1,11 +1,13 @@
 """Text redaction functions for PHI/PII removal."""
 
+import logging
 from typing import List, Dict, Any, Literal
 import pandas as pd
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import pandas_udf, col
-from pyspark.sql.types import StringType
+from pyspark.sql.types import StringType, StructType, StructField, IntegerType
 
+logger = logging.getLogger(__name__)
 
 RedactionStrategy = Literal["generic", "typed"]
 
@@ -15,6 +17,9 @@ def redact_text(
 ) -> str:
     """
     Redact PII/PHI entities from text.
+
+    Overlapping spans are merged so that all detected PII is covered.
+    Out-of-range start/end values are clamped to text boundaries.
 
     Args:
         text: Original text containing PII/PHI
@@ -29,20 +34,49 @@ def redact_text(
     if not entities:
         return text
 
-    valid = [(e["start"], e["end"], e.get("entity_type", "REDACTED"))
-             for e in entities if e.get("start") is not None and e.get("end") is not None]
-    valid.sort(key=lambda t: t[0])
+    text_len = len(text)
+    valid = [
+        (max(0, e["start"]), min(text_len, e["end"]), e.get("entity_type", "REDACTED"))
+        for e in entities
+        if e.get("start") is not None and e.get("end") is not None
+    ]
+    valid.sort(key=lambda t: (t[0], -t[1]))
+
+    merged: List[tuple] = []
+    for start, end, etype in valid:
+        if start >= end:
+            continue
+        if merged and start <= merged[-1][1]:
+            prev_s, prev_e, prev_t = merged[-1]
+            merged[-1] = (prev_s, max(prev_e, end), prev_t)
+        else:
+            merged.append((start, end, etype))
 
     parts = []
     prev_end = 0
-    for start, end, entity_type in valid:
-        if start < prev_end:
-            continue
+    for start, end, entity_type in merged:
         parts.append(text[prev_end:start])
         parts.append(f"[{entity_type}]" if strategy == "typed" else "[REDACTED]")
         prev_end = end
     parts.append(text[prev_end:])
     return "".join(parts)
+
+
+def _safe_entity_list(entities) -> list:
+    """Convert entities to a list of dicts, returning [] on any failure."""
+    if entities is None:
+        return []
+    try:
+        if len(entities) == 0:
+            return []
+    except (TypeError, AttributeError):
+        return []
+    if not isinstance(entities, list):
+        try:
+            entities = list(entities)
+        except (TypeError, ValueError):
+            return []
+    return [e.asDict() if hasattr(e, "asDict") else (dict(e) if not isinstance(e, dict) else e) for e in entities]
 
 
 def create_redaction_udf(strategy: RedactionStrategy = "generic"):
@@ -58,33 +92,36 @@ def create_redaction_udf(strategy: RedactionStrategy = "generic"):
 
     @pandas_udf(StringType())
     def redact_udf(texts: pd.Series, entities_series: pd.Series) -> pd.Series:
-        """Redact entities from text for each row."""
         results = []
         for text, entities in zip(texts, entities_series):
-            if entities is None:
-                results.append(text)
-                continue
-
-            try:
-                if len(entities) == 0:
-                    results.append(text)
-                    continue
-            except (TypeError, AttributeError):
-                results.append(text)
-                continue
-
-            if not isinstance(entities, list):
-                try:
-                    entities = list(entities)
-                except (TypeError, ValueError):
-                    results.append(text)
-                    continue
-
-            results.append(redact_text(text, entities, strategy=strategy))
-
+            ent_list = _safe_entity_list(entities)
+            results.append(redact_text(text, ent_list, strategy=strategy))
         return pd.Series(results)
 
     return redact_udf
+
+
+_AUDIT_SCHEMA = StructType([
+    StructField("redacted_text", StringType()),
+    StructField("entity_count", IntegerType()),
+])
+
+
+def create_redaction_audit_udf(strategy: RedactionStrategy = "generic"):
+    """Like :func:`create_redaction_udf` but returns a struct with
+    ``(redacted_text, entity_count)`` for audit / detection-status tracking.
+    """
+
+    @pandas_udf(_AUDIT_SCHEMA)
+    def redact_audit_udf(texts: pd.Series, entities_series: pd.Series) -> pd.DataFrame:
+        rows = []
+        for text, entities in zip(texts, entities_series):
+            ent_list = _safe_entity_list(entities)
+            redacted = redact_text(text, ent_list, strategy=strategy)
+            rows.append((redacted, len(ent_list)))
+        return pd.DataFrame(rows, columns=["redacted_text", "entity_count"])
+
+    return redact_audit_udf
 
 
 def create_redacted_table(

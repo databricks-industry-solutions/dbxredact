@@ -16,7 +16,7 @@
 # COMMAND ----------
 
 # MAGIC # For interactive use, uncomment one of the following:
-# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.0-py3-none-any.whl
+# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.1-py3-none-any.whl
 # MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
 # MAGIC # %restart_python
 

@@ -32,12 +32,13 @@
 # MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
 # MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_lg-3.8.0/es_core_news_lg-3.8.0-py3-none-any.whl
 # MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
-# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.2.0-py3-none-any.whl
+# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.1-py3-none-any.whl
 # MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
 # MAGIC %restart_python
 
 # COMMAND ----------
 
+import json
 import os
 
 from dbxredact import (
@@ -47,6 +48,7 @@ from dbxredact import (
     get_columns_by_tag,
     load_filter_from_table,
     EntityFilter,
+    RedactionConfig,
 )
 
 # COMMAND ----------
@@ -121,9 +123,9 @@ dbutils.widgets.text(
     label="9. AI Endpoint (for AI Query method)",
 )
 dbutils.widgets.text(
-    name="presidio_score_threshold",
+    name="score_threshold",
     defaultValue="0.5",
-    label="10. Presidio Score Threshold",
+    label="10. Score Threshold (Presidio minimum confidence)",
 )
 dbutils.widgets.text(name="num_cores", defaultValue="0", label="11. Number of Cores (0=auto)")
 dbutils.widgets.text(
@@ -141,7 +143,13 @@ dbutils.widgets.dropdown(
     name="output_strategy",
     defaultValue="production",
     choices=["validation", "production"],
-    label="14. Output Strategy",
+    label="14. Output Strategy (validation = debug, includes raw PII)",
+)
+dbutils.widgets.dropdown(
+    name="confirm_validation_output",
+    defaultValue="false",
+    choices=["true", "false"],
+    label="14b. Confirm Validation Output (required if output_strategy=validation)",
 )
 dbutils.widgets.text(
     name="checkpoint_path",
@@ -185,6 +193,55 @@ dbutils.widgets.text(
     defaultValue="",
     label="22. Block List Table (optional, fully qualified)",
 )
+dbutils.widgets.dropdown(
+    name="output_mode",
+    defaultValue="separate",
+    choices=["separate", "in_place"],
+    label="23. Output Mode (separate=new table, in_place=overwrite source column)",
+)
+dbutils.widgets.dropdown(
+    name="confirm_destructive",
+    defaultValue="false",
+    choices=["true", "false"],
+    label="24. Confirm Destructive (required for in_place)",
+)
+dbutils.widgets.dropdown(
+    name="presidio_pattern_only",
+    defaultValue="false",
+    choices=["true", "false"],
+    label="25. Presidio Pattern Only (regex-only, no spaCy NER)",
+)
+dbutils.widgets.text(
+    name="presidio_model_size",
+    defaultValue="trf",
+    label="26. Presidio Model Size (trf, lg, or md)",
+)
+dbutils.widgets.text(
+    name="gliner_threshold",
+    defaultValue="0.2",
+    label="27. GLiNER Confidence Threshold",
+)
+dbutils.widgets.text(
+    name="gliner_model",
+    defaultValue="nvidia/gliner-PII",
+    label="28. GLiNER Model Name",
+)
+dbutils.widgets.dropdown(
+    name="allow_consensus_redaction",
+    defaultValue="false",
+    choices=["true", "false"],
+    label="29. Allow Consensus Redaction (required for consensus alignment)",
+)
+dbutils.widgets.text(
+    name="audit_table",
+    defaultValue="",
+    label="30. Audit Table (optional, fully qualified)",
+)
+dbutils.widgets.text(
+    name="extra_params",
+    defaultValue="",
+    label="31. Extra Parameters (JSON, optional)",
+)
 
 # COMMAND ----------
 
@@ -206,7 +263,7 @@ use_ai_query = dbutils.widgets.get("use_ai_query") == "true"
 use_gliner = dbutils.widgets.get("use_gliner") == "true"
 redaction_strategy = dbutils.widgets.get("redaction_strategy")
 endpoint = dbutils.widgets.get("endpoint")
-score_threshold = float(dbutils.widgets.get("presidio_score_threshold"))
+score_threshold = float(dbutils.widgets.get("score_threshold"))
 num_cores = int(dbutils.widgets.get("num_cores"))
 if num_cores <= 0:
     try:
@@ -227,9 +284,19 @@ reasoning_effort = dbutils.widgets.get("reasoning_effort")
 gliner_max_words = int(dbutils.widgets.get("gliner_max_words"))
 safe_list_table = dbutils.widgets.get("safe_list_table").strip()
 block_list_table = dbutils.widgets.get("block_list_table").strip()
+output_mode = dbutils.widgets.get("output_mode")
+confirm_destructive = dbutils.widgets.get("confirm_destructive") == "true"
+confirm_validation_output = dbutils.widgets.get("confirm_validation_output") == "true"
+presidio_pattern_only = dbutils.widgets.get("presidio_pattern_only") == "true"
+presidio_model_size = dbutils.widgets.get("presidio_model_size").strip() or None
+gliner_threshold = float(dbutils.widgets.get("gliner_threshold"))
+gliner_model = dbutils.widgets.get("gliner_model").strip()
+allow_consensus_redaction = dbutils.widgets.get("allow_consensus_redaction") == "true"
+audit_table = dbutils.widgets.get("audit_table").strip() or None
+_extra_params_raw = dbutils.widgets.get("extra_params").strip()
+extra_params = json.loads(_extra_params_raw) if _extra_params_raw else None
 
-# Profile overrides
-presidio_pattern_only = False
+# Profile overrides (fast/deep force specific settings; custom uses widget values as-is)
 if detection_profile == "fast":
     use_presidio, use_ai_query, use_gliner = True, True, True
     reasoning_effort, gliner_max_words = "low", 256
@@ -238,6 +305,7 @@ if detection_profile == "fast":
 elif detection_profile == "deep":
     use_presidio, use_ai_query, use_gliner = True, True, True
     reasoning_effort, gliner_max_words = "medium", 256
+    presidio_pattern_only = False
     print("Profile: Deep Search -- all detectors, reasoning=medium, max_words=256")
 
 entity_filter = None
@@ -259,6 +327,30 @@ if safe_list_table or block_list_table:
         print(f"Loaded block list: {len(ef.block_list)} exact, {len(ef.block_patterns)} patterns")
     entity_filter = ef
 
+config = RedactionConfig(
+    use_presidio=use_presidio,
+    use_ai_query=use_ai_query,
+    use_gliner=use_gliner,
+    endpoint=endpoint if use_ai_query else None,
+    score_threshold=score_threshold,
+    gliner_model=gliner_model,
+    gliner_threshold=gliner_threshold,
+    gliner_max_words=gliner_max_words,
+    num_cores=num_cores,
+    redaction_strategy=redaction_strategy,
+    output_strategy=output_strategy,
+    output_mode=output_mode,
+    confirm_destructive=confirm_destructive,
+    confirm_validation_output=confirm_validation_output,
+    max_rows=max_rows,
+    alignment_mode=alignment_mode,
+    reasoning_effort=reasoning_effort,
+    presidio_model_size=presidio_model_size,
+    presidio_pattern_only=presidio_pattern_only,
+    entity_filter=entity_filter,
+    allow_consensus_redaction=allow_consensus_redaction,
+)
+
 if not any([use_presidio, use_ai_query, use_gliner]):
     raise ValueError("At least one detection method must be enabled.")
 if not 0.0 <= score_threshold <= 1.0:
@@ -272,15 +364,23 @@ if input_mode == "table_column":
         if _col not in _source_columns:
             raise ValueError(f"Column '{_col}' not found in {source_table}. Available: {_source_columns}")
 
-if not output_table:
+if output_mode == "in_place":
+    if not confirm_destructive:
+        raise ValueError(
+            "In-place redaction will permanently overwrite the text column in the source table. "
+            "Set 'Confirm Destructive' to 'true' to proceed."
+        )
+    print(f"WARNING: In-place mode will PERMANENTLY overwrite '{text_column}' in {source_table}.")
+    output_table = None
+elif not output_table:
     output_table = f"{source_table}_redacted"
 
 # Auto-generate checkpoint path if not provided
 if not checkpoint_path and refresh_approach == "incremental":
-    # Extract table name for checkpoint path
-    table_name_only = output_table.split(".")[-1]
-    catalog = output_table.split(".")[0] if "." in output_table else "main"
-    schema = output_table.split(".")[1] if output_table.count(".") >= 1 else "default"
+    _ckpt_ref = source_table if output_mode == "in_place" else output_table
+    table_name_only = _ckpt_ref.split(".")[-1]
+    catalog = _ckpt_ref.split(".")[0] if "." in _ckpt_ref else "main"
+    schema = _ckpt_ref.split(".")[1] if _ckpt_ref.count(".") >= 1 else "default"
     checkpoint_path = f"/Volumes/{catalog}/{schema}/checkpoints/{table_name_only}"
 
 # COMMAND ----------
@@ -340,7 +440,11 @@ print(f"Use GLiNER: {use_gliner}")
 print(f"Reasoning Effort: {reasoning_effort}")
 print(f"GLiNER Max Words: {gliner_max_words}")
 print(f"Redaction Strategy: {redaction_strategy}")
-print(f"Output Table: {output_table}")
+print(f"Output Mode: {output_mode}")
+if output_mode == "in_place":
+    print(f"  -> DESTRUCTIVE: overwriting {text_column} in {source_table}")
+else:
+    print(f"Output Table: {output_table}")
 print(f"Refresh Approach: {refresh_approach}")
 print(f"Output Strategy: {output_strategy}")
 print(f"Alignment Mode: {alignment_mode}")
@@ -365,21 +469,8 @@ if refresh_approach == "incremental":
         output_table=output_table,
         checkpoint_path=checkpoint_path,
         doc_id_column=doc_id_column,
-        use_presidio=use_presidio,
-        use_ai_query=use_ai_query,
-        use_gliner=use_gliner,
-        redaction_strategy=redaction_strategy,
-        endpoint=endpoint if use_ai_query else None,
-        score_threshold=score_threshold,
-        num_cores=num_cores,
-        use_aligned=True,
-        output_strategy=output_strategy,
-        alignment_mode=alignment_mode,
         max_files_per_trigger=max_files_per_trigger,
-        reasoning_effort=reasoning_effort,
-        gliner_max_words=gliner_max_words,
-        presidio_pattern_only=presidio_pattern_only,
-        entity_filter=entity_filter,
+        config=config,
     )
 
     # Wait for completion (availableNow trigger processes all then stops)
@@ -400,19 +491,7 @@ else:
             tag_name=tag_name,
             tag_value=tag_value,
             doc_id_column=doc_id_column,
-            use_presidio=use_presidio,
-            use_ai_query=use_ai_query,
-            use_gliner=use_gliner,
-            redaction_strategy=redaction_strategy,
-            endpoint=endpoint if use_ai_query else None,
-            score_threshold=score_threshold,
-            num_cores=num_cores,
-            output_strategy=output_strategy,
-            max_rows=max_rows,
-            alignment_mode=alignment_mode,
-            reasoning_effort=reasoning_effort,
-            gliner_max_words=gliner_max_words,
-            presidio_pattern_only=presidio_pattern_only,
+            config=config,
         )
     else:
         result_df = run_redaction_pipeline(
@@ -421,21 +500,8 @@ else:
             text_column=text_column,
             output_table=output_table,
             doc_id_column=doc_id_column,
-            use_presidio=use_presidio,
-            use_ai_query=use_ai_query,
-            use_gliner=use_gliner,
-            redaction_strategy=redaction_strategy,
-            endpoint=endpoint if use_ai_query else None,
-            score_threshold=score_threshold,
-            num_cores=num_cores,
-            use_aligned=True,
-            output_strategy=output_strategy,
-            max_rows=max_rows,
-            alignment_mode=alignment_mode,
-            entity_filter=entity_filter,
-            reasoning_effort=reasoning_effort,
-            gliner_max_words=gliner_max_words,
-            presidio_pattern_only=presidio_pattern_only,
+            audit_table=audit_table,
+            config=config,
         )
 
 # COMMAND ----------
@@ -443,12 +509,16 @@ else:
 print("=" * 80)
 print("PIPELINE COMPLETE")
 print("=" * 80)
-print(f"Redacted table saved to: {output_table}")
+if output_mode == "in_place":
+    print(f"Source table updated in-place: {source_table}")
+else:
+    print(f"Redacted table saved to: {output_table}")
 
 # COMMAND ----------
 
 # Read from saved table to avoid re-executing the lazy pipeline (which would re-run AI Query, doubling token costs)
-result_df = spark.table(output_table)
+_result_table = source_table if output_mode == "in_place" else output_table
+result_df = spark.table(_result_table)
 
 # COMMAND ----------
 

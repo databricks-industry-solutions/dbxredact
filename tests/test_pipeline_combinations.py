@@ -37,10 +37,19 @@ class TestDetectorValidation:
         mock_detect.return_value = MagicMock()
         mock_align.return_value = MagicMock()
 
+        endpoint = "test-endpoint" if ai else None
         run_detection_pipeline(
             spark=spark, source_df=df,
             doc_id_column="id", text_column="text",
             use_presidio=presidio, use_ai_query=ai, use_gliner=gliner,
-            endpoint="test-endpoint" if ai else None,
+            endpoint=endpoint,
         )
         mock_detect.assert_called_once()
+        call_kwargs = mock_detect.call_args[1]
+        assert call_kwargs["use_presidio"] is presidio
+        assert call_kwargs["use_ai_query"] is ai
+        assert call_kwargs["use_gliner"] is gliner
+        assert call_kwargs["text_column"] == "text"
+        assert call_kwargs["doc_id_column"] == "id"
+        if ai:
+            assert call_kwargs["endpoint"] == "test-endpoint"

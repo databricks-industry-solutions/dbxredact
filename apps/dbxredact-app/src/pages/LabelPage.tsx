@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import TablePicker from "../components/TablePicker";
+import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import EntityHighlighter from "../components/EntityHighlighter";
 import ErrorBanner from "../components/ErrorBanner";
-import { apiPost } from "../hooks/useApi";
+import Tabs from "../components/Tabs";
+import { useGet, apiPost } from "../hooks/useApi";
+import { useToast } from "../hooks/useToast";
+import { ENTITY_TYPES } from "../constants";
 
 interface LabelEntry {
   entity_text: string;
@@ -22,116 +25,108 @@ interface TableInfo {
   row_count: number;
 }
 
-const ENTITY_TYPES = [
-  "PERSON", "PHONE_NUMBER", "EMAIL_ADDRESS", "LOCATION", "DATE_TIME",
-  "US_SSN", "ADDRESS", "MEDICAL_RECORD_NUMBER", "IP_ADDRESS", "URL",
-  "HOSPITAL_NAME", "ORGANIZATION", "ID_NUMBER", "OTHER",
-];
-
 type Mode = "unlabeled" | "prelabeled";
 
 export default function LabelPage() {
   const [mode, setMode] = useState<Mode>("unlabeled");
-  const [table, setTable] = useState("");
-  const [columns, setColumns] = useState<string[]>([]);
+  const [table, setTable] = useState<TableRef>(emptyTableRef);
   const [textCol, setTextCol] = useState("text");
   const [docIdCol, setDocIdCol] = useState("doc_id");
   const [error, setError] = useState("");
 
-  // Pre-labeled column mapping
   const [entityTextCol, setEntityTextCol] = useState("entity_text");
   const [entityTypeCol, setEntityTypeCol] = useState("entity_type");
   const [startCol, setStartCol] = useState("start");
   const [endCol, setEndCol] = useState("end");
 
-  // Unlabeled mode state
   const [docs, setDocs] = useState<Record<string, unknown>[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [labels, setLabels] = useState<LabelEntry[]>([]);
   const [entityType, setEntityType] = useState("PERSON");
-  const [loading, setLoading] = useState(false);
 
-  // Pre-labeled mode state
   const [preDocs, setPreDocs] = useState<PreLabeledDoc[]>([]);
   const [preIdx, setPreIdx] = useState(0);
   const [editLabels, setEditLabels] = useState<LabelEntry[]>([]);
-  const [preLoading, setPreLoading] = useState(false);
+
+  const [isDirty, setIsDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
 
   const textContainerRef = useRef<HTMLDivElement>(null);
 
-  const parts = table.split(".");
-  const hasTable = parts.length === 3 && parts[2] !== "";
+  const hasTable = isComplete(table);
+  const qualified = toQualified(table);
 
-  // Fetch columns when table changes
+  const { data: tableInfo } = useGet<TableInfo>(
+    `/pipeline/table-info?table=${encodeURIComponent(qualified)}`,
+    { enabled: hasTable, deps: [qualified] },
+  );
+  const columns = tableInfo?.columns ?? [];
+
   useEffect(() => {
-    if (!hasTable) { setColumns([]); return; }
-    fetch(`/api/pipeline/table-info?table=${encodeURIComponent(table)}`)
-      .then((r) => r.json())
-      .then((info: TableInfo) => {
-        setColumns(info.columns);
-        if (info.columns.includes("text")) setTextCol("text");
-        else if (info.columns.length) setTextCol(info.columns[0]);
-        if (info.columns.includes("doc_id")) setDocIdCol("doc_id");
-        if (info.columns.includes("entity_text")) setEntityTextCol("entity_text");
-        if (info.columns.includes("entity_type")) setEntityTypeCol("entity_type");
-        if (info.columns.includes("start")) setStartCol("start");
-        if (info.columns.includes("end")) setEndCol("end");
-      })
-      .catch((e) => setError(e.message || "Failed to load table info"));
-  }, [table, hasTable]);
+    if (!tableInfo) return;
+    const cols = tableInfo.columns;
+    if (cols.includes("text")) setTextCol("text");
+    else if (cols.length) setTextCol(cols[0]);
+    if (cols.includes("doc_id")) setDocIdCol("doc_id");
+    if (cols.includes("entity_text")) setEntityTextCol("entity_text");
+    if (cols.includes("entity_type")) setEntityTypeCol("entity_type");
+    if (cols.includes("start")) setStartCol("start");
+    if (cols.includes("end")) setEndCol("end");
+  }, [tableInfo]);
 
-  // Fetch unlabeled documents
+  const unlabeledParams = new URLSearchParams({
+    source_table: qualified, text_column: textCol, doc_id_column: docIdCol,
+  }).toString();
+
+  const { data: unlabeledDocs, loading } = useGet<Record<string, unknown>[]>(
+    `/labels/documents?${unlabeledParams}`,
+    { enabled: mode === "unlabeled" && hasTable, deps: [qualified, textCol, docIdCol, mode] },
+  );
+
   useEffect(() => {
-    if (mode !== "unlabeled" || !hasTable) { setDocs([]); return; }
-    setLoading(true);
-    const params = new URLSearchParams({
-      source_table: table,
-      text_column: textCol,
-      doc_id_column: docIdCol,
-    });
-    fetch(`/api/labels/documents?${params}`)
-      .then((r) => r.json())
-      .then((d) => { setDocs(d); setCurrentIdx(0); setLabels([]); })
-      .catch((e) => { setDocs([]); setError(e.message || "Failed to load documents"); })
-      .finally(() => setLoading(false));
-  }, [table, hasTable, mode, textCol, docIdCol]);
+    if (unlabeledDocs) { setDocs(unlabeledDocs); setCurrentIdx(0); setLabels([]); }
+    else setDocs([]);
+  }, [unlabeledDocs]);
 
-  // Fetch pre-labeled documents
+  const preParams = new URLSearchParams({
+    source_table: qualified, text_column: textCol, doc_id_column: docIdCol,
+    entity_text_column: entityTextCol, entity_type_column: entityTypeCol,
+    start_column: startCol, end_column: endCol,
+  }).toString();
+
+  const { data: preLabeledDocs, loading: preLoading } = useGet<PreLabeledDoc[]>(
+    `/labels/documents-with-labels?${preParams}`,
+    { enabled: mode === "prelabeled" && hasTable, deps: [qualified, textCol, docIdCol, entityTextCol, entityTypeCol, startCol, endCol, mode] },
+  );
+
   useEffect(() => {
-    if (mode !== "prelabeled" || !hasTable) { setPreDocs([]); return; }
-    setPreLoading(true);
-    const params = new URLSearchParams({
-      source_table: table,
-      text_column: textCol,
-      doc_id_column: docIdCol,
-      entity_text_column: entityTextCol,
-      entity_type_column: entityTypeCol,
-      start_column: startCol,
-      end_column: endCol,
-    });
-    fetch(`/api/labels/documents-with-labels?${params}`)
-      .then((r) => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
-      .then((d: PreLabeledDoc[]) => {
-        setPreDocs(d);
-        setPreIdx(0);
-        if (d.length) setEditLabels(d[0].labels);
-      })
-      .catch((e) => { setPreDocs([]); setError(e.message || "Failed to load labeled documents"); })
-      .finally(() => setPreLoading(false));
-  }, [table, hasTable, mode, textCol, docIdCol, entityTextCol, entityTypeCol, startCol, endCol]);
+    if (preLabeledDocs) {
+      setPreDocs(preLabeledDocs);
+      setPreIdx(0);
+      if (preLabeledDocs.length) setEditLabels(preLabeledDocs[0].labels);
+    } else {
+      setPreDocs([]);
+    }
+  }, [preLabeledDocs]);
 
-  // Sync edit labels when switching pre-labeled documents
   useEffect(() => {
     if (mode === "prelabeled" && preDocs[preIdx]) {
       setEditLabels(preDocs[preIdx].labels);
     }
   }, [preIdx, preDocs, mode]);
 
+  const { data: stats, refetch: refetchStats } = useGet<{ total_docs: number; labeled_docs: number }>(
+    `/labels/stats?source_table=${encodeURIComponent(qualified)}`,
+    { enabled: hasTable, deps: [qualified] },
+  );
+
   function getTextOffsetInContainer(container: Node, targetNode: Node, targetOffset: number): number {
     let offset = 0;
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     let node: Node | null;
     while ((node = walker.nextNode())) {
+      if (node.parentElement?.tagName === "SUP") continue;
       if (node === targetNode) return offset + targetOffset;
       offset += (node.textContent?.length ?? 0);
     }
@@ -154,29 +149,82 @@ export default function LabelPage() {
     const entry: LabelEntry = { entity_text: text, entity_type: entityType, start, end };
     if (mode === "unlabeled") setLabels((prev) => [...prev, entry]);
     else setEditLabels((prev) => [...prev, entry]);
+    setIsDirty(true);
     sel.removeAllRanges();
+  }
+
+  function toBatchBody(docId: string, labelList: LabelEntry[]) {
+    return {
+      doc_id: String(docId),
+      source_table: qualified,
+      labels: labelList.map((l) => ({
+        entity_text: l.entity_text,
+        entity_type: l.entity_type,
+        start: l.start,
+        end_pos: l.end,
+      })),
+    };
   }
 
   async function saveUnlabeled() {
     const doc = docs[currentIdx];
+    setSaving(true);
     try {
-      await apiPost(`/labels/batch?doc_id=${doc.doc_id}&source_table=${encodeURIComponent(table)}`, labels);
+      await apiPost("/labels/batch", toBatchBody(doc.doc_id as string, labels));
+      toast("Labels saved");
       setLabels([]);
+      setIsDirty(false);
+      refetchStats();
       setCurrentIdx((i) => Math.min(i + 1, docs.length - 1));
-    } catch (e: any) {
-      setError(e.message || "Failed to save labels");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to save labels");
+    } finally {
+      setSaving(false);
     }
   }
 
   async function savePreLabeled() {
     const doc = preDocs[preIdx];
+    setSaving(true);
     try {
-      await apiPost(`/labels/batch?doc_id=${doc.doc_id}&source_table=${encodeURIComponent(table)}`, editLabels);
+      await apiPost("/labels/batch", toBatchBody(doc.doc_id, editLabels));
+      toast("Labels saved");
+      setIsDirty(false);
+      refetchStats();
       setPreIdx((i) => Math.min(i + 1, preDocs.length - 1));
-    } catch (e: any) {
-      setError(e.message || "Failed to save labels");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to save labels");
+    } finally {
+      setSaving(false);
     }
   }
+
+  function confirmDiscardIfDirty(): boolean {
+    if (!isDirty) return true;
+    return window.confirm("You have unsaved labels. Discard changes?");
+  }
+
+  useEffect(() => {
+    function handleKeys(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        if (mode === "unlabeled" && labels.length > 0 && !saving) saveUnlabeled();
+        else if (mode === "prelabeled" && !saving) savePreLabeled();
+      }
+      if (e.key === "ArrowLeft" && e.altKey) {
+        e.preventDefault();
+        if (mode === "unlabeled") { if (!confirmDiscardIfDirty()) return; setCurrentIdx((i) => Math.max(0, i - 1)); setLabels([]); setIsDirty(false); }
+        else { if (!confirmDiscardIfDirty()) return; setPreIdx((i) => Math.max(0, i - 1)); setIsDirty(false); }
+      }
+      if (e.key === "ArrowRight" && e.altKey) {
+        e.preventDefault();
+        if (mode === "unlabeled") { if (!confirmDiscardIfDirty()) return; setCurrentIdx((i) => Math.min(i + 1, docs.length - 1)); setLabels([]); setIsDirty(false); }
+        else { if (!confirmDiscardIfDirty()) return; setPreIdx((i) => Math.min(i + 1, preDocs.length - 1)); setIsDirty(false); }
+      }
+    }
+    window.addEventListener("keydown", handleKeys);
+    return () => window.removeEventListener("keydown", handleKeys);
+  });
 
   const unlabeledDoc = docs[currentIdx];
   const preDoc = preDocs[preIdx];
@@ -190,21 +238,27 @@ export default function LabelPage() {
         as annotations and used for evaluation benchmarks.
       </p>
 
-      {/* Mode selector */}
-      <div className="flex gap-2 mb-6">
-        <button className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-          mode === "unlabeled" ? "bg-blue-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"
-        }`} onClick={() => setMode("unlabeled")}>
-          Label Unlabeled Data
-        </button>
-        <button className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-          mode === "prelabeled" ? "bg-blue-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"
-        }`} onClick={() => setMode("prelabeled")}>
-          Edit Pre-Labeled Data
-        </button>
-      </div>
+      {stats && (
+        <div className="mb-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-700 dark:text-blue-300">
+          <span className="font-semibold">{stats.labeled_docs}</span> / {stats.total_docs} documents labeled
+          {stats.total_docs > 0 && (
+            <span className="text-xs opacity-70">
+              ({Math.round((stats.labeled_docs / stats.total_docs) * 100)}%)
+            </span>
+          )}
+        </div>
+      )}
 
-      {/* Table + column config */}
+      <Tabs
+        variant="pill"
+        tabs={[
+          { key: "unlabeled", label: "Label Unlabeled Data" },
+          { key: "prelabeled", label: "Edit Pre-Labeled Data" },
+        ]}
+        active={mode}
+        onChange={(k) => setMode(k as Mode)}
+      />
+
       <div className="card p-5 mb-6 max-w-3xl space-y-3">
         <TablePicker value={table} onChange={setTable} label="Source Table" />
         {columns.length > 0 && (
@@ -253,19 +307,17 @@ export default function LabelPage() {
         )}
       </div>
 
-      {/* Entity type selector */}
       <div className="flex gap-3 mb-4 items-center max-w-3xl">
         <label className="text-sm font-medium">Entity type:</label>
         <select className="input-field w-auto" value={entityType}
           onChange={(e) => setEntityType(e.target.value)}>
           {ENTITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        <span className="text-xs text-gray-400">Highlight text below to label it</span>
+        <span className="text-xs text-gray-400">Highlight text (mouse or Shift+Arrow) to label it</span>
       </div>
 
       {(loading || preLoading) && <p className="text-sm text-gray-500 dark:text-gray-400 animate-pulse">Loading documents...</p>}
 
-      {/* Mode A: Unlabeled */}
       {mode === "unlabeled" && unlabeledDoc && (
         <div className="max-w-3xl">
           <div className="flex items-center justify-between mb-3">
@@ -273,14 +325,14 @@ export default function LabelPage() {
               Document {currentIdx + 1} of {docs.length} -- <span className="font-mono text-xs">{String(unlabeledDoc.doc_id)}</span>
             </div>
             <div className="flex gap-2">
-              <button className="btn-ghost text-xs" disabled={currentIdx === 0}
-                onClick={() => { setCurrentIdx((i) => i - 1); setLabels([]); }}>Prev</button>
-              <button className="btn-ghost text-xs" disabled={currentIdx >= docs.length - 1}
-                onClick={() => { setCurrentIdx((i) => i + 1); setLabels([]); }}>Next</button>
+              <button className="btn-ghost text-xs" disabled={currentIdx === 0 || saving}
+                onClick={() => { if (!confirmDiscardIfDirty()) return; setCurrentIdx((i) => i - 1); setLabels([]); setIsDirty(false); }}>Prev</button>
+              <button className="btn-ghost text-xs" disabled={currentIdx >= docs.length - 1 || saving}
+                onClick={() => { if (!confirmDiscardIfDirty()) return; setCurrentIdx((i) => i + 1); setLabels([]); setIsDirty(false); }}>Next</button>
             </div>
           </div>
 
-          <div ref={textContainerRef} className="card p-5 mb-4 cursor-text select-text" onMouseUp={handleTextSelect}>
+          <div ref={textContainerRef} className="card p-5 mb-4 cursor-text select-text" onMouseUp={handleTextSelect} onKeyUp={handleTextSelect}>
             <EntityHighlighter
               text={String(unlabeledDoc.text || "")}
               entities={labels.map((l) => ({
@@ -291,19 +343,21 @@ export default function LabelPage() {
             />
           </div>
 
-          {labels.length > 0 && <LabelChips labels={labels} onRemove={(i) => setLabels((p) => p.filter((_, j) => j !== i))} />}
+          {labels.length > 0 && <LabelChips labels={labels} onRemove={(i) => { setLabels((p) => p.filter((_, j) => j !== i)); setIsDirty(true); }} />}
 
-          <div className="flex gap-2">
-            <button className="btn-primary" disabled={labels.length === 0} onClick={saveUnlabeled}>Save & Next</button>
-            <button className="btn-ghost border border-gray-200 dark:border-gray-600"
-              onClick={() => { setCurrentIdx((i) => Math.min(i + 1, docs.length - 1)); setLabels([]); }}>
+          <div className="flex gap-2 items-center">
+            <button className="btn-primary" disabled={labels.length === 0 || saving} onClick={saveUnlabeled}>
+              {saving ? "Saving..." : "Save & Next"}
+            </button>
+            <button className="btn-ghost border border-gray-200 dark:border-gray-600" disabled={saving}
+              onClick={() => { if (!confirmDiscardIfDirty()) return; setCurrentIdx((i) => Math.min(i + 1, docs.length - 1)); setLabels([]); setIsDirty(false); }}>
               Skip
             </button>
           </div>
+          <KeyboardLegend />
         </div>
       )}
 
-      {/* Mode B: Pre-labeled */}
       {mode === "prelabeled" && preDoc && (
         <div className="max-w-3xl">
           <div className="flex items-center justify-between mb-3">
@@ -311,14 +365,14 @@ export default function LabelPage() {
               Document {preIdx + 1} of {preDocs.length} -- <span className="font-mono text-xs">{preDoc.doc_id}</span>
             </div>
             <div className="flex gap-2">
-              <button className="btn-ghost text-xs" disabled={preIdx === 0}
-                onClick={() => setPreIdx((i) => i - 1)}>Prev</button>
-              <button className="btn-ghost text-xs" disabled={preIdx >= preDocs.length - 1}
-                onClick={() => setPreIdx((i) => i + 1)}>Next</button>
+              <button className="btn-ghost text-xs" disabled={preIdx === 0 || saving}
+                onClick={() => { if (!confirmDiscardIfDirty()) return; setPreIdx((i) => i - 1); setIsDirty(false); }}>Prev</button>
+              <button className="btn-ghost text-xs" disabled={preIdx >= preDocs.length - 1 || saving}
+                onClick={() => { if (!confirmDiscardIfDirty()) return; setPreIdx((i) => i + 1); setIsDirty(false); }}>Next</button>
             </div>
           </div>
 
-          <div ref={textContainerRef} className="card p-5 mb-4 cursor-text select-text" onMouseUp={handleTextSelect}>
+          <div ref={textContainerRef} className="card p-5 mb-4 cursor-text select-text" onMouseUp={handleTextSelect} onKeyUp={handleTextSelect}>
             <EntityHighlighter
               text={preDoc.text}
               entities={editLabels.map((l) => ({
@@ -332,19 +386,22 @@ export default function LabelPage() {
           {editLabels.length > 0 && (
             <LabelChips
               labels={editLabels}
-              onRemove={(i) => setEditLabels((p) => p.filter((_, j) => j !== i))}
+              onRemove={(i) => { setEditLabels((p) => p.filter((_, j) => j !== i)); setIsDirty(true); }}
               editable
-              onChangeType={(i, t) => setEditLabels((p) => p.map((l, j) => j === i ? { ...l, entity_type: t } : l))}
+              onChangeType={(i, t) => { setEditLabels((p) => p.map((l, j) => j === i ? { ...l, entity_type: t } : l)); setIsDirty(true); }}
             />
           )}
 
-          <div className="flex gap-2">
-            <button className="btn-primary" onClick={savePreLabeled}>Save & Next</button>
-            <button className="btn-ghost border border-gray-200 dark:border-gray-600"
-              onClick={() => setPreIdx((i) => Math.min(i + 1, preDocs.length - 1))}>
+          <div className="flex gap-2 items-center">
+            <button className="btn-primary" disabled={saving} onClick={savePreLabeled}>
+              {saving ? "Saving..." : "Save & Next"}
+            </button>
+            <button className="btn-ghost border border-gray-200 dark:border-gray-600" disabled={saving}
+              onClick={() => { if (!confirmDiscardIfDirty()) return; setPreIdx((i) => Math.min(i + 1, preDocs.length - 1)); setIsDirty(false); }}>
               Skip
             </button>
           </div>
+          <KeyboardLegend />
         </div>
       )}
 
@@ -358,13 +415,26 @@ export default function LabelPage() {
   );
 }
 
+const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase().includes("MAC");
+const mod = isMac ? "\u2318" : "Ctrl";
+
+function KeyboardLegend() {
+  return (
+    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-400 dark:text-gray-500">
+      <span><kbd className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">{mod}+S</kbd> Save & Next</span>
+      <span><kbd className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">Alt+\u2190</kbd> Prev</span>
+      <span><kbd className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">Alt+\u2192</kbd> Next</span>
+    </div>
+  );
+}
+
 function LabelChips({
   labels,
   onRemove,
   editable = false,
   onChangeType,
 }: {
-  labels: LabelEntry[];
+  labels: { entity_text: string; entity_type: string; start: number; end: number }[];
   onRemove: (idx: number) => void;
   editable?: boolean;
   onChangeType?: (idx: number, newType: string) => void;
@@ -380,11 +450,7 @@ function LabelChips({
             {editable && onChangeType ? (
               <select className="text-[10px] bg-transparent border-none outline-none cursor-pointer ml-1" value={l.entity_type}
                 onChange={(e) => onChangeType(i, e.target.value)}>
-                {["PERSON", "PHONE_NUMBER", "EMAIL_ADDRESS", "LOCATION", "DATE_TIME",
-                  "US_SSN", "ADDRESS", "MEDICAL_RECORD_NUMBER", "IP_ADDRESS", "URL",
-                  "HOSPITAL_NAME", "ORGANIZATION", "ID_NUMBER", "OTHER"].map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
+                {ENTITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             ) : (
               <span className="opacity-60">[{l.entity_type}]</span>

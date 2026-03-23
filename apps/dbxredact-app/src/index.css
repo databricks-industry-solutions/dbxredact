@@ -35,6 +35,20 @@
       transition-colors shadow-sm;
   }
 
+  .btn-secondary {
+    @apply bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg text-sm font-medium
+      hover:bg-gray-200 dark:hover:bg-gray-600 active:bg-gray-300
+      disabled:opacity-50 disabled:cursor-not-allowed
+      transition-colors;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium
+      hover:bg-red-700 active:bg-red-800
+      disabled:opacity-50 disabled:cursor-not-allowed
+      transition-colors shadow-sm;
+  }
+
   .btn-ghost {
     @apply px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300
       hover:bg-gray-100 dark:hover:bg-gray-700
@@ -87,4 +101,24 @@
   .stat-card .stat-value {
     @apply text-2xl font-bold mt-1;
   }
+
+  .table-wrapper {
+    @apply overflow-x-auto -mx-1 px-1;
+  }
+}
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(1rem); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in {
+  animation: slide-in 0.2s ease-out;
+}
+
+@keyframes flash-row {
+  0%   { background-color: rgba(16, 185, 129, 0.2); }
+  100% { background-color: transparent; }
+}
+.flash-row {
+  animation: flash-row 2s ease-out;
 }

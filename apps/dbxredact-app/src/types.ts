@@ -38,6 +38,8 @@ export interface JobHistoryItem {
   cost_estimate_usd?: number;
   started_at?: string;
   completed_at?: string;
+  run_page_url?: string;
+  job_type?: string;
 }
 
 export interface ListEntry {
@@ -81,4 +83,61 @@ export interface ActiveLearnStats {
   pending: number;
   skipped: number;
   avg_priority?: number;
+}
+
+// --- Metrics types ---
+
+export interface DetectionSummary { [key: string]: number | string }
+export interface EntityByType { entity_type: string; count: number }
+export interface ConfidenceBucket { bucket: string; count: number }
+export interface DetectionExample { entity: string; entity_type: string; confidence?: number }
+
+export interface DetectionData {
+  summary: DetectionSummary;
+  byType: EntityByType[];
+  confDist: ConfidenceBucket[];
+  examples: DetectionExample[];
+}
+
+export interface EvalRow {
+  method_name: string;
+  metric_name: string;
+  metric_value: number;
+  match_mode?: string;
+}
+
+export interface JudgeRow {
+  method: string;
+  grade: string;
+  count: number;
+}
+
+export interface JudgeExample {
+  doc_id: string;
+  method: string;
+  findings: unknown;
+}
+
+export interface Finding {
+  entity_type?: string;
+  type?: string;
+  entity?: string;
+  value?: string;
+  status?: string;
+  explanation?: string;
+}
+
+export interface Annotation {
+  annotation_id?: string;
+  doc_id: string;
+  source_table: string;
+  workflow: string;
+  entity_text: string;
+  entity_type: string;
+  start: number;
+  end_pos: number;
+  action: string;
+  corrected_type?: string;
+  corrected_value?: string;
+  detection_method?: string;
 }

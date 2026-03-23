@@ -25,6 +25,10 @@ from .config import (
     JUDGE_PROMPT_SKELETON,
     NEXT_ACTION_PROMPT_SKELETON,
     PROMPT_VERSION,
+    RedactionConfig,
+    _entity_schema,
+    MIN_SCORE_THRESHOLD,
+    MIN_GLINER_THRESHOLD,
 )
 
 from .utils import (
@@ -64,6 +68,7 @@ from .evaluation import (
     build_recall_matrix,
     summarize_method_strengths,
     diagnose_strict_failures,
+    build_ground_truth_from_labels,
 )
 
 from .detection import (
@@ -76,6 +81,7 @@ from .detection import (
 from .redaction import (
     redact_text,
     create_redaction_udf,
+    create_redaction_audit_udf,
     create_redacted_table,
     RedactionStrategy,
 )
@@ -110,6 +116,7 @@ from .pipeline import (
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
     OutputStrategy,
+    OutputMode,
     AlignmentMode,
 )
 
@@ -132,6 +139,10 @@ __all__ = [
     "JUDGE_PROMPT_SKELETON",
     "NEXT_ACTION_PROMPT_SKELETON",
     "PROMPT_VERSION",
+    "RedactionConfig",
+    "_entity_schema",
+    "MIN_SCORE_THRESHOLD",
+    "MIN_GLINER_THRESHOLD",
     # Utils
     "is_fuzzy_match",
     "is_overlap",
@@ -160,6 +171,7 @@ __all__ = [
     "analyze_errors",
     "build_recall_matrix",
     "summarize_method_strengths",
+    "build_ground_truth_from_labels",
     # Detection
     "run_presidio_detection",
     "run_ai_query_detection",
@@ -168,6 +180,7 @@ __all__ = [
     # Redaction
     "redact_text",
     "create_redaction_udf",
+    "create_redaction_audit_udf",
     "create_redacted_table",
     "RedactionStrategy",
     # Metadata
@@ -195,6 +208,7 @@ __all__ = [
     "run_redaction_pipeline_streaming",
     "run_redaction_pipeline_by_tag",
     "OutputStrategy",
+    "OutputMode",
     "AlignmentMode",
     # Judge
     "run_judge_evaluation",

@@ -105,6 +105,6 @@ class TestCalculateStringOverlap:
         assert calculate_string_overlap("test", "") == 0.0
 
     def test_suffix_prefix_overlap(self):
-        """Strings with suffix-prefix overlap."""
+        """'hello' ends with 'lo', 'lowing' starts with 'lo' -> 2/5 = 0.4."""
         result = calculate_string_overlap("hello", "lowing")
-        assert result > 0.0
+        assert result == pytest.approx(0.4)

@@ -11,6 +11,7 @@ from .ab_test import router as ab_test_router
 from .active_learn import router as active_learn_router
 from .benchmark import router as benchmark_router
 from .catalog import router as catalog_router
+from .admin import router as admin_router
 
 api_router = APIRouter()
 api_router.include_router(config_router, prefix="/config", tags=["config"])
@@ -23,3 +24,4 @@ api_router.include_router(labels_router, prefix="/labels", tags=["labels"])
 api_router.include_router(ab_test_router, prefix="/ab-tests", tags=["ab-tests"])
 api_router.include_router(active_learn_router, prefix="/active-learn", tags=["active-learn"])
 api_router.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
+api_router.include_router(admin_router, prefix="/admin", tags=["admin"])

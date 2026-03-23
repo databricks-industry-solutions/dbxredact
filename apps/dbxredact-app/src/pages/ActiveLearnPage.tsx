@@ -1,52 +1,88 @@
 import { useState, useEffect } from "react";
 import { useGet, apiPost } from "../hooks/useApi";
-import TablePicker from "../components/TablePicker";
+import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
+import ConfirmDialog from "../components/ConfirmDialog";
+import DataTable, { type Column } from "../components/DataTable";
+import { useToast } from "../hooks/useToast";
 import type { ActiveLearnItem, ActiveLearnStats } from "../types";
 
 export default function ActiveLearnPage() {
   const { data: queue, refetch: refetchQueue, error: queueError } = useGet<ActiveLearnItem[]>("/active-learn/queue?status=pending");
   const { data: stats, refetch: refetchStats, error: statsError } = useGet<ActiveLearnStats>("/active-learn/stats");
-  const [detectionTable, setDetectionTable] = useState("");
+  const [detectionTable, setDetectionTable] = useState<TableRef>(emptyTableRef);
   const [topK, setTopK] = useState(100);
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState("");
+  const [reviewTarget, setReviewTarget] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (queueError) setError(queueError);
     else if (statsError) setError(statsError);
   }, [queueError, statsError]);
 
-  const parts = detectionTable.split(".");
-  const hasTable = parts.length === 3 && parts[2] !== "";
+  const hasTable = isComplete(detectionTable);
 
   async function buildQueue() {
     setBuilding(true);
     try {
       await apiPost("/active-learn/build-queue", {
-        detection_table: detectionTable,
+        detection_table: toQualified(detectionTable),
         top_k: topK,
       });
+      toast("Queue built");
       refetchQueue();
       refetchStats();
-    } catch (e: any) {
-      setError(e.message || "Failed to build queue");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to build queue");
     }
     setBuilding(false);
   }
 
-  async function markReviewed(docId: string) {
+  async function confirmMarkReviewed() {
+    if (!reviewTarget) return;
     try {
-      await apiPost(`/active-learn/queue/${docId}/review`, { corrections: [] });
+      await apiPost(`/active-learn/queue/${reviewTarget}/review`, { corrections: [] });
+      toast("Marked as reviewed");
       refetchQueue();
       refetchStats();
-    } catch (e: any) {
-      setError(e.message || "Failed to mark reviewed");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to mark reviewed");
     }
+    setReviewTarget(null);
   }
+
+  const queueColumns: Column<ActiveLearnItem & Record<string, unknown>>[] = [
+    { key: "doc_id", header: "Doc ID", render: (item) => <span className="font-mono text-xs">{item.doc_id}</span> },
+    { key: "source_table", header: "Source Table", render: (item) => <span className="text-xs">{item.source_table}</span> },
+    { key: "priority_score", header: "Priority Score", render: (item) => (
+      <div className="flex items-center gap-2">
+        <div className="w-16 h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+          <div className={`h-full rounded-full ${
+            item.priority_score > 0.7 ? "bg-red-500" : item.priority_score > 0.4 ? "bg-amber-500" : "bg-emerald-500"
+          }`} style={{ width: `${item.priority_score * 100}%` }} />
+        </div>
+        <span className="font-mono text-xs">{item.priority_score.toFixed(3)}</span>
+      </div>
+    )},
+    { key: "status", header: "Status" },
+    { key: "_actions", header: "", sortable: false, searchable: false, render: (item) => (
+      <button className="text-blue-600 dark:text-blue-400 hover:text-blue-800 text-xs font-medium transition-colors"
+        onClick={() => setReviewTarget(item.doc_id)}>Mark Reviewed</button>
+    )},
+  ];
 
   return (
     <div>
+      <ConfirmDialog
+        open={!!reviewTarget}
+        title="Mark as Reviewed"
+        message={`Mark document "${reviewTarget}" as reviewed? This will remove it from the pending queue.`}
+        confirmLabel="Mark Reviewed"
+        onConfirm={confirmMarkReviewed}
+        onCancel={() => setReviewTarget(null)}
+      />
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       <h2 className="page-title">Active Learning</h2>
       <p className="page-desc">
@@ -98,46 +134,12 @@ export default function ActiveLearnPage() {
       </div>
 
       <h3 className="text-lg font-semibold mb-3">Review Queue</h3>
-      {queue?.length ? (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Doc ID</th>
-              <th>Source Table</th>
-              <th>Priority Score</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {queue.map((item) => (
-              <tr key={item.doc_id}>
-                <td className="font-mono text-xs">{item.doc_id}</td>
-                <td className="text-xs">{item.source_table}</td>
-                <td>
-                  <div className="flex items-center gap-2">
-                    <div className="w-16 h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                      <div className={`h-full rounded-full ${
-                        item.priority_score > 0.7 ? "bg-red-500" : item.priority_score > 0.4 ? "bg-amber-500" : "bg-emerald-500"
-                      }`} style={{ width: `${item.priority_score * 100}%` }} />
-                    </div>
-                    <span className="font-mono text-xs">{item.priority_score.toFixed(3)}</span>
-                  </div>
-                </td>
-                <td>{item.status}</td>
-                <td>
-                  <button className="text-blue-600 dark:text-blue-400 hover:text-blue-800 text-xs font-medium transition-colors"
-                    onClick={() => markReviewed(item.doc_id)}>
-                    Mark Reviewed
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="text-sm text-gray-400">No items in queue. Build a queue from detection results to get started.</p>
-      )}
+      <DataTable<ActiveLearnItem & Record<string, unknown>>
+        data={(queue ?? []) as (ActiveLearnItem & Record<string, unknown>)[]}
+        rowKey={(item) => item.doc_id}
+        emptyMessage="No items in queue. Build a queue from detection results to get started."
+        columns={queueColumns}
+      />
     </div>
   );
 }
