@@ -1,7 +1,23 @@
 """Tests for config.py -- should_ignore_entity patterns."""
 
+import sys
+from unittest.mock import MagicMock
+
+_pyspark_mods = [
+    "pyspark", "pyspark.sql", "pyspark.sql.functions", "pyspark.sql.types",
+    "pyspark.sql.streaming",
+]
+for _mod in _pyspark_mods:
+    if _mod not in sys.modules:
+        sys.modules[_mod] = MagicMock()
+
 import pytest
-from dbxredact.config import should_ignore_entity
+from dbxredact.config import (
+    should_ignore_entity, RedactionConfig,
+    DEFAULT_PRESIDIO_SCORE_THRESHOLD, DEFAULT_GLINER_MODEL,
+    DEFAULT_GLINER_THRESHOLD, DEFAULT_AI_REASONING_EFFORT,
+    MIN_SCORE_THRESHOLD, MIN_GLINER_THRESHOLD,
+)
 
 
 class TestShouldIgnoreEntity:
@@ -40,9 +56,14 @@ class TestShouldIgnoreEntity:
     def test_pronouns_ignored(self, text):
         assert should_ignore_entity(text, "PERSON") is True
 
-    @pytest.mark.parametrize("text", ["doctor", "nurse", "patient", "physician", "surgeon"])
+    @pytest.mark.parametrize("text", ["nurse", "physician", "surgeon"])
     def test_clinical_roles_ignored(self, text):
         assert should_ignore_entity(text, "PERSON") is True
+
+    @pytest.mark.parametrize("text", ["doctor", "patient"])
+    def test_doctor_patient_not_ignored(self, text):
+        """'doctor' and 'patient' can appear in compound names."""
+        assert should_ignore_entity(text, "PERSON") is False
 
     @pytest.mark.parametrize("text", ["am", "pm"])
     def test_bare_time_fragments_ignored(self, text):
@@ -72,3 +93,92 @@ class TestShouldIgnoreEntity:
 
     def test_past_duration_ignored(self):
         assert should_ignore_entity("past 3 months", "DATE_TIME") is True
+
+    # --- I5: refined ignore filter ---
+
+    @pytest.mark.parametrize("text", ["J.", "42", "Ab"])
+    def test_two_char_identifiers_not_ignored(self, text):
+        """2-char strings that look like identifiers (digits, mixed case, period) pass through."""
+        assert should_ignore_entity(text, "PERSON") is False
+
+    @pytest.mark.parametrize("text", ["Dr", "he", "it"])
+    def test_two_char_non_identifiers_ignored(self, text):
+        """2-char lowercase words or titles should still be ignored."""
+        assert should_ignore_entity(text, "PERSON") is True
+
+    def test_single_char_always_ignored(self):
+        assert should_ignore_entity("A", "PERSON") is True
+
+    def test_configurable_types_to_ignore(self):
+        """Passing custom types_to_ignore overrides the default."""
+        assert should_ignore_entity("American", "NRP") is True
+        assert should_ignore_entity("American", "NRP", types_to_ignore=set()) is False
+
+
+class TestRedactionConfig:
+    """Verify RedactionConfig defaults match the old function-signature defaults."""
+
+    def test_defaults(self):
+        cfg = RedactionConfig()
+        assert cfg.use_presidio is True
+        assert cfg.use_ai_query is True
+        assert cfg.use_gliner is False
+        assert cfg.endpoint is None
+        assert cfg.score_threshold == DEFAULT_PRESIDIO_SCORE_THRESHOLD
+        assert cfg.gliner_model == DEFAULT_GLINER_MODEL
+        assert cfg.gliner_threshold == DEFAULT_GLINER_THRESHOLD
+        assert cfg.gliner_max_words is None
+        assert cfg.num_cores == 10
+        assert cfg.fail_on_presidio_error is True
+        assert cfg.reasoning_effort == DEFAULT_AI_REASONING_EFFORT
+        assert cfg.presidio_model_size is None
+        assert cfg.presidio_pattern_only is False
+        assert cfg.ai_model_type == "foundation"
+        assert cfg.alignment_mode == "union"
+        assert cfg.fuzzy_threshold == 50
+        assert cfg.allow_consensus_redaction is False
+        assert cfg.redaction_strategy == "generic"
+        assert cfg.output_strategy == "production"
+        assert cfg.output_mode == "separate"
+        assert cfg.confirm_destructive is False
+        assert cfg.max_rows == 10000
+        assert cfg.entity_filter is None
+
+    def test_custom_values(self):
+        cfg = RedactionConfig(
+            use_presidio=False, use_gliner=True, num_cores=4,
+            redaction_strategy="typed", output_mode="in_place",
+            confirm_destructive=True, max_rows=None,
+        )
+        assert cfg.use_presidio is False
+        assert cfg.use_gliner is True
+        assert cfg.num_cores == 4
+        assert cfg.redaction_strategy == "typed"
+        assert cfg.output_mode == "in_place"
+        assert cfg.confirm_destructive is True
+        assert cfg.max_rows is None
+
+
+class TestGovernanceValidation:
+    """RedactionConfig.__post_init__ enforces governance floors on thresholds."""
+
+    def test_score_threshold_below_floor_raises(self):
+        with pytest.raises(ValueError, match="governance"):
+            RedactionConfig(score_threshold=0.01)
+
+    def test_gliner_threshold_below_floor_raises(self):
+        with pytest.raises(ValueError, match="governance"):
+            RedactionConfig(gliner_threshold=0.001)
+
+    def test_score_threshold_at_floor_succeeds(self):
+        cfg = RedactionConfig(score_threshold=MIN_SCORE_THRESHOLD)
+        assert cfg.score_threshold == MIN_SCORE_THRESHOLD
+
+    def test_gliner_threshold_at_floor_succeeds(self):
+        cfg = RedactionConfig(gliner_threshold=MIN_GLINER_THRESHOLD)
+        assert cfg.gliner_threshold == MIN_GLINER_THRESHOLD
+
+    def test_score_threshold_above_floor_succeeds(self):
+        cfg = RedactionConfig(score_threshold=0.5)
+        assert cfg.score_threshold == 0.5
+

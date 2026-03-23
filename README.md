@@ -23,6 +23,8 @@ dbxredact detects and redacts Protected Health Information (PHI) and Personally 
 - **Streaming**: Incremental processing via Structured Streaming with checkpoint-based deduplication
 - **GPU acceleration**: GPU cluster profiles for GLiNER inference
 - **Cost estimation**: Pre-run token and compute cost estimates in the management app
+- **Safety guards**: Governance floors on thresholds, destructive-write confirmation, PII-output confirmation
+- **Audit logging**: Per-document entity-type counts written to an audit table (no raw PII stored)
 
 ## Prerequisites
 
@@ -47,7 +49,12 @@ DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
 CATALOG=your_catalog
 SCHEMA=redaction
 WAREHOUSE_ID=your_warehouse_id
+
+# Optional: set to "false" to deploy jobs only (no app)
+# DEPLOY_APP=false
 ```
+
+`WAREHOUSE_ID` is required when deploying the app (for the app's SQL warehouse resource and deploy-time permission grants). If `DEPLOY_APP=false`, it can be omitted.
 
 ### 2. Deploy
 
@@ -55,16 +62,16 @@ WAREHOUSE_ID=your_warehouse_id
 ./deploy.sh dev
 ```
 
-This builds the Python wheel, builds the React frontend, generates `databricks.yml` from the template, and deploys the Databricks Asset Bundle (jobs, app, and artifacts).
+This builds the Python wheel, generates `databricks.yml` from the template, and deploys the Databricks Asset Bundle (jobs, app, and artifacts). Use `DEPLOY_APP=false` in your env file to deploy jobs without the management app.
 
 ### 3. Run a Pipeline
 
-**From the app**: Open the deployed Databricks App, go to "Run Pipeline", select your source table, choose a cluster profile, and click "Launch".
+**From the app** (recommended): Open the deployed Databricks App, go to "Run Pipeline", select your source table, choose a cluster profile, and click "Launch".
 
 **From CLI**:
 ```bash
 databricks bundle run redaction_pipeline_cpu_small -t dev \
-  --params source_table=catalog.schema.source,text_column=text,output_table=catalog.schema.redacted
+  --notebook-params source_table=catalog.schema.source,text_column=text,output_table=catalog.schema.redacted
 ```
 
 ### 4. Alternative: Git Folder (No CLI)
@@ -90,6 +97,8 @@ CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.checkpoints;
 ```
 
 `deploy.sh` uploads the wheel to `wheels`. `cluster_logs` is used by the benchmark job for cluster log delivery. `checkpoints` is used by the streaming pipeline.
+
+> **Note:** The wheel volume only needs to exist in the deployment schema (the `SCHEMA` in your env file). The redaction pipeline itself can read from and write to any fully qualified table in any schema -- the wheel does not need to be present in every source or output schema.
 
 ## Detection Methods
 
@@ -123,7 +132,7 @@ result_df = run_detection_pipeline(
 )
 ```
 
-Pattern-only mode uses Presidio's built-in regex recognizers (SSN, phone, email, credit card, IP) plus custom recognizers for MRN, reference IDs, age/gender, and DD/MM date formats. NER-based recognizers (PERSON, LOCATION) are skipped.
+Pattern-only mode includes 25 high-precision regex recognizers covering HIPAA Safe Harbor identifiers: SSN (with and without dashes), phone, email, credit card, IP, MRN, reference IDs, age/gender, DD/MM dates, DEA numbers, NPI, labeled DOB, fax, health plan IDs, account numbers, VIN, EIN, license numbers, MBI (Medicare Beneficiary ID), passport, labeled ZIP codes, routing numbers, and ITIN. NER-based recognizers (PERSON, LOCATION) are skipped.
 
 ### Benchmark Interpretation
 
@@ -137,7 +146,7 @@ Ground-truth annotations may not be perfect -- some edge cases (3-letter hospita
 
 Six pre-configured job variants ship with the bundle:
 
-| Profile | Workers | Instance | Use Case |
+| Profile | Workers | Instance (default) | Use Case |
 |---------|---------|----------|----------|
 | CPU Small | 2 | i3.xlarge | Development, small datasets |
 | CPU Medium | 5 | i3.xlarge | Medium workloads |
@@ -147,6 +156,23 @@ Six pre-configured job variants ship with the bundle:
 | GPU Large | 10 | g5.xlarge | GLiNER at scale |
 
 GPU profiles use Databricks Runtime `17.3.x-gpu-ml-scala2.13`.
+
+### Cloud-Specific Node Types
+
+The default instance types are AWS-specific. Azure workspaces must override `cpu_node_type` and `gpu_node_type` in `variables.yml` or their target config:
+
+| Type | AWS (default) | Azure equivalent |
+|------|---------------|------------------|
+| CPU | i3.xlarge | Standard_DS3_v2 |
+| GPU | g5.xlarge | Standard_NC4as_T4_v3 |
+
+If you see `Node type X is not supported` during deployment, set the correct node type for your cloud in `variables.yml`:
+```yaml
+cpu_node_type:
+  default: "Standard_DS3_v2"
+gpu_node_type:
+  default: "Standard_NC4as_T4_v3"
+```
 
 ## Management App
 
@@ -158,8 +184,19 @@ dbxredact includes a web application deployed as a [Databricks App](https://docs
 - **Job History**: Monitor pipeline runs with status tracking, cost estimates, and links to Databricks job runs
 - **Review**: Side-by-side comparison of original and redacted text
 - **Labeling**: Annotate entities by highlighting text to build ground-truth datasets for evaluation
+- **Admin**: PII retention monitoring, annotation purge (`POST /api/admin/purge-annotations`), and audit log viewer
 
 The app is defined in `apps/dbxredact-app/` and deployed via the Databricks Asset Bundle (`resources/app.yml`).
+
+### App Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABRICKS_WAREHOUSE_ID` | (required) | SQL warehouse for app queries |
+| `CATALOG` / `SCHEMA` | (required) | Unity Catalog location for app tables |
+| `ALLOWED_ORIGINS` | `*` | Comma-separated CORS origins (set for production) |
+| `RETENTION_DAYS` | `90` | Days before PII retention warnings fire for annotation/ground-truth tables |
+| `DEBUG` | `false` | When `true`, error responses include exception details |
 
 ## Architecture
 
@@ -198,7 +235,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph lib["src/dbxredact/"]
-        config["config.py\nPrompts, thresholds, labels"]
+        config["config.py\nPrompts, thresholds, RedactionConfig"]
         analyzer["analyzer.py\nPresidio analyzer setup"]
         presidio["presidio.py\nBatch UDF formatting"]
         ai_det["ai_detector.py\nAI Query prompt + UDF"]
@@ -304,17 +341,19 @@ flowchart TB
 ### Full Pipeline
 
 ```python
-from dbxredact import run_redaction_pipeline
+from dbxredact import RedactionConfig, run_redaction_pipeline
+
+config = RedactionConfig(
+    use_presidio=True, use_ai_query=True, use_gliner=False,
+    redaction_strategy="typed",
+)
 
 result_df = run_redaction_pipeline(
     spark=spark,
     source_table="catalog.schema.medical_notes",
     text_column="note_text",
     output_table="catalog.schema.medical_notes_redacted",
-    use_presidio=True,
-    use_ai_query=True,
-    use_gliner=False,
-    redaction_strategy="typed",
+    config=config,
 )
 ```
 
@@ -368,14 +407,33 @@ The redaction pipeline supports incremental processing via Structured Streaming.
 - **`max_files_per_trigger`**: Controls how many files each micro-batch ingests (default 10). Set to 0 / None for unlimited. Useful for throttling first-run backfill on large tables.
 - **Checkpoint path**: Should be a Unity Catalog Volume path (`/Volumes/catalog/schema/volume_name/...`). Non-Volume paths (DBFS, local) may not persist across cluster restarts; a warning is emitted if detected.
 
+## Safety Guards
+
+The pipeline enforces several safety gates to prevent accidental PII exposure or data loss:
+
+| Guard | Trigger | Required Opt-in |
+|-------|---------|-----------------|
+| Destructive write | `output_mode="in_place"` | `confirm_destructive=True` |
+| PII in output table | `output_strategy="validation"` | `confirm_validation_output=True` |
+| Low-recall alignment | `alignment_mode="consensus"` | `allow_consensus_redaction=True` |
+
+Detection thresholds have governance floors to prevent configs that silently disable detection: `score_threshold` must be >= 0.1 and `gliner_threshold` must be >= 0.05. The `RedactionConfig` dataclass and the app's API schema both enforce these bounds.
+
 ## Pipeline Details
 
 ### Output Columns
 
 The pipeline reads only `doc_id` and the specified `text_column` from the source table. Other source columns are **not** carried to the output.
 
-- **Production mode** (default): Output contains `doc_id` + `{text_column}_redacted`.
-- **Validation mode**: Output includes all intermediate columns (raw detector results, aligned entities, redacted text) for debugging.
+- **Production mode** (default): Output contains `doc_id`, `{text_column}_redacted`, `_detection_status`, and `_entity_count`.
+- **Validation mode**: Output includes all intermediate columns (raw detector results, aligned entities, redacted text) for debugging. Requires `confirm_validation_output=True` since it persists raw PII.
+
+| Column | Description |
+|--------|-------------|
+| `doc_id` | Document identifier (join key) |
+| `{text_column}_redacted` | Redacted text |
+| `_detection_status` | `ok`, `no_entities`, or `detection_error` |
+| `_entity_count` | Number of entities detected in the document |
 
 To join redacted output back to your original table, use `doc_id` as the key:
 
@@ -403,6 +461,60 @@ No explicit limit. Practical limits depend on the detection method:
 - **AI Query**: Subject to the LLM endpoint's context window / token limit. Documents exceeding the limit will be truncated by the endpoint.
 - **Presidio**: Processes text in-memory via spaCy. No hard cap, but very large documents may be slow.
 
+### In-Place Redaction
+
+By default the pipeline writes to a separate output table. To overwrite the text column directly in the source table, use `output_mode="in_place"`. This uses `MERGE INTO` so only processed rows are touched.
+
+```python
+run_redaction_pipeline(
+    spark=spark,
+    source_table="catalog.schema.notes",
+    text_column="note_text",
+    output_mode="in_place",
+    confirm_destructive=True,  # required -- operation is irreversible
+    config=config,
+)
+```
+
+### RedactionConfig
+
+Instead of passing 25+ keyword arguments, use `RedactionConfig` to bundle pipeline settings. When `config` is provided, its fields override any matching kwargs.
+
+```python
+from dbxredact import RedactionConfig, run_redaction_pipeline
+
+config = RedactionConfig(
+    use_presidio=True,
+    use_ai_query=True,
+    use_gliner=False,
+    presidio_pattern_only=True,
+    score_threshold=0.5,
+    redaction_strategy="typed",
+    output_strategy="production",
+)
+
+result_df = run_redaction_pipeline(
+    spark=spark,
+    source_table="catalog.schema.notes",
+    text_column="note_text",
+    output_table="catalog.schema.notes_redacted",
+    config=config,
+)
+```
+
+### Audit Logging
+
+Pass `audit_table` to write per-document entity-type counts (no raw PII) for compliance tracking:
+
+```python
+run_redaction_pipeline(
+    ...,
+    audit_table="catalog.schema.redact_audit_log",
+)
+```
+
+The audit log records `run_id`, `doc_id`, `entity_type`, `entity_count`, `detection_status`, `detectors_used`, and a config snapshot. The management app creates this table automatically on startup.
+
 ## Project Structure
 
 ```
@@ -413,15 +525,16 @@ dbxredact/
   variables.yml              # Bundle variables (catalog, schema, etc.)
   example.env                # Template for dev.env / prod.env
   src/dbxredact/             # Core Python library
-    config.py                #   Prompts, thresholds, entity labels
+    config.py                #   Prompts, thresholds, RedactionConfig dataclass
+    analyzer.py              #   Custom Presidio recognizers (HIPAA Safe Harbor)
     detection.py             #   Orchestrator for all detectors
     gliner_detector.py       #   GLiNER batch UDF with worker-level model cache
     presidio.py              #   Presidio batch UDF
     ai_detector.py           #   AI Query prompt construction + UDF
     alignment.py             #   Multi-source entity merge (union/consensus)
-    redaction.py             #   Text replacement UDFs
+    redaction.py             #   Text replacement UDFs (with span merging)
     entity_filter.py         #   Block/safe list filtering
-    pipeline.py              #   End-to-end orchestration
+    pipeline.py              #   End-to-end orchestration + safety guards
     evaluation.py            #   Metrics (precision, recall, F1)
     judge.py                 #   AI judge + next actions
     cost.py                  #   Token cost estimation constants
@@ -446,9 +559,11 @@ dbxredact/
 ## Testing
 
 ```bash
-poetry install
-pytest tests/ -v
+poetry install --with dev
+poetry run pytest tests/ -x -q --ignore=tests/integration
 ```
+
+Integration tests (`tests/integration/`) require a live Spark cluster and are excluded from local/CI runs.
 
 ## Compute Types
 Use an ML cluster - not currently working on serverless. GLiNER models perform better on GPU, but other models do not.

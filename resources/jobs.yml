@@ -29,7 +29,7 @@ resources:
             spark_version: "17.3.x-scala2.13"
             kind: CLASSIC_PREVIEW
             use_ml_runtime: true
-            node_type_id: "i3.xlarge"
+            node_type_id: ${var.cpu_node_type}
             num_workers: 2
             data_security_mode: SINGLE_USER
             cluster_log_conf:
@@ -132,7 +132,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -151,7 +151,7 @@ resources:
             spark_version: "17.3.x-scala2.13"
             kind: CLASSIC_PREVIEW
             use_ml_runtime: true
-            node_type_id: "i3.xlarge"
+            node_type_id: ${var.cpu_node_type}
             num_workers: 2
             data_security_mode: SINGLE_USER
           libraries:
@@ -167,7 +167,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -186,7 +186,7 @@ resources:
             spark_version: "17.3.x-scala2.13"
             kind: CLASSIC_PREVIEW
             use_ml_runtime: true
-            node_type_id: "i3.xlarge"
+            node_type_id: ${var.cpu_node_type}
             num_workers: 5
             data_security_mode: SINGLE_USER
           libraries:
@@ -202,7 +202,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -221,7 +221,7 @@ resources:
             spark_version: "17.3.x-scala2.13"
             kind: CLASSIC_PREVIEW
             use_ml_runtime: true
-            node_type_id: "i3.xlarge"
+            node_type_id: ${var.cpu_node_type}
             num_workers: 10
             data_security_mode: SINGLE_USER
           libraries:
@@ -237,7 +237,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -254,7 +254,7 @@ resources:
               num_cores: "8"
           new_cluster:
             spark_version: "17.3.x-gpu-ml-scala2.13"
-            node_type_id: "g5.xlarge"
+            node_type_id: ${var.gpu_node_type}
             num_workers: 2
             data_security_mode: SINGLE_USER
             spark_conf:
@@ -272,7 +272,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -289,7 +289,7 @@ resources:
               num_cores: "20"
           new_cluster:
             spark_version: "17.3.x-gpu-ml-scala2.13"
-            node_type_id: "g5.xlarge"
+            node_type_id: ${var.gpu_node_type}
             num_workers: 5
             data_security_mode: SINGLE_USER
             spark_conf:
@@ -307,7 +307,7 @@ resources:
               source_table: ""
               text_column: ""
               output_table: ""
-              doc_id_column: ""
+              doc_id_column: "doc_id"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -324,7 +324,7 @@ resources:
               num_cores: "40"
           new_cluster:
             spark_version: "17.3.x-gpu-ml-scala2.13"
-            node_type_id: "g5.xlarge"
+            node_type_id: ${var.gpu_node_type}
             num_workers: 10
             data_security_mode: SINGLE_USER
             spark_conf:

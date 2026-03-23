@@ -4,10 +4,10 @@ import logging
 import time
 from typing import Optional
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import col, from_json, expr
+from pyspark.sql.functions import col, expr
 
 from .presidio import make_presidio_batch_udf
-from .ai_detector import make_prompt, format_entity_response_object_udf
+from .ai_detector import make_prompt, format_entity_response_object_udf, _get_format_entity_udf
 from .analyzer import SpacyModelNotFoundError
 from .config import (
     LABEL_ENUMS,
@@ -17,6 +17,7 @@ from .config import (
     DEFAULT_GLINER_THRESHOLD,
     DEFAULT_GLINER_MAX_WORDS,
     DEFAULT_AI_REASONING_EFFORT,
+    RedactionConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ def _smart_partitions(df: DataFrame, num_cores: int, row_count: Optional[int] = 
     if row_count is None:
         try:
             row_count = df.count()
-        except Exception:
+        except (ValueError, RuntimeError):
             return num_cores
     return max(1, min(num_cores, row_count // _MIN_ROWS_PER_PARTITION))
 
@@ -50,7 +51,7 @@ def check_presidio_available() -> tuple:
                 "Install with: %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl"
             )
         return True, None
-    except Exception as e:
+    except (ImportError, OSError) as e:
         return False, str(e)
 
 
@@ -93,18 +94,8 @@ def run_presidio_detection(
     )
 
     base_df = df.repartition(_smart_partitions(df, num_cores)) if _repartition else df
-    result_df = (
-        base_df
-        .withColumn(
-            "presidio_results", presidio_udf(col(doc_id_column), col(text_column))
-        )
-        .withColumn(
-            "presidio_results_struct",
-            from_json(
-                "presidio_results",
-                "array<struct<entity:string, entity_type:string, score:double, start:integer, end:integer, doc_id:string>>",
-            ),
-        )
+    result_df = base_df.withColumn(
+        "presidio_results_struct", presidio_udf(col(doc_id_column), col(text_column))
     )
 
     return result_df
@@ -174,21 +165,15 @@ def run_ai_query_detection(
         """
 
     base_df = df.repartition(_smart_partitions(df, num_cores)) if _repartition else df
+    entity_udf = _get_format_entity_udf()
 
     if ai_model_type == "external":
         result_df = (
             base_df
             .withColumn("raw_response", expr(ai_query_expr))
             .withColumn(
-                "ai_query_results",
-                format_entity_response_object_udf(col("raw_response"), col(text_column)),
-            )
-            .withColumn(
                 "ai_results_struct",
-                from_json(
-                    "ai_query_results",
-                    "array<struct<entity:string, entity_type:string, score:double, start:integer, end:integer, doc_id:string>>",
-                ),
+                entity_udf(col("raw_response"), col(text_column)),
             )
         )
     else:
@@ -196,15 +181,8 @@ def run_ai_query_detection(
             base_df
             .withColumn("response", expr(ai_query_expr))
             .withColumn(
-                "ai_query_results",
-                format_entity_response_object_udf(col("response.result"), col(text_column)),
-            )
-            .withColumn(
                 "ai_results_struct",
-                from_json(
-                    "ai_query_results",
-                    "array<struct<entity:string, entity_type:string, score:double, start:integer, end:integer, doc_id:string>>",
-                ),
+                entity_udf(col("response.result"), col(text_column)),
             )
         )
 
@@ -274,6 +252,7 @@ def run_detection(
     presidio_pattern_only: bool = False,
     ai_model_type: str = "foundation",
     row_count: Optional[int] = None,
+    config: Optional[RedactionConfig] = None,
 ) -> DataFrame:
     """
     Run PHI/PII detection using selected method(s).
@@ -281,12 +260,31 @@ def run_detection(
     Repartitions once up-front so individual detectors skip their own
     count()/repartition, avoiding redundant Spark actions on the lazy DAG.
     """
+    if config is not None:
+        from dataclasses import fields as dc_fields
+        _cfg_map = {f.name: getattr(config, f.name) for f in dc_fields(config)}
+        use_presidio = _cfg_map.get("use_presidio", use_presidio)
+        use_ai_query = _cfg_map.get("use_ai_query", use_ai_query)
+        use_gliner = _cfg_map.get("use_gliner", use_gliner)
+        endpoint = _cfg_map.get("endpoint", endpoint)
+        score_threshold = _cfg_map.get("score_threshold", score_threshold)
+        gliner_model = _cfg_map.get("gliner_model", gliner_model)
+        gliner_threshold = _cfg_map.get("gliner_threshold", gliner_threshold)
+        gliner_max_words = _cfg_map.get("gliner_max_words", gliner_max_words)
+        num_cores = _cfg_map.get("num_cores", num_cores)
+        fail_on_presidio_error = _cfg_map.get("fail_on_presidio_error", fail_on_presidio_error)
+        reasoning_effort = _cfg_map.get("reasoning_effort", reasoning_effort)
+        presidio_model_size = _cfg_map.get("presidio_model_size", presidio_model_size)
+        presidio_pattern_only = _cfg_map.get("presidio_pattern_only", presidio_pattern_only)
+        ai_model_type = _cfg_map.get("ai_model_type", ai_model_type)
+
     # Repartition once; all detectors will use _repartition=False
     n_parts = _smart_partitions(df, num_cores, row_count=row_count)
     result_df = df.repartition(n_parts)
-    print(f"Repartitioned to {n_parts} partitions (row_count={row_count}).")
+    logger.info("Repartitioned to %d partitions (row_count=%s).", n_parts, row_count)
 
     presidio_skipped = False
+    _prior_caches = []
 
     if use_presidio:
         t_presidio = time.time()
@@ -303,7 +301,8 @@ def run_detection(
             )
             result_df = result_df.cache()
             result_df.count()
-            print(f"   Presidio detection: {time.time() - t_presidio:.1f}s")
+            _prior_caches.append(result_df)
+            logger.info("Presidio detection: %.1fs", time.time() - t_presidio)
         except SpacyModelNotFoundError as e:
             if fail_on_presidio_error:
                 raise
@@ -329,7 +328,8 @@ def run_detection(
         )
         result_df = result_df.cache()
         result_df.count()
-        print(f"   AI Query detection: {time.time() - t_ai:.1f}s")
+        _prior_caches.append(result_df)
+        logger.info("AI Query detection: %.1fs", time.time() - t_ai)
 
     if use_gliner:
         t_gliner = time.time()
@@ -347,6 +347,11 @@ def run_detection(
         result_df = run_gliner_detection(**gliner_kwargs)
         result_df = result_df.cache()
         result_df.count()
-        print(f"   GLiNER detection: {time.time() - t_gliner:.1f}s")
+        _prior_caches.append(result_df)
+        logger.info("GLiNER detection: %.1fs", time.time() - t_gliner)
+
+    # Release intermediate caches; only the final one is needed by the caller
+    for c in _prior_caches[:-1]:
+        c.unpersist()
 
     return result_df

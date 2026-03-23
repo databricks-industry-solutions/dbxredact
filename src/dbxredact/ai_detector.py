@@ -6,9 +6,8 @@ import re
 from typing import List, Tuple, Union
 import pandas as pd
 from pyspark.sql.functions import pandas_udf
-from pyspark.sql.types import StringType
 
-from .config import PHI_PROMPT_SKELETON, LABEL_ENUMS, DEFAULT_AI_CONFIDENCE_SCORE, should_ignore_entity
+from .config import PHI_PROMPT_SKELETON, LABEL_ENUMS, DEFAULT_AI_CONFIDENCE_SCORE, should_ignore_entity, _entity_schema
 from .utils import build_offset_map
 
 logger = logging.getLogger(__name__)
@@ -114,7 +113,6 @@ def _parse_entity_list(raw) -> list:
     return []
 
 
-@pandas_udf(StringType())
 def format_entity_response_object_udf(
     identified_entities_series: pd.Series, sentences: pd.Series
 ) -> pd.Series:
@@ -123,38 +121,68 @@ def format_entity_response_object_udf(
     Accepts either a JSON string (external model) or a list of Row objects
     (foundation model with returnType) and enhances each entity with precise
     start/end indices by locating all occurrences in the original text.
+
+    Returns a Series of lists-of-dicts matching ``ENTITY_SCHEMA``.
     """
     new_entity_series = []
 
     for entity_list, sentence in zip(identified_entities_series, sentences):
         entities = _parse_entity_list(entity_list)
 
-        unique_entities_set = set(
-            (entity["entity"], entity["entity_type"])
-            for entity in entities
-            if "entity" in entity and "entity_type" in entity
-        )
+        mention_counts: dict = {}
+        for entity in entities:
+            if "entity" in entity and "entity_type" in entity:
+                key = (entity["entity"], entity["entity_type"])
+                mention_counts[key] = mention_counts.get(key, 0) + 1
 
         new_entity_list = []
+        unlocated_count = 0
 
-        for entity_text, entity_type in unique_entities_set:
+        for (entity_text, entity_type), llm_count in mention_counts.items():
             if should_ignore_entity(entity_text, entity_type):
                 continue
             positions = _find_entity_positions(entity_text, sentence)
 
-            for start, end in positions:
-                new_entity_list.append(
-                    {
-                        "entity": sentence[start:end],
-                        "entity_type": entity_type,
-                        "start": start,
-                        "end": end,
-                        "score": DEFAULT_AI_CONFIDENCE_SCORE,
-                        "analysis_explanation": None,
-                        "recognition_metadata": {},
-                    }
+            if not positions:
+                logger.warning(
+                    "AI detected entity (%s, %d chars) but could not locate in text",
+                    entity_type, len(entity_text),
+                )
+                unlocated_count += 1
+                continue
+
+            if len(positions) < llm_count:
+                logger.info(
+                    "AI reported %d mentions of entity (%s, %d chars) but only located %d",
+                    llm_count, entity_type, len(entity_text), len(positions),
                 )
 
-        new_entity_series.append(json.dumps(new_entity_list))
+            for start, end in positions:
+                new_entity_list.append({
+                    "entity": sentence[start:end],
+                    "entity_type": entity_type,
+                    "score": float(DEFAULT_AI_CONFIDENCE_SCORE),
+                    "start": start,
+                    "end": end,
+                    "doc_id": None,
+                })
+
+        if unlocated_count > 0:
+            logger.warning(
+                "%d AI-detected entities could not be located in text (out of %d unique)",
+                unlocated_count, len(mention_counts),
+            )
+        new_entity_series.append(new_entity_list)
 
     return pd.Series(new_entity_series)
+
+
+_format_entity_udf = None
+
+
+def _get_format_entity_udf():
+    """Lazily create the pandas_udf wrapper for format_entity_response_object_udf."""
+    global _format_entity_udf
+    if _format_entity_udf is None:
+        _format_entity_udf = pandas_udf(format_entity_response_object_udf, _entity_schema())
+    return _format_entity_udf

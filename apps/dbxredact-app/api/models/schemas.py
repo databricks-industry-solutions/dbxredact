@@ -2,8 +2,8 @@
 
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, field_validator
+from typing import Any, Dict, List, Literal, Optional
+from pydantic import BaseModel, Field, field_validator
 
 
 class ConfigCreate(BaseModel):
@@ -13,9 +13,9 @@ class ConfigCreate(BaseModel):
     use_ai_query: bool = True
     use_gliner: bool = False
     endpoint: str = "databricks-gpt-oss-120b"
-    score_threshold: float = 0.5
+    score_threshold: float = Field(0.5, ge=0.1, le=1.0)
     gliner_model: str = "nvidia/gliner-PII"
-    gliner_threshold: float = 0.2
+    gliner_threshold: float = Field(0.2, ge=0.05, le=1.0)
     redaction_strategy: str = "typed"
     alignment_mode: str = "union"
     reasoning_effort: Optional[str] = "low"
@@ -44,10 +44,11 @@ class PipelineRunRequest(BaseModel):
     text_column: str = "text"
     doc_id_column: str = "doc_id"
     output_table: Optional[str] = None
-    max_rows: Optional[int] = 10000
+    max_rows: Optional[int] = Field(default=10000, le=1_000_000)
     max_cost_usd: Optional[float] = None
     cluster_profile: str = "cpu_small"
     refresh_approach: str = "full"
+    output_mode: Literal["separate", "in_place"] = "separate"
 
 
 class RunStatusResponse(BaseModel):
@@ -68,6 +69,8 @@ class JobHistoryItem(BaseModel):
     cost_estimate_usd: Optional[float] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
+    run_page_url: Optional[str] = None
+    job_type: Optional[str] = None
 
 
 class AnnotationCreate(BaseModel):
@@ -146,7 +149,7 @@ class BuildQueueRequest(BaseModel):
     detection_table: str
     doc_id_column: str = "doc_id"
     entities_column: str = "aligned_entities"
-    top_k: int = 100
+    top_k: int = Field(default=100, le=10_000)
 
 
 class ReviewRequest(BaseModel):
@@ -159,3 +162,16 @@ class ActiveLearnStats(BaseModel):
     pending: int
     skipped: int
     avg_priority: Optional[float] = None
+
+
+class LabelCreate(BaseModel):
+    entity_text: str
+    entity_type: str
+    start: int = Field(ge=0)
+    end_pos: int = Field(ge=0)
+
+
+class BatchLabelRequest(BaseModel):
+    doc_id: str
+    source_table: str
+    labels: List[LabelCreate]

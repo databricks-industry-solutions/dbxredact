@@ -1,7 +1,7 @@
 """Labeling/annotation routes for ground truth creation."""
 
-from typing import List
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
+from api.models.schemas import BatchLabelRequest
 from api.services.db import fetch_all, fetch_one, execute, _table, quote_table, validate_identifier
 
 router = APIRouter()
@@ -68,24 +68,41 @@ async def list_documents_with_labels(
 
 
 @router.post("/batch")
-async def batch_label(doc_id: str, source_table: str, labels: List[dict]):
-    for label in labels:
+async def batch_label(body: BatchLabelRequest):
+    quote_table(body.source_table)
+    gt = _table('redact_ground_truths')
+    # Delete existing labels for this (doc_id, source_table) to make save idempotent
+    execute(
+        f"DELETE FROM {gt} WHERE doc_id = %(doc_id)s AND source_table = %(source_table)s",
+        {"doc_id": body.doc_id, "source_table": body.source_table},
+    )
+    for label in body.labels:
         execute(
-            f"""INSERT INTO {_table('redact_ground_truths')}
+            f"""INSERT INTO {gt}
             (doc_id, source_table, entity_text, entity_type, start, end_pos, created_at)
             VALUES (%(doc_id)s, %(source_table)s,
                     %(entity_text)s, %(entity_type)s, %(start)s, %(end_pos)s,
                     current_timestamp())""",
             {
-                "doc_id": doc_id,
-                "source_table": source_table,
-                "entity_text": label["entity_text"],
-                "entity_type": label["entity_type"],
-                "start": label["start"],
-                "end_pos": label["end"],
+                "doc_id": body.doc_id,
+                "source_table": body.source_table,
+                "entity_text": label.entity_text,
+                "entity_type": label.entity_type,
+                "start": label.start,
+                "end_pos": label.end_pos,
             },
         )
-    return {"labeled": len(labels)}
+    return {"labeled": len(body.labels)}
+
+
+@router.delete("/{doc_id}")
+async def delete_labels(doc_id: str, source_table: str = Query(...)):
+    quote_table(source_table)
+    execute(
+        f"DELETE FROM {_table('redact_ground_truths')} WHERE doc_id = %(doc_id)s AND source_table = %(source_table)s",
+        {"doc_id": doc_id, "source_table": source_table},
+    )
+    return {"deleted": True, "doc_id": doc_id}
 
 
 @router.get("/stats")

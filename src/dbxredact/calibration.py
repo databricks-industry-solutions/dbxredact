@@ -4,7 +4,12 @@ import json
 from typing import List
 
 import numpy as np
-from sklearn.isotonic import IsotonicRegression
+
+
+def _get_isotonic_regression():
+    from sklearn.isotonic import IsotonicRegression
+
+    return IsotonicRegression
 
 
 class CalibratedScorer:
@@ -14,9 +19,11 @@ class CalibratedScorer:
     """
 
     def __init__(self):
-        self._models: dict[str, IsotonicRegression] = {}
+        self._models: dict = {}
 
-    def fit(self, source: str, scores: List[float], labels: List[int]) -> "CalibratedScorer":
+    def fit(
+        self, source: str, scores: List[float], labels: List[int]
+    ) -> "CalibratedScorer":
         """Fit calibration for a single source.
 
         Args:
@@ -24,7 +31,7 @@ class CalibratedScorer:
             scores: Raw confidence scores
             labels: Binary ground truth (1 = true entity, 0 = not)
         """
-        ir = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
+        ir = _get_isotonic_regression()(y_min=0.0, y_max=1.0, out_of_bounds="clip")
         ir.fit(np.array(scores), np.array(labels))
         self._models[source] = ir
         return self
@@ -57,16 +64,26 @@ class CalibratedScorer:
 
     @classmethod
     def load(cls, path: str) -> "CalibratedScorer":
-        """Load calibration from JSON."""
+        """Load calibration from JSON.
+
+        Restores IsotonicRegression state directly from saved thresholds.
+        Re-fitting on already-reduced thresholds can leave sklearn's internal
+        interpolation function (f_) as None in some versions.
+        """
+        from scipy.interpolate import interp1d
+
         with open(path) as f:
             data = json.load(f)
         scorer = cls()
         for source, params in data.items():
-            ir = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
-            ir.X_thresholds_ = np.array(params["X_thresholds_"])
-            ir.y_thresholds_ = np.array(params["y_thresholds_"])
-            ir.X_min_ = ir.X_thresholds_[0]
-            ir.X_max_ = ir.X_thresholds_[-1]
-            ir.f_ = None  # will rebuild on next predict
+            X = np.array(params["X_thresholds_"])
+            y = np.array(params["y_thresholds_"])
+            ir = _get_isotonic_regression()(y_min=0.0, y_max=1.0, out_of_bounds="clip")
+            ir.X_thresholds_ = X
+            ir.y_thresholds_ = y
+            ir.X_min_ = float(X.min())
+            ir.X_max_ = float(X.max())
+            ir.increasing_ = True
+            ir.f_ = interp1d(X, y, kind="linear", bounds_error=False)
             scorer._models[source] = ir
         return scorer

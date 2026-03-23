@@ -1,0 +1,7 @@
+export const ENTITY_TYPES = [
+  "PERSON", "PHONE_NUMBER", "EMAIL_ADDRESS", "LOCATION", "DATE_TIME",
+  "US_SSN", "ADDRESS", "MEDICAL_RECORD_NUMBER", "IP_ADDRESS", "URL",
+  "HOSPITAL_NAME", "ORGANIZATION", "ID_NUMBER", "OTHER",
+] as const;
+
+export type EntityType = typeof ENTITY_TYPES[number];

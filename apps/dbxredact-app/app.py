@@ -5,6 +5,7 @@ import os
 import uuid
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -14,11 +15,21 @@ from api.services.db import execute, fetch_one, _table, CATALOG, SCHEMA, WAREHOU
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="dbxredact", version="0.2.0")
+app = FastAPI(title="dbxredact", version="0.1.1")
+
+_allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins or ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(api_router, prefix="/api")
 
 
 _DEBUG = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
+RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "90"))
 
 
 @app.exception_handler(DatabaseError)
@@ -29,7 +40,7 @@ async def database_error_handler(request: Request, exc: DatabaseError):
 
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):
-    logger.error("Unhandled error on %s: %s", request.url.path, exc, exc_info=True)
+    logger.error("Unhandled error on %s: %s: %s", request.url.path, type(exc).__name__, exc)
     detail = str(exc) if _DEBUG else "Internal server error"
     return JSONResponse(status_code=500, content={"error": detail})
 
@@ -56,7 +67,8 @@ TABLE_DDLS = [
         use_ai_query BOOLEAN, use_gliner BOOLEAN, endpoint STRING, score_threshold DOUBLE,
         gliner_model STRING, gliner_threshold DOUBLE, redaction_strategy STRING,
         alignment_mode STRING, reasoning_effort STRING, gliner_max_words INT,
-        presidio_model_size STRING, extra_params STRING, created_at TIMESTAMP, updated_at TIMESTAMP
+        presidio_model_size STRING, presidio_pattern_only BOOLEAN,
+        extra_params STRING, created_at TIMESTAMP, updated_at TIMESTAMP
     )""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_block_list (
         entry_id STRING, value STRING, is_pattern BOOLEAN, entity_type STRING,
@@ -71,7 +83,8 @@ TABLE_DDLS = [
         workflow STRING, entity_text STRING, entity_type STRING,
         start INT, end_pos INT, action STRING, corrected_type STRING,
         corrected_value STRING, detection_method STRING, created_at TIMESTAMP
-    )""",
+    )
+    TBLPROPERTIES ('delta.deletedFileRetentionDuration' = 'interval 90 days')""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_job_history (
         run_id BIGINT, config_id STRING, source_table STRING, output_table STRING,
         status STRING, cost_estimate_usd DOUBLE, started_at TIMESTAMP, completed_at TIMESTAMP
@@ -88,6 +101,12 @@ TABLE_DDLS = [
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_ground_truths (
         doc_id STRING, source_table STRING, entity_text STRING, entity_type STRING,
         start INT, end_pos INT, created_at TIMESTAMP
+    )
+    TBLPROPERTIES ('delta.deletedFileRetentionDuration' = 'interval 90 days')""",
+    f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_audit_log (
+        run_id STRING, doc_id STRING, entity_type STRING, entity_count INT,
+        detection_status STRING, detectors_used STRING, config_snapshot STRING,
+        created_at TIMESTAMP
     )""",
 ]
 
@@ -113,6 +132,8 @@ DEFAULT_CONFIG = {
 
 @app.on_event("startup")
 async def on_startup():
+    if not _allowed_origins:
+        logger.warning("ALLOWED_ORIGINS not set -- CORS allows all origins. Set ALLOWED_ORIGINS for production.")
     if not os.environ.get("DATABRICKS_WAREHOUSE_ID"):
         logger.warning("DATABRICKS_WAREHOUSE_ID not set -- skipping table setup")
         return
@@ -128,6 +149,9 @@ async def on_startup():
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (reasoning_effort STRING)",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (gliner_max_words INT)",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_model_size STRING)",
+        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_pattern_only BOOLEAN)",
+        f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (run_page_url STRING)",
+        f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (job_type STRING)",
     ]:
         try:
             execute(col_ddl)
@@ -141,17 +165,35 @@ async def on_startup():
                 (config_id, name, detection_profile, use_presidio, use_ai_query, use_gliner,
                  endpoint, score_threshold, gliner_model, gliner_threshold, redaction_strategy,
                  alignment_mode, reasoning_effort, gliner_max_words, presidio_model_size,
-                 extra_params, created_at, updated_at)
+                 presidio_pattern_only, extra_params, created_at, updated_at)
                 VALUES (%(config_id)s, %(name)s, %(detection_profile)s, %(use_presidio)s,
                         %(use_ai_query)s, %(use_gliner)s, %(endpoint)s, %(score_threshold)s,
                         %(gliner_model)s, %(gliner_threshold)s, %(redaction_strategy)s,
                         %(alignment_mode)s, %(reasoning_effort)s, %(gliner_max_words)s,
-                        %(presidio_model_size)s, NULL, current_timestamp(), current_timestamp())""",
+                        %(presidio_model_size)s, %(presidio_pattern_only)s,
+                        NULL, current_timestamp(), current_timestamp())""",
                 DEFAULT_CONFIG,
             )
             logger.info("Seeded default config")
     except Exception as e:
         logger.error("Failed to seed default config: %s", e)
+    # Warn if PII-bearing tables have stale data beyond retention period
+    for pii_table in ("redact_annotations", "redact_ground_truths"):
+        try:
+            stale = fetch_one(
+                f"SELECT count(*) as cnt, min(created_at) as oldest "
+                f"FROM {_table(pii_table)} "
+                f"WHERE created_at < current_timestamp() - INTERVAL {RETENTION_DAYS} DAY"
+            )
+            cnt = int(stale.get("cnt", 0)) if stale else 0
+            if cnt > 0:
+                logger.warning(
+                    "GOVERNANCE: %s has %d rows older than %d days (oldest: %s). "
+                    "These contain raw PII. Call POST /api/admin/purge-annotations to clean up.",
+                    pii_table, cnt, RETENTION_DAYS, stale.get("oldest"),
+                )
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

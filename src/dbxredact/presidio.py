@@ -1,13 +1,12 @@
 """Presidio-based PHI/PII detection functions."""
 
-import json
 from typing import Iterator, Tuple
 import pandas as pd
 from pyspark.sql.functions import pandas_udf
 from presidio_analyzer import BatchAnalyzerEngine
 from presidio_analyzer.dict_analyzer_result import DictAnalyzerResult
 
-from .config import DEFAULT_PRESIDIO_SCORE_THRESHOLD, PRESIDIO_ENTITY_TYPES, should_ignore_entity
+from .config import DEFAULT_PRESIDIO_SCORE_THRESHOLD, PRESIDIO_ENTITY_TYPES, should_ignore_entity, _entity_schema
 from .analyzer import SpacyModelNotFoundError
 
 
@@ -15,16 +14,7 @@ def format_presidio_batch_results(
     results: Iterator[DictAnalyzerResult],
     score_threshold: float = DEFAULT_PRESIDIO_SCORE_THRESHOLD,
 ) -> list:
-    """
-    Format Presidio batch analysis results into a list of JSON strings.
-
-    Args:
-        results: Iterator of DictAnalyzerResult from Presidio batch analysis
-        score_threshold: Minimum confidence score to include results (0.0-1.0)
-
-    Returns:
-        List of JSON-serialized findings for each document
-    """
+    """Format Presidio batch results into a list of entity-list dicts (no JSON)."""
     col1, col2 = tuple(results)
     doc_ids = col1.value
     original_texts = col2.value
@@ -41,9 +31,16 @@ def format_presidio_batch_results(
             if ans.get("score", 0) > score_threshold and not should_ignore_entity(
                 ans.get("entity", ""), ans.get("entity_type", "")
             ):
-                findings.append(ans)
+                findings.append({
+                    "entity": ans["entity"],
+                    "entity_type": ans.get("entity_type", ""),
+                    "score": float(ans.get("score", 0)),
+                    "start": int(ans.get("start", 0)),
+                    "end": int(ans.get("end", 0)),
+                    "doc_id": str(ans.get("doc_id", "")),
+                })
 
-        output.append(json.dumps(findings))
+        output.append(findings)
 
     return output
 
@@ -96,8 +93,9 @@ def make_presidio_batch_udf(
         SpacyModelNotFoundError: If required spaCy models are not installed (unless pattern_only)
     """
     entity_list = list(entities or PRESIDIO_ENTITY_TYPES)
+    schema = _entity_schema()
 
-    @pandas_udf("string")
+    @pandas_udf(schema)
     def analyze_udf(
         batch_iter: Iterator[Tuple[pd.Series, pd.Series]],
     ) -> Iterator[pd.Series]:

@@ -1,6 +1,34 @@
 """Configuration constants for PHI/PII detection."""
 
 import hashlib as _hashlib
+import logging as _logging
+from dataclasses import dataclass, field
+from typing import Optional, Any
+
+_logger = _logging.getLogger(__name__)
+
+# Governance floor thresholds -- prevent configs that silently disable detection
+MIN_SCORE_THRESHOLD = 0.1
+MIN_GLINER_THRESHOLD = 0.05
+
+
+def _entity_schema():
+    """Shared Spark schema for entity arrays returned by all detector UDFs.
+
+    Defined as a function to avoid importing pyspark at config-load time
+    (which would break lightweight test environments that mock pyspark).
+    """
+    from pyspark.sql.types import (
+        ArrayType, StructType, StructField, StringType, IntegerType, DoubleType,
+    )
+    return ArrayType(StructType([
+        StructField("entity", StringType()),
+        StructField("entity_type", StringType()),
+        StructField("score", DoubleType()),
+        StructField("start", IntegerType()),
+        StructField("end", IntegerType()),
+        StructField("doc_id", StringType()),
+    ]))
 
 # Presidio entity types to detect.  These use Presidio's actual recognizer names.
 # Pass to analyze_dict(entities=...) to restrict detection to this set.
@@ -18,7 +46,19 @@ PRESIDIO_ENTITY_TYPES = [
     "US_DRIVER_LICENSE",
     "MEDICAL_RECORD_NUMBER",
     "AGE_GENDER",
+    "AGE",
     "NRP",
+    # HIPAA Safe Harbor recognizers
+    "DEA_NUMBER",
+    "NPI_NUMBER",
+    "DATE_OF_BIRTH",
+    "FAX_NUMBER",
+    "HEALTH_PLAN_ID",
+    "ACCOUNT_NUMBER",
+    "VIN",
+    "DEVICE_ID",
+    "US_EIN",
+    "LICENSE_NUMBER",
 ]
 
 # Extended list of label enums for AI-based detection
@@ -298,7 +338,7 @@ ENTITY_TEXT_IGNORE_PATTERNS = _re.compile(
     r"^("
     r"dr\.?|mr\.?|mrs\.?|ms\.?|prof\.?|sir|madam"  # titles / prefixes
     r"|he|she|they|you|we|it|i"                       # pronouns
-    r"|doctor|nurse|patient|physician|surgeon"         # generic clinical roles
+    r"|nurse|physician|surgeon"                        # generic clinical roles (not "doctor"/"patient" -- can appear in names)
     r"|am|pm"                                          # bare time fragments
     r"|today|yesterday|tomorrow"                         # relative day words
     r"|(19|20)\d{2}"                                     # bare 4-digit years
@@ -319,12 +359,27 @@ ENTITY_TEXT_IGNORE_PATTERNS = _re.compile(
 _SHORT_LOCATION_RE = _re.compile(r"^[A-Z]{2,3}$")
 
 
-def should_ignore_entity(entity_text: str, entity_type: str) -> bool:
-    """Return True if the entity should be dropped from results."""
+_LOOKS_LIKE_ID_RE = _re.compile(r"(?:\d|[A-Z].*[a-z]|[a-z].*[A-Z]|.*\.)")
+
+
+def should_ignore_entity(
+    entity_text: str,
+    entity_type: str,
+    types_to_ignore: set = None,
+) -> bool:
+    """Return True if the entity should be dropped from results.
+
+    Args:
+        types_to_ignore: Override the default ``ENTITY_TYPES_TO_IGNORE`` set.
+    """
+    if types_to_ignore is None:
+        types_to_ignore = ENTITY_TYPES_TO_IGNORE
     stripped = entity_text.strip()
-    if entity_type in ENTITY_TYPES_TO_IGNORE:
+    if entity_type in types_to_ignore:
         return True
-    if len(stripped) <= 2:
+    if len(stripped) <= 1:
+        return True
+    if len(stripped) == 2 and not _LOOKS_LIKE_ID_RE.match(stripped):
         return True
     if ENTITY_TEXT_IGNORE_PATTERNS.match(stripped):
         return True
@@ -337,6 +392,71 @@ def should_ignore_entity(entity_text: str, entity_type: str) -> bool:
 # Prompt version tracking (short hash of PHI_PROMPT_SKELETON for audit)
 # ---------------------------------------------------------------------------
 PROMPT_VERSION = _hashlib.sha256(PHI_PROMPT_SKELETON.encode()).hexdigest()[:12]
+
+
+# ---------------------------------------------------------------------------
+# Pipeline configuration dataclass
+# ---------------------------------------------------------------------------
+@dataclass
+class RedactionConfig:
+    """Single configuration object for the redaction pipeline.
+
+    Pass to ``run_redaction_pipeline(config=...)`` instead of listing 25+
+    keyword arguments.  When ``config`` is supplied, its fields
+    unconditionally override any individual kwargs with matching names.
+    Pass *either* ``config=`` *or* individual kwargs, not both.
+    """
+    # Detection
+    use_presidio: bool = True
+    use_ai_query: bool = True
+    use_gliner: bool = False
+    endpoint: Optional[str] = None
+    score_threshold: float = DEFAULT_PRESIDIO_SCORE_THRESHOLD
+    gliner_model: str = DEFAULT_GLINER_MODEL
+    gliner_threshold: float = DEFAULT_GLINER_THRESHOLD
+    gliner_max_words: Optional[int] = None
+    num_cores: int = 10
+    fail_on_presidio_error: bool = True
+    reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT
+    presidio_model_size: Optional[str] = None
+    presidio_pattern_only: bool = False
+    ai_model_type: str = "foundation"
+    # Alignment
+    alignment_mode: str = "union"
+    fuzzy_threshold: int = 50
+    allow_consensus_redaction: bool = False
+    # Redaction
+    redaction_strategy: str = "generic"
+    output_strategy: str = "production"
+    output_mode: str = "separate"
+    confirm_destructive: bool = False
+    confirm_validation_output: bool = False
+    max_rows: Optional[int] = 10000
+    entity_filter: Any = field(default=None, repr=False)
+
+    def __post_init__(self):
+        if self.score_threshold < MIN_SCORE_THRESHOLD:
+            raise ValueError(
+                f"score_threshold={self.score_threshold} is below the governance "
+                f"floor of {MIN_SCORE_THRESHOLD}. Very low thresholds can silently "
+                f"disable detection."
+            )
+        if self.gliner_threshold < MIN_GLINER_THRESHOLD:
+            raise ValueError(
+                f"gliner_threshold={self.gliner_threshold} is below the governance "
+                f"floor of {MIN_GLINER_THRESHOLD}."
+            )
+        if self.score_threshold == MIN_SCORE_THRESHOLD:
+            _logger.warning(
+                "score_threshold is at governance floor (%s). This should be exceptional.",
+                MIN_SCORE_THRESHOLD,
+            )
+        if self.gliner_threshold == MIN_GLINER_THRESHOLD:
+            _logger.warning(
+                "gliner_threshold is at governance floor (%s). This should be exceptional.",
+                MIN_GLINER_THRESHOLD,
+            )
+
 
 # ---------------------------------------------------------------------------
 # Judge prompt -- grades redaction quality by comparing original vs redacted

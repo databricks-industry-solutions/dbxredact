@@ -2,7 +2,7 @@
 
 import logging
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, length, sum as spark_sum
+from pyspark.sql.functions import col, count as spark_count, length, sum as spark_sum
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +50,11 @@ def estimate_ai_query_cost(
     """
     stats = df.select(
         spark_sum(length(col(text_column))).alias("total_chars"),
+        spark_count("*").alias("row_count"),
     ).first()
 
     total_chars = stats["total_chars"] or 0
-    row_count = df.count()
+    row_count = stats["row_count"]
     input_chars = total_chars + (row_count * prompt_overhead_chars)
     input_tokens = int(input_chars * TOKENS_PER_CHAR)
     output_tokens = int(input_tokens * output_ratio)
@@ -83,6 +84,7 @@ def print_cost_estimate(estimate: dict) -> None:
         f"Input tokens:    {estimate['estimated_input_tokens']:,}",
         f"Output tokens:   {estimate['estimated_output_tokens']:,}",
         f"Estimated cost:  ${estimate['estimated_cost_usd']:.4f}",
+        "(Prices are approximate and may not reflect current Databricks pricing.)",
         "------------------------------",
     ]
     logger.info("\n".join(lines))

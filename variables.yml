@@ -56,3 +56,9 @@ variables:
   benchmark_dataset:
     description: "Base table name for benchmark data (source, ground truth, and intermediate tables are derived from this)"
     default: "jsl_benchmark"
+  cpu_node_type:
+    description: "Instance type for CPU clusters (AWS: i3.xlarge, Azure: Standard_DS3_v2)"
+    default: "i3.xlarge"
+  gpu_node_type:
+    description: "Instance type for GPU clusters (AWS: g5.xlarge, Azure: Standard_NC4as_T4_v3)"
+    default: "g5.xlarge"

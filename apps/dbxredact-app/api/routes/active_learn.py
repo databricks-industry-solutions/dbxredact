@@ -2,7 +2,7 @@
 
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from api.models.schemas import (
     ActiveLearnQueueItem, BuildQueueRequest, ReviewRequest, ActiveLearnStats,
 )
@@ -76,7 +76,9 @@ async def review_document(doc_id: str, body: ReviewRequest):
         WHERE doc_id = %(doc_id)s LIMIT 1""",
         {"doc_id": doc_id},
     )
-    source_table = queue_row.get("source_table", "") if queue_row else ""
+    if not queue_row:
+        raise HTTPException(404, f"Document {doc_id} not found in review queue")
+    source_table = queue_row.get("source_table", "")
 
     for c in body.corrections:
         annotation_id = str(uuid.uuid4())
