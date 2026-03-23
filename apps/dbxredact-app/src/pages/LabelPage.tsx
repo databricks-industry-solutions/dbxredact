@@ -126,6 +126,7 @@ export default function LabelPage() {
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     let node: Node | null;
     while ((node = walker.nextNode())) {
+      if (node.parentElement?.tagName === "SUP") continue;
       if (node === targetNode) return offset + targetOffset;
       offset += (node.textContent?.length ?? 0);
     }

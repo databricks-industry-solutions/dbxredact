@@ -69,6 +69,8 @@ class JobHistoryItem(BaseModel):
     cost_estimate_usd: Optional[float] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
+    run_page_url: Optional[str] = None
+    job_type: Optional[str] = None
 
 
 class AnnotationCreate(BaseModel):

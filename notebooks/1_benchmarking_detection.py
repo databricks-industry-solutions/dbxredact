@@ -28,7 +28,7 @@
 # MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
 # MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_lg-3.8.0/es_core_news_lg-3.8.0-py3-none-any.whl
 # MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
-# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.0-py3-none-any.whl
+# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.1-py3-none-any.whl
 # MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
 # MAGIC %restart_python
 

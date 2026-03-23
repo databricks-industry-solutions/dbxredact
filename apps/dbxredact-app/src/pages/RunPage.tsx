@@ -172,6 +172,12 @@ export default function RunPage() {
       }`}>{h.status}</span>
     )},
     { key: "started_at", header: "Started", render: (h) => <span className="text-gray-500 dark:text-gray-400">{h.started_at}</span> },
+    { key: "run_page_url", header: "", render: (h) =>
+      h.run_page_url ? (
+        <a href={h.run_page_url as string} target="_blank" rel="noreferrer"
+          className="text-blue-600 dark:text-blue-400 underline text-xs">View</a>
+      ) : null
+    },
   ];
 
   return (

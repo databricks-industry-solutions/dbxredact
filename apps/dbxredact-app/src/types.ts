@@ -38,6 +38,8 @@ export interface JobHistoryItem {
   cost_estimate_usd?: number;
   started_at?: string;
   completed_at?: string;
+  run_page_url?: string;
+  job_type?: string;
 }
 
 export interface ListEntry {

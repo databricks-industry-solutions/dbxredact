@@ -70,17 +70,19 @@ async def run_pipeline(body: PipelineRunRequest):
         notebook_params["extra_params"] = json.dumps(ep) if not isinstance(ep, str) else ep
 
     run_id = trigger_pipeline_run(notebook_params, cluster_profile=body.cluster_profile)
+    status = get_run_status(run_id)
 
     history_output = f"{body.source_table} (in-place)" if is_in_place else output_table
     execute(
         f"""INSERT INTO {_table('redact_job_history')}
-        (run_id, config_id, source_table, output_table, status, started_at)
-        VALUES (%(run_id)s, %(config_id)s, %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp())""",
+        (run_id, config_id, source_table, output_table, status, started_at, run_page_url, job_type)
+        VALUES (%(run_id)s, %(config_id)s, %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp(), %(url)s, 'pipeline')""",
         {"run_id": run_id, "config_id": body.config_id,
-         "source_table": body.source_table, "output_table": history_output},
+         "source_table": body.source_table, "output_table": history_output,
+         "url": status.get("run_page_url")},
     )
 
-    return get_run_status(run_id)
+    return status
 
 
 TERMINAL_STATES = {"TERMINATED", "SKIPPED", "INTERNAL_ERROR"}
@@ -141,9 +143,11 @@ async def pipeline_status(run_id: int):
         cost = _compute_post_run_cost(run_id)
         execute(
             f"""UPDATE {_table('redact_job_history')}
-            SET status = %(status)s, cost_estimate_usd = %(cost)s, completed_at = current_timestamp()
+            SET status = %(status)s, cost_estimate_usd = %(cost)s, completed_at = current_timestamp(),
+                run_page_url = COALESCE(run_page_url, %(url)s)
             WHERE run_id = %(run_id)s AND completed_at IS NULL""",
-            {"run_id": run_id, "status": result_val or state_val, "cost": cost},
+            {"run_id": run_id, "status": result_val or state_val, "cost": cost,
+             "url": status.get("run_page_url")},
         )
     return status
 
@@ -161,10 +165,40 @@ async def cancel_pipeline(run_id: int):
 async def pipeline_history(limit: int = 50, offset: int = 0):
     limit = max(1, min(limit, 500))
     offset = max(0, offset)
-    return fetch_all(
-        f"SELECT * FROM {_table('redact_job_history')} ORDER BY started_at DESC LIMIT %(limit)s OFFSET %(offset)s",
+    rows = fetch_all(
+        f"""SELECT * FROM {_table('redact_job_history')}
+        WHERE job_type = 'pipeline' OR job_type IS NULL
+        ORDER BY started_at DESC LIMIT %(limit)s OFFSET %(offset)s""",
         {"limit": limit, "offset": offset},
     )
+    return _reconcile_stale_rows(rows)
+
+
+def _reconcile_stale_rows(rows: list[dict]) -> list[dict]:
+    """Check RUNNING rows against the Jobs API and update any that have finished."""
+    for row in rows:
+        if row.get("status") != "RUNNING":
+            continue
+        try:
+            live = get_run_status(int(row["run_id"]))
+            state = live.get("state", "")
+            if state not in TERMINAL_STATES:
+                if live.get("run_page_url") and not row.get("run_page_url"):
+                    row["run_page_url"] = live["run_page_url"]
+                continue
+            result = live.get("result_state", "") or state
+            row["status"] = result
+            row["run_page_url"] = row.get("run_page_url") or live.get("run_page_url")
+            execute(
+                f"""UPDATE {_table('redact_job_history')}
+                SET status = %(status)s, completed_at = current_timestamp(),
+                    run_page_url = COALESCE(run_page_url, %(url)s)
+                WHERE run_id = %(run_id)s AND completed_at IS NULL""",
+                {"run_id": row["run_id"], "status": result, "url": live.get("run_page_url")},
+            )
+        except Exception as exc:
+            logger.warning("Failed to reconcile run %s: %s", row.get("run_id"), exc)
+    return rows
 
 
 # Cost constants -- canonical source is src/dbxredact/cost.py. Keep in sync.

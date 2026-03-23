@@ -15,7 +15,7 @@ from api.services.db import execute, fetch_one, _table, CATALOG, SCHEMA, WAREHOU
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="dbxredact", version="0.3.0")
+app = FastAPI(title="dbxredact", version="0.1.1")
 
 _allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
@@ -150,6 +150,8 @@ async def on_startup():
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (gliner_max_words INT)",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_model_size STRING)",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_pattern_only BOOLEAN)",
+        f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (run_page_url STRING)",
+        f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (job_type STRING)",
     ]:
         try:
             execute(col_ddl)

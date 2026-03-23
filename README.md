@@ -66,12 +66,12 @@ This builds the Python wheel, generates `databricks.yml` from the template, and 
 
 ### 3. Run a Pipeline
 
-**From the app**: Open the deployed Databricks App, go to "Run Pipeline", select your source table, choose a cluster profile, and click "Launch".
+**From the app** (recommended): Open the deployed Databricks App, go to "Run Pipeline", select your source table, choose a cluster profile, and click "Launch".
 
 **From CLI**:
 ```bash
 databricks bundle run redaction_pipeline_cpu_small -t dev \
-  --params source_table=catalog.schema.source,text_column=text,output_table=catalog.schema.redacted
+  --notebook-params source_table=catalog.schema.source,text_column=text,output_table=catalog.schema.redacted
 ```
 
 ### 4. Alternative: Git Folder (No CLI)
