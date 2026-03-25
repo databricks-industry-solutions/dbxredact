@@ -37,68 +37,103 @@ dbxredact detects and redacts Protected Health Information (PHI) and Personally 
 
 ## Quickstart
 
-### 1. Configure Environment
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/databricks-industry-solutions/dbxredact.git
+cd dbxredact
+```
+
+### 2. Install prerequisites
+
+Make sure you have the tools listed in [Prerequisites](#prerequisites) installed: Databricks CLI (>= 0.283.0), Poetry (>= 2.0), Node.js/npm (>= 18), and Python (>= 3.10).
+
+Authenticate the Databricks CLI to your workspace:
+
+```bash
+databricks auth login --host https://your-workspace.cloud.databricks.com
+```
+
+### 3. Create Unity Catalog volumes
+
+Run these SQL statements in your workspace (e.g., via a SQL editor or notebook). Replace `your_catalog` and `your_schema` with your actual catalog and schema names:
+
+```sql
+CREATE SCHEMA IF NOT EXISTS your_catalog.your_schema;
+CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.wheels;
+CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.cluster_logs;
+CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.checkpoints;
+```
+
+`wheels` stores the Python library. `cluster_logs` is used by the benchmark job. `checkpoints` is used by the streaming pipeline.
+
+> **Note:** The wheel volume only needs to exist in the deployment schema (the `SCHEMA` in your env file). The redaction pipeline itself can read from and write to any fully qualified table in any schema.
+
+### 4. Configure environment
 
 ```bash
 cp example.env dev.env
 ```
 
-Edit `dev.env`:
+Open `dev.env` and fill in your values:
+
 ```
 DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
 CATALOG=your_catalog
-SCHEMA=redaction
+SCHEMA=your_schema
 WAREHOUSE_ID=your_warehouse_id
 
 # Optional: set to "false" to deploy jobs only (no app)
 # DEPLOY_APP=false
 ```
 
-`WAREHOUSE_ID` is required when deploying the app (for the app's SQL warehouse resource and deploy-time permission grants). If `DEPLOY_APP=false`, it can be omitted.
+`WAREHOUSE_ID` is the ID of a SQL warehouse in your workspace. Find it under **SQL Warehouses > your warehouse > Connection Details**. It is required when deploying the app. If you set `DEPLOY_APP=false`, it can be omitted.
 
-### 2. Deploy
+### 5. Deploy
 
 ```bash
 ./deploy.sh dev
 ```
 
-This builds the Python wheel, generates `databricks.yml` from the template, and deploys the Databricks Asset Bundle (jobs, app, and artifacts). Use `DEPLOY_APP=false` in your env file to deploy jobs without the management app.
+The script is interactive -- it prompts before each step (press Enter to proceed, `n` to skip, `q` to quit). It will:
 
-### 3. Run a Pipeline
+1. Generate `databricks.yml` from the template using your env file values
+2. Build the Python wheel with Poetry
+3. Upload the wheel to your Unity Catalog volume
+4. Validate and deploy the Databricks Asset Bundle (jobs, app, and artifacts)
+5. Grant UC permissions to the app service principal
+6. Start the management app
+
+Use `DEPLOY_APP=false` in your env file to skip app-related steps and deploy jobs only.
+
+### 6. Run a pipeline
 
 **From the app** (recommended): Open the deployed Databricks App, go to "Run Pipeline", select your source table, choose a cluster profile, and click "Launch".
 
 **From CLI**:
+
 ```bash
 databricks bundle run redaction_pipeline_cpu_small -t dev \
   --notebook-params source_table=catalog.schema.source,text_column=text,output_table=catalog.schema.redacted
 ```
 
-### 4. Alternative: Git Folder (No CLI)
+### Alternative: Git Folder (Not Recommended)
 
-Clone to a Databricks Git Folder, install the library, and run notebooks directly:
+> This approach is for quick evaluation only. You get the **notebooks and Python library**, but **not** the management app, pre-configured jobs, or cluster profiles. For the full experience, use the DAB deployment above.
+
+The management app cannot run via Git Folder because it requires the Databricks App runtime (which builds the React frontend and binds job resources at deploy time).
+
+To use this approach, clone the repo into a [Databricks Git Folder](https://docs.databricks.com/en/repos/index.html), then install the library in your notebook:
+
 ```python
-# From GitHub directly
+# Install directly from GitHub (no local build needed):
 %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
 
-# Or download wheel from releases, upload to a volume, then:
-%pip install /Volumes/your_catalog/your_schema/wheels/dbxredact-<version>-py3-none-any.whl
+# Or, if you have a pre-built wheel in a UC volume:
+%pip install /Volumes/your_catalog/your_schema/wheels/dbxredact-0.1.2-py3-none-any.whl
 ```
 
-Open `notebooks/4_redaction_pipeline.py`, configure widgets, and run.
-
-### Unity Catalog Volumes
-
-Create these volumes before deploying:
-```sql
-CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.wheels;
-CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.cluster_logs;
-CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.checkpoints;
-```
-
-`deploy.sh` uploads the wheel to `wheels`. `cluster_logs` is used by the benchmark job for cluster log delivery. `checkpoints` is used by the streaming pipeline.
-
-> **Note:** The wheel volume only needs to exist in the deployment schema (the `SCHEMA` in your env file). The redaction pipeline itself can read from and write to any fully qualified table in any schema -- the wheel does not need to be present in every source or output schema.
+Then open `notebooks/4_redaction_pipeline.py`, configure the widgets at the top of the notebook, and run all cells. You will need to attach the notebook to an ML-runtime cluster yourself.
 
 ## Detection Methods
 
@@ -399,7 +434,7 @@ The redaction pipeline supports incremental processing via Structured Streaming.
 
 ### Key operational notes
 
-- **Deduplication**: Output uses `foreachBatch` with `MERGE INTO` on `doc_id`, so re-processed or retried documents overwrite their earlier result rather than creating duplicates.
+- **Deduplication (best effort)**: The streaming pipeline makes a best effort to deduplicate by `doc_id` within each micro-batch before writing via `MERGE INTO`. However, it does **not** guarantee cross-batch deduplication — if the same `doc_id` appears in two different micro-batches, the later batch will overwrite the earlier result rather than skip it. For strict deduplication guarantees, use the batch pipeline, which calls `.distinct()` on the full source before processing.
 - **Checkpoint coupling**: The streaming checkpoint is tightly coupled to the Spark query plan. If you change which detectors are enabled, switch alignment mode, or modify detection logic, delete the checkpoint directory before restarting the stream.
 - **`mergeSchema` is on**: Switching between `production` and `validation` output strategies will widen the output table automatically.
 - **AI failure flagging**: When AI Query returns an error for a row, the output includes `_ai_detection_failed = True` and a warning is logged. These rows still flow through redaction (using other detectors if available) but should be reviewed or retried.

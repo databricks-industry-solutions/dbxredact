@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dbxredact"
-version = "0.1.1"
+version = "0.1.2"
 description = "PII/PHI detection and redaction library for Databricks"
 readme = "README.md"
 authors = [

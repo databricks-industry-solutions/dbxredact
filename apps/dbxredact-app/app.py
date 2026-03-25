@@ -15,7 +15,7 @@ from api.services.db import execute, fetch_one, _table, CATALOG, SCHEMA, WAREHOU
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="dbxredact", version="0.1.1")
+app = FastAPI(title="dbxredact", version="0.1.2")
 
 _allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
