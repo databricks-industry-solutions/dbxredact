@@ -771,7 +771,7 @@ def run_redaction_pipeline_streaming(
     presidio_pattern_only: bool = False,
     ai_model_type: str = "foundation",
     alignment_mode: AlignmentMode = "union",
-    max_files_per_trigger: Optional[int] = 10,
+    max_files_per_trigger: Optional[int] = 50,
     entity_filter=None,
     output_mode: OutputMode = "separate",
     confirm_destructive: bool = False,
@@ -900,11 +900,16 @@ def run_redaction_pipeline_streaming(
             logger.warning(f"Presidio detection skipped - {error_msg}")
             use_presidio = False
 
-    # Read source as stream -- repartition once here, detectors skip their own
+    # Read source as stream -- natural Delta file partitioning controls parallelism.
+    # maxFilesPerTrigger caps both data volume and partition count per micro-batch.
+    # Default 50: large enough that availableNow usually completes in 1-2 batches
+    # (maximising parallelism and minimising MERGE overhead), but bounded enough
+    # to avoid OOM on clusters with limited executor memory.  For continuous
+    # production streaming over very wide tables, callers should tune this down.
     reader = spark.readStream
-    _mfpt = max_files_per_trigger if max_files_per_trigger is not None else 10
+    _mfpt = max_files_per_trigger if max_files_per_trigger is not None else 50
     reader = reader.option("maxFilesPerTrigger", _mfpt)
-    stream_df = reader.table(source_table).repartition(num_cores)
+    stream_df = reader.table(source_table)
 
     if use_presidio:
         from .presidio import make_presidio_batch_udf
@@ -1033,33 +1038,15 @@ def run_redaction_pipeline_streaming(
     _stream_logger = logging.getLogger("dbxredact.streaming")
 
     def _write_batch(batch_df, batch_id):
-        batch_df = batch_df.persist(StorageLevel.DISK_ONLY)
+        # Deduplicate by doc_id before MERGE: Delta requires each target row to be
+        # matched by at most one source row.  Source tables may contain duplicate
+        # doc_ids (e.g. ground-truth benchmark tables with repeated rows).
+        batch_df = batch_df.dropDuplicates([_doc_id_col])
+        batch_df = batch_df.persist(StorageLevel.MEMORY_AND_DISK)
         try:
-            no_entities = 0
-            errors = 0
-            total = 0
-            if "_detection_status" in batch_df.columns:
-                status_rows = batch_df.groupBy("_detection_status").count().collect()
-                status_counts = {r["_detection_status"]: r["count"] for r in status_rows}
-                total = sum(status_counts.values())
-                no_entities = status_counts.get("no_entities", 0)
-                errors = status_counts.get("detection_error", 0)
-            else:
-                total = batch_df.count()
-
-            if total == 0:
-                return
-
-            _batch_stats.append({
-                "batch_id": batch_id, "total": total,
-                "no_entities": no_entities, "errors": errors,
-            })
-            if no_entities + errors > 0:
-                _stream_logger.warning(
-                    "Batch %d: %d/%d docs with no entities, %d detection errors",
-                    batch_id, no_entities, total, errors,
-                )
-
+            # Critical write first — stats are non-critical logging. Previously the
+            # groupBy().count().collect() ran before the MERGE, meaning an OOM during
+            # stats collection would abort the batch before any data was written.
             view_name = f"_dbxredact_batch_{batch_id}"
             batch_df.createOrReplaceTempView(view_name)
             if _is_in_place:
@@ -1071,13 +1058,56 @@ def run_redaction_pipeline_streaming(
                     WHEN MATCHED THEN UPDATE SET t.`{_text_col}` = s.`{_rcol}`
                 """)
             else:
+                # Build explicit column lists from the intersection of source and
+                # target schemas.  Either direction of mismatch causes
+                # DELTA_MERGE_UNRESOLVED_EXPRESSION:
+                #   • target has cols the source doesn't (prior run with a different
+                #     output_strategy that kept raw text / intermediate columns)
+                #   • source has cols the target doesn't (new pipeline output cols
+                #     like _detection_status added after the table was first created)
+                _tgt_cols = set(batch_df.sparkSession.table(_merge_target).columns)
+                _upd_cols = [c for c in batch_df.columns if c in _tgt_cols and c != _doc_id_col]
+                _ins_cols = [c for c in batch_df.columns if c in _tgt_cols]
+                _update_set = ", ".join(f"t.`{c}` = s.`{c}`" for c in _upd_cols)
+                _insert_cols = ", ".join(f"`{c}`" for c in _ins_cols)
+                _insert_vals = ", ".join(f"s.`{c}`" for c in _ins_cols)
                 batch_df.sparkSession.sql(f"""
                     MERGE INTO {_merge_target} t
                     USING {view_name} s
                     ON t.`{_doc_id_col}` = s.`{_doc_id_col}`
-                    WHEN MATCHED THEN UPDATE SET *
-                    WHEN NOT MATCHED THEN INSERT *
+                    WHEN MATCHED THEN UPDATE SET {_update_set}
+                    WHEN NOT MATCHED THEN INSERT ({_insert_cols}) VALUES ({_insert_vals})
                 """)
+
+            # Collect stats for logging after the write. Failures here must not
+            # abort the batch since the data is already committed.
+            no_entities = 0
+            errors = 0
+            total = 0
+            try:
+                if "_detection_status" in batch_df.columns:
+                    status_rows = batch_df.groupBy("_detection_status").count().collect()
+                    status_counts = {r["_detection_status"]: r["count"] for r in status_rows}
+                    total = sum(status_counts.values())
+                    no_entities = status_counts.get("no_entities", 0)
+                    errors = status_counts.get("detection_error", 0)
+                else:
+                    total = batch_df.count()
+            except Exception as _stats_err:
+                _stream_logger.warning(
+                    "Batch %d: stats collection failed (non-fatal): %s", batch_id, _stats_err
+                )
+
+            if total > 0:
+                _batch_stats.append({
+                    "batch_id": batch_id, "total": total,
+                    "no_entities": no_entities, "errors": errors,
+                })
+            if no_entities + errors > 0:
+                _stream_logger.warning(
+                    "Batch %d: %d/%d docs with no entities, %d detection errors",
+                    batch_id, no_entities, total, errors,
+                )
         finally:
             batch_df.unpersist()
 
@@ -1092,18 +1122,33 @@ def run_redaction_pipeline_streaming(
             len(_batch_stats), total_docs, total_no_ent, total_errs,
         )
 
-    query = (
-        stream_df
-        .writeStream
-        .option("checkpointLocation", checkpoint_path)
-        .option("mergeSchema", "true")
-        .trigger(availableNow=True)
-        .foreachBatch(_write_batch)
-        .start()
-    )
+    # Reduce shuffle partitions to cluster size for the duration of this query.
+    # The default (200) creates hundreds of empty shuffle tasks per micro-batch
+    # when processing small-to-medium batches, adding significant overhead to
+    # every MERGE INTO and groupBy operation.  We cap at 200 so large target
+    # tables in the MERGE still get adequate parallelism.  AQE (enabled by
+    # default on DBR 10+) will further coalesce partitions at runtime.
+    _prior_shuffle_parts = spark.conf.get("spark.sql.shuffle.partitions", "200")
+    _streaming_shuffle_parts = max(num_cores, min(int(_prior_shuffle_parts), num_cores * 4))
+    spark.conf.set("spark.sql.shuffle.partitions", str(_streaming_shuffle_parts))
+    _prior_auto_merge = spark.conf.get("spark.databricks.delta.schema.autoMerge.enabled", "false")
+    spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
+    try:
+        query = (
+            stream_df
+            .writeStream
+            .option("checkpointLocation", checkpoint_path)
+            .option("mergeSchema", "true")
+            .trigger(availableNow=True)
+            .foreachBatch(_write_batch)
+            .start()
+        )
 
-    query.awaitTermination()
-    _log_streaming_summary()
+        query.awaitTermination()
+        _log_streaming_summary()
+    finally:
+        spark.conf.set("spark.sql.shuffle.partitions", _prior_shuffle_parts)
+        spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", _prior_auto_merge)
 
     return query
 

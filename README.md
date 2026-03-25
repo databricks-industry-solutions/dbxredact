@@ -130,7 +130,7 @@ To use this approach, clone the repo into a [Databricks Git Folder](https://docs
 %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
 
 # Or, if you have a pre-built wheel in a UC volume:
-%pip install /Volumes/your_catalog/your_schema/wheels/dbxredact-0.1.1-py3-none-any.whl
+%pip install /Volumes/your_catalog/your_schema/wheels/dbxredact-0.1.2-py3-none-any.whl
 ```
 
 Then open `notebooks/4_redaction_pipeline.py`, configure the widgets at the top of the notebook, and run all cells. You will need to attach the notebook to an ML-runtime cluster yourself.
@@ -434,7 +434,7 @@ The redaction pipeline supports incremental processing via Structured Streaming.
 
 ### Key operational notes
 
-- **Deduplication**: Output uses `foreachBatch` with `MERGE INTO` on `doc_id`, so re-processed or retried documents overwrite their earlier result rather than creating duplicates.
+- **Deduplication (best effort)**: The streaming pipeline makes a best effort to deduplicate by `doc_id` within each micro-batch before writing via `MERGE INTO`. However, it does **not** guarantee cross-batch deduplication — if the same `doc_id` appears in two different micro-batches, the later batch will overwrite the earlier result rather than skip it. For strict deduplication guarantees, use the batch pipeline, which calls `.distinct()` on the full source before processing.
 - **Checkpoint coupling**: The streaming checkpoint is tightly coupled to the Spark query plan. If you change which detectors are enabled, switch alignment mode, or modify detection logic, delete the checkpoint directory before restarting the stream.
 - **`mergeSchema` is on**: Switching between `production` and `validation` output strategies will widen the output table automatically.
 - **AI failure flagging**: When AI Query returns an error for a row, the output includes `_ai_detection_failed = True` and a warning is logged. These rows still flow through redaction (using other detectors if available) but should be reviewed or retried.
