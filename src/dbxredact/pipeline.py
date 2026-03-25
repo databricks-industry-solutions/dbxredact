@@ -771,7 +771,7 @@ def run_redaction_pipeline_streaming(
     presidio_pattern_only: bool = False,
     ai_model_type: str = "foundation",
     alignment_mode: AlignmentMode = "union",
-    max_files_per_trigger: Optional[int] = 10,
+    max_files_per_trigger: Optional[int] = 50,
     entity_filter=None,
     output_mode: OutputMode = "separate",
     confirm_destructive: bool = False,
@@ -1038,6 +1038,10 @@ def run_redaction_pipeline_streaming(
     _stream_logger = logging.getLogger("dbxredact.streaming")
 
     def _write_batch(batch_df, batch_id):
+        # Deduplicate by doc_id before MERGE: Delta requires each target row to be
+        # matched by at most one source row.  Source tables may contain duplicate
+        # doc_ids (e.g. ground-truth benchmark tables with repeated rows).
+        batch_df = batch_df.dropDuplicates([_doc_id_col])
         batch_df = batch_df.persist(StorageLevel.MEMORY_AND_DISK)
         try:
             # Critical write first — stats are non-critical logging. Previously the
@@ -1054,15 +1058,19 @@ def run_redaction_pipeline_streaming(
                     WHEN MATCHED THEN UPDATE SET t.`{_text_col}` = s.`{_rcol}`
                 """)
             else:
-                # Build explicit SET / INSERT column lists from batch_df to avoid
-                # DELTA_MERGE_UNRESOLVED_EXPRESSION when the target table has columns
-                # (e.g. the original `text` column from a prior batch run) that are
-                # not present in the source batch.  UPDATE SET * / INSERT * require
-                # every target column to resolve in the source.
-                _src_cols = [c for c in batch_df.columns if c != _doc_id_col]
-                _update_set = ", ".join(f"t.`{c}` = s.`{c}`" for c in _src_cols)
-                _insert_cols = ", ".join(f"`{c}`" for c in batch_df.columns)
-                _insert_vals = ", ".join(f"s.`{c}`" for c in batch_df.columns)
+                # Build explicit column lists from the intersection of source and
+                # target schemas.  Either direction of mismatch causes
+                # DELTA_MERGE_UNRESOLVED_EXPRESSION:
+                #   • target has cols the source doesn't (prior run with a different
+                #     output_strategy that kept raw text / intermediate columns)
+                #   • source has cols the target doesn't (new pipeline output cols
+                #     like _detection_status added after the table was first created)
+                _tgt_cols = set(batch_df.sparkSession.table(_merge_target).columns)
+                _upd_cols = [c for c in batch_df.columns if c in _tgt_cols and c != _doc_id_col]
+                _ins_cols = [c for c in batch_df.columns if c in _tgt_cols]
+                _update_set = ", ".join(f"t.`{c}` = s.`{c}`" for c in _upd_cols)
+                _insert_cols = ", ".join(f"`{c}`" for c in _ins_cols)
+                _insert_vals = ", ".join(f"s.`{c}`" for c in _ins_cols)
                 batch_df.sparkSession.sql(f"""
                     MERGE INTO {_merge_target} t
                     USING {view_name} s
@@ -1123,6 +1131,8 @@ def run_redaction_pipeline_streaming(
     _prior_shuffle_parts = spark.conf.get("spark.sql.shuffle.partitions", "200")
     _streaming_shuffle_parts = max(num_cores, min(int(_prior_shuffle_parts), num_cores * 4))
     spark.conf.set("spark.sql.shuffle.partitions", str(_streaming_shuffle_parts))
+    _prior_auto_merge = spark.conf.get("spark.databricks.delta.schema.autoMerge.enabled", "false")
+    spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
     try:
         query = (
             stream_df
@@ -1138,6 +1148,7 @@ def run_redaction_pipeline_streaming(
         _log_streaming_summary()
     finally:
         spark.conf.set("spark.sql.shuffle.partitions", _prior_shuffle_parts)
+        spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", _prior_auto_merge)
 
     return query
 
