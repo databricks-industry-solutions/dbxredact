@@ -121,6 +121,34 @@ class TestParseEntityList:
     def test_json_scalar_returns_empty(self):
         assert _parse_entity_list('"just a string"') == []
 
+    def test_deduplicates_hallucinated_repeats(self):
+        """LLM may hallucinate the same entity hundreds of times."""
+        import json
+        duped = [{"entity": "Taylor", "entity_type": "PERSON"}] * 1000
+        raw = json.dumps(duped)
+        result = _parse_entity_list(raw)
+        assert len(result) == 1
+        assert result[0]["entity"] == "Taylor"
+
+    def test_deduplicates_row_objects(self):
+        """Foundation model path passes list of Row-like objects; dedup must work there too."""
+        row_like = [{"entity": "Taylor", "entity_type": "PERSON"}] * 500
+        result = _parse_entity_list(row_like)
+        assert len(result) == 1
+        assert result[0]["entity"] == "Taylor"
+
+    def test_dedup_preserves_distinct_entity_types(self):
+        """Same entity text with different entity_type should survive dedup."""
+        raw = [
+            {"entity": "Taylor", "entity_type": "PERSON"},
+            {"entity": "Taylor", "entity_type": "ORGANIZATION"},
+            {"entity": "Taylor", "entity_type": "PERSON"},
+        ]
+        result = _parse_entity_list(raw)
+        assert len(result) == 2
+        types = {e["entity_type"] for e in result}
+        assert types == {"PERSON", "ORGANIZATION"}
+
 
 class TestFormatEntityResponseObjectUdf:
     """format_entity_response_object_udf is the core pandas function that
@@ -183,3 +211,42 @@ class TestFormatEntityResponseObjectUdf:
         sentences = pd.Series(["Some text"])
         result = format_entity_response_object_udf(entities, sentences)
         assert result.iloc[0] == []
+
+    def test_hallucinated_repeats_produce_only_real_positions(self):
+        """1000 hallucinated "Taylor" entries should yield only the 3 real occurrences."""
+        import json
+        duped = [{"entity": "Taylor", "entity_type": "PERSON"}] * 1000
+        entities = pd.Series([json.dumps(duped)])
+        sentences = pd.Series(["Taylor visited Taylor and met Taylor at noon"])
+        result = format_entity_response_object_udf(entities, sentences)
+        ents = result.iloc[0]
+        assert len(ents) == 3
+        texts = [e["entity"] for e in ents]
+        assert all(t == "Taylor" for t in texts)
+        starts = sorted(e["start"] for e in ents)
+        assert starts == [0, 15, 30]
+
+    def test_mixed_hallucination_preserves_unique_entities(self):
+        """Repeated entities should not crowd out unique ones."""
+        import json
+        items = (
+            [{"entity": "Taylor", "entity_type": "PERSON"}] * 500
+            + [{"entity": "Springfield General Hospital", "entity_type": "HOSPITAL_NAME"}]
+            + [{"entity": "Taylor", "entity_type": "PERSON"}] * 500
+        )
+        entities = pd.Series([json.dumps(items)])
+        sentences = pd.Series(["Taylor was admitted to Springfield General Hospital"])
+        result = format_entity_response_object_udf(entities, sentences)
+        ents = result.iloc[0]
+        types = {e["entity_type"] for e in ents}
+        assert "PERSON" in types
+        assert "HOSPITAL_NAME" in types
+        assert len(ents) == 2
+
+
+class TestPromptNoLongerRequestsDuplicates:
+
+    def test_prompt_asks_for_unique_entities(self):
+        prompt = make_prompt()
+        assert "only ONCE" in prompt
+        assert "Do not skip repeated mentions" not in prompt

@@ -135,7 +135,7 @@ Respond with a list of dictionaries such as [{{"entity": "Alice Anderson", "enti
 
 IMPORTANT: Return each entity EXACTLY as it appears in the original text. Copy the text character-for-character -- do not normalize whitespace, fix spelling, or rephrase. If the text contains "John\nSmith", return "John\nSmith", not "John Smith".
 
-List every occurrence of each entity separately. For example, if the text says "The patient, Brennan, notes that is feeling unwell. Brennan presents with a moderate fever of 100.5F," list the entity "Brennan" twice. Do not skip repeated mentions.
+List each unique entity only ONCE. Do not repeat an entity even if it appears multiple times in the text. For example, if the text says "The patient, Brennan, notes that is feeling unwell. Brennan presents with a moderate fever of 100.5F," list "Brennan" only once.
 
 The text is listed here: 
 <MedicalText>
