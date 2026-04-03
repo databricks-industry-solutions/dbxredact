@@ -4,8 +4,9 @@ import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } fr
 import ErrorBanner from "../components/ErrorBanner";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
+import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
-import type { Config, RunStatus, JobHistoryItem } from "../types";
+import type { Config, RunStatus, JobHistoryItem, DiscoverColumnsResponse } from "../types";
 
 interface TableInfo {
   columns: string[];
@@ -41,6 +42,10 @@ export default function RunPage() {
   const [useGpu, setUseGpu] = useState(false);
   const [refreshApproach, setRefreshApproach] = useState<"full" | "incremental">("full");
   const [outputMode, setOutputMode] = useState<"separate" | "in_place">("separate");
+  const [redactionScope, setRedactionScope] = useState<"single_column" | "full_table">("single_column");
+  const [selectedTextCols, setSelectedTextCols] = useState<string[]>([]);
+  const [selectedStructCols, setSelectedStructCols] = useState<Record<string, string>>({});
+  const [maskingStrategy, setMaskingStrategy] = useState<"mask" | "hash" | "encrypt">("mask");
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const [running, setRunning] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -55,6 +60,19 @@ export default function RunPage() {
     `/pipeline/table-info?table=${encodeURIComponent(qualified)}`,
     { enabled: hasTable, deps: [qualified] },
   );
+
+  const isFullTable = redactionScope === "full_table";
+  const { data: discovered, loading: loadingDiscovery } = useGet<DiscoverColumnsResponse>(
+    `/pipeline/discover-columns?table=${encodeURIComponent(qualified)}`,
+    { enabled: hasTable && isFullTable, deps: [qualified, isFullTable] },
+  );
+
+  useEffect(() => {
+    if (!discovered) return;
+    setSelectedTextCols(discovered.text_columns);
+    setSelectedStructCols({ ...discovered.structured_columns });
+    if (discovered.doc_id_candidates.length) setDocIdCol(discovered.doc_id_candidates[0]);
+  }, [discovered]);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const failCountRef = useRef(0);
@@ -137,9 +155,10 @@ export default function RunPage() {
   async function launch() {
     setRunning(true);
     try {
-      const status = await apiPost<RunStatus>("/pipeline/run", {
+      const payload: Record<string, unknown> = {
         config_id: configId,
         source_table: qualified,
+        redaction_scope: redactionScope,
         output_table: outputMode === "in_place" ? undefined : (outputTable || undefined),
         text_column: textCol,
         doc_id_column: docIdCol,
@@ -147,7 +166,13 @@ export default function RunPage() {
         cluster_profile: clusterProfile,
         refresh_approach: refreshApproach,
         output_mode: outputMode,
-      });
+      };
+      if (isFullTable) {
+        payload.text_columns = selectedTextCols;
+        payload.structured_columns = Object.keys(selectedStructCols).length ? selectedStructCols : undefined;
+        payload.masking_strategy = maskingStrategy;
+      }
+      const status = await apiPost<RunStatus>("/pipeline/run", payload);
       setRunStatus(status);
       toast("Pipeline launched");
       refetchHistory();
@@ -198,12 +223,31 @@ export default function RunPage() {
         </div>
         <div className="col-span-2">
           <TablePicker value={sourceTable} onChange={setSourceTable} label="Source Table" />
-          {loadingTable && <p className="text-xs text-gray-400 mt-1 animate-pulse">Loading table info...</p>}
+          {loadingTable && <SkeletonRows rows={2} className="mt-1" />}
           {tableInfo && (
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {tableInfo.row_count.toLocaleString()} rows, {tableInfo.columns.length} columns
             </p>
           )}
+        </div>
+        <div className="col-span-2">
+          <label className="block text-sm font-medium mb-1.5">Redaction Scope</label>
+          <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
+            {(["single_column", "full_table"] as const).map((scope) => (
+              <button key={scope} type="button"
+                className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+                  redactionScope === scope
+                    ? "bg-blue-600 text-white"
+                    : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                }`}
+                onClick={() => {
+                  setRedactionScope(scope);
+                  if (scope === "full_table" && outputMode === "in_place") setOutputMode("separate");
+                }}>
+                {scope === "single_column" ? "Single Column" : "Full Table"}
+              </button>
+            ))}
+          </div>
         </div>
         {outputMode === "separate" && (
           <div className="col-span-2">
@@ -214,35 +258,115 @@ export default function RunPage() {
               onChange={(e) => setOutputTable(e.target.value)} placeholder="catalog.schema.output_table" />
           </div>
         )}
-        {outputMode === "in_place" && (
+        {outputMode === "in_place" && !isFullTable && (
           <div className="col-span-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 p-3 text-sm text-amber-800 dark:text-amber-200">
             <strong>Destructive operation:</strong> The <code>{textCol}</code> column in the source table will be permanently overwritten with redacted text.
           </div>
         )}
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Text Column</label>
-          {columnOptions.length ? (
-            <select className="input-field" value={textCol}
-              onChange={(e) => setTextCol(e.target.value)}>
-              {columnOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          ) : (
-            <input className="input-field" value={textCol}
-              onChange={(e) => setTextCol(e.target.value)} />
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Doc ID Column</label>
-          {columnOptions.length ? (
-            <select className="input-field" value={docIdCol}
-              onChange={(e) => setDocIdCol(e.target.value)}>
-              {columnOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          ) : (
-            <input className="input-field" value={docIdCol}
-              onChange={(e) => setDocIdCol(e.target.value)} />
-          )}
-        </div>
+
+        {!isFullTable && (
+          <>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Text Column</label>
+              {columnOptions.length ? (
+                <select className="input-field" value={textCol}
+                  onChange={(e) => setTextCol(e.target.value)}>
+                  {columnOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              ) : (
+                <input className="input-field" value={textCol}
+                  onChange={(e) => setTextCol(e.target.value)} />
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Doc ID Column</label>
+              {columnOptions.length ? (
+                <select className="input-field" value={docIdCol}
+                  onChange={(e) => setDocIdCol(e.target.value)}>
+                  {columnOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              ) : (
+                <input className="input-field" value={docIdCol}
+                  onChange={(e) => setDocIdCol(e.target.value)} />
+              )}
+            </div>
+          </>
+        )}
+
+        {isFullTable && hasTable && (
+          <div className="col-span-2 border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-4">
+            {loadingDiscovery && <p className="text-sm text-gray-400 animate-pulse">Discovering columns...</p>}
+            {discovered && !loadingDiscovery && (
+              <>
+                {discovered.warnings.map((w, i) => (
+                  <div key={i} className="text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded px-3 py-2 text-amber-700 dark:text-amber-300">{w}</div>
+                ))}
+                {discovered.text_columns.length === 0 && Object.keys(discovered.structured_columns).length === 0 && (
+                  <div className="text-sm text-gray-500">
+                    No columns with UC PII tags found. Tag columns with <code>data_classification=protected</code> first,
+                    or use Single Column mode for untagged text.
+                  </div>
+                )}
+                {discovered.text_columns.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Text Columns (NER detection)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {discovered.text_columns.map((col) => (
+                        <label key={col} className="inline-flex items-center gap-1.5 text-sm cursor-pointer">
+                          <input type="checkbox" checked={selectedTextCols.includes(col)}
+                            onChange={(e) => setSelectedTextCols((prev) =>
+                              e.target.checked ? [...prev, col] : prev.filter((c) => c !== col)
+                            )} />
+                          {col}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {Object.keys(discovered.structured_columns).length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Structured Columns (rule-based masking)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(discovered.structured_columns).map(([col, piiType]) => (
+                        <label key={col} className="inline-flex items-center gap-1.5 text-sm cursor-pointer">
+                          <input type="checkbox" checked={col in selectedStructCols}
+                            onChange={(e) => setSelectedStructCols((prev) => {
+                              if (e.target.checked) return { ...prev, [col]: piiType };
+                              const next = { ...prev }; delete next[col]; return next;
+                            })} />
+                          {col} <span className="text-xs text-gray-400">({piiType})</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Masking Strategy</label>
+                    <select className="input-field" value={maskingStrategy}
+                      onChange={(e) => setMaskingStrategy(e.target.value as "mask" | "hash" | "encrypt")}>
+                      <option value="mask">Mask (replace with label)</option>
+                      <option value="hash">Hash (SHA-256)</option>
+                      <option value="encrypt">Encrypt (AES)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Doc ID Column</label>
+                    {columnOptions.length ? (
+                      <select className="input-field" value={docIdCol}
+                        onChange={(e) => setDocIdCol(e.target.value)}>
+                        {columnOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    ) : (
+                      <input className="input-field" value={docIdCol}
+                        onChange={(e) => setDocIdCol(e.target.value)} />
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium mb-1.5">
             Max Rows
@@ -278,17 +402,19 @@ export default function RunPage() {
         <div>
           <label className="block text-sm font-medium mb-1.5">Output Mode</label>
           <select className="input-field" value={outputMode}
-            onChange={(e) => setOutputMode(e.target.value as "separate" | "in_place")}>
+            onChange={(e) => setOutputMode(e.target.value as "separate" | "in_place")}
+            disabled={isFullTable}>
             <option value="separate">Separate table</option>
-            <option value="in_place">In-place (destructive)</option>
+            <option value="in_place" disabled={isFullTable}>In-place (destructive)</option>
           </select>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1.5">Refresh Mode</label>
           <select className="input-field" value={refreshApproach}
-            onChange={(e) => setRefreshApproach(e.target.value as "full" | "incremental")}>
+            onChange={(e) => setRefreshApproach(e.target.value as "full" | "incremental")}
+            disabled={isFullTable}>
             <option value="full">Full (overwrite)</option>
-            <option value="incremental">Incremental (append)</option>
+            <option value="incremental" disabled={isFullTable}>Incremental (append)</option>
           </select>
         </div>
         {refreshApproach === "full" && outputTable && (

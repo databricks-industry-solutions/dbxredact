@@ -21,6 +21,8 @@ resources:
           default: "0.5"
         - name: reasoning_effort
           default: ${var.reasoning_effort}
+        - name: gliner_model
+          default: ${var.gliner_model}
         - name: gliner_max_words
           default: ${var.gliner_max_words}
       job_clusters:
@@ -51,6 +53,7 @@ resources:
               use_gliner: "{{job.parameters.use_gliner}}"
               presidio_score_threshold: "{{job.parameters.score_threshold}}"
               reasoning_effort: "{{job.parameters.reasoning_effort}}"
+              gliner_model: "{{job.parameters.gliner_model}}"
               gliner_max_words: "{{job.parameters.gliner_max_words}}"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
@@ -133,6 +136,8 @@ resources:
               text_column: ""
               output_table: ""
               doc_id_column: "doc_id"
+              input_mode: "table_column"
+              masking_strategy: "mask"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -145,6 +150,7 @@ resources:
               max_rows: ${var.max_rows}
               alignment_mode: "union"
               reasoning_effort: ${var.reasoning_effort}
+              gliner_model: ${var.gliner_model}
               gliner_max_words: ${var.gliner_max_words}
               num_cores: "8"
           new_cluster:
@@ -168,6 +174,8 @@ resources:
               text_column: ""
               output_table: ""
               doc_id_column: "doc_id"
+              input_mode: "table_column"
+              masking_strategy: "mask"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -180,6 +188,7 @@ resources:
               max_rows: ${var.max_rows}
               alignment_mode: "union"
               reasoning_effort: ${var.reasoning_effort}
+              gliner_model: ${var.gliner_model}
               gliner_max_words: ${var.gliner_max_words}
               num_cores: "20"
           new_cluster:
@@ -203,6 +212,8 @@ resources:
               text_column: ""
               output_table: ""
               doc_id_column: "doc_id"
+              input_mode: "table_column"
+              masking_strategy: "mask"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -215,6 +226,7 @@ resources:
               max_rows: ${var.max_rows}
               alignment_mode: "union"
               reasoning_effort: ${var.reasoning_effort}
+              gliner_model: ${var.gliner_model}
               gliner_max_words: ${var.gliner_max_words}
               num_cores: "40"
           new_cluster:
@@ -238,6 +250,8 @@ resources:
               text_column: ""
               output_table: ""
               doc_id_column: "doc_id"
+              input_mode: "table_column"
+              masking_strategy: "mask"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -250,6 +264,7 @@ resources:
               max_rows: ${var.max_rows}
               alignment_mode: "union"
               reasoning_effort: ${var.reasoning_effort}
+              gliner_model: ${var.gliner_model}
               gliner_max_words: ${var.gliner_max_words}
               num_cores: "8"
           new_cluster:
@@ -273,6 +288,8 @@ resources:
               text_column: ""
               output_table: ""
               doc_id_column: "doc_id"
+              input_mode: "table_column"
+              masking_strategy: "mask"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -285,6 +302,7 @@ resources:
               max_rows: ${var.max_rows}
               alignment_mode: "union"
               reasoning_effort: ${var.reasoning_effort}
+              gliner_model: ${var.gliner_model}
               gliner_max_words: ${var.gliner_max_words}
               num_cores: "20"
           new_cluster:
@@ -308,6 +326,8 @@ resources:
               text_column: ""
               output_table: ""
               doc_id_column: "doc_id"
+              input_mode: "table_column"
+              masking_strategy: "mask"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
@@ -320,6 +340,7 @@ resources:
               max_rows: ${var.max_rows}
               alignment_mode: "union"
               reasoning_effort: ${var.reasoning_effort}
+              gliner_model: ${var.gliner_model}
               gliner_max_words: ${var.gliner_max_words}
               num_cores: "40"
           new_cluster:

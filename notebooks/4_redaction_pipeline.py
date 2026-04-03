@@ -7,6 +7,7 @@
 # MAGIC **Input Modes:**
 # MAGIC - **Table + Column**: Specify table name and text column directly
 # MAGIC - **Table + Tag**: Query Unity Catalog for columns with specific classification tags
+# MAGIC - **Full Table**: Discover all PII columns via UC tags, apply NER to text columns and rule-based masking to structured columns
 # MAGIC
 # MAGIC **Refresh Approaches:**
 # MAGIC - **full**: Batch processing with overwrite (existing behavior)
@@ -45,6 +46,7 @@ from dbxredact import (
     run_redaction_pipeline,
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
+    run_table_redaction,
     get_columns_by_tag,
     load_filter_from_table,
     EntityFilter,
@@ -67,7 +69,7 @@ dbutils.widgets.dropdown(
 dbutils.widgets.dropdown(
     name="input_mode",
     defaultValue="table_column",
-    choices=["table_column", "table_tag"],
+    choices=["table_column", "table_tag", "full_table"],
     label="1. Input Mode",
 )
 dbutils.widgets.text(
@@ -242,6 +244,17 @@ dbutils.widgets.text(
     defaultValue="",
     label="31. Extra Parameters (JSON, optional)",
 )
+dbutils.widgets.dropdown(
+    name="masking_strategy",
+    defaultValue="mask",
+    choices=["mask", "hash", "encrypt"],
+    label="32. Structured Masking Strategy (full_table mode)",
+)
+dbutils.widgets.text(
+    name="encryption_secret",
+    defaultValue="",
+    label="33. Encryption Secret (scope/key, e.g. my-scope/aes-key)",
+)
 
 # COMMAND ----------
 
@@ -295,6 +308,17 @@ allow_consensus_redaction = dbutils.widgets.get("allow_consensus_redaction") == 
 audit_table = dbutils.widgets.get("audit_table").strip() or None
 _extra_params_raw = dbutils.widgets.get("extra_params").strip()
 extra_params = json.loads(_extra_params_raw) if _extra_params_raw else None
+masking_strategy = dbutils.widgets.get("masking_strategy")
+_encryption_secret_raw = dbutils.widgets.get("encryption_secret").strip()
+if _encryption_secret_raw and "/" in _encryption_secret_raw:
+    _scope, _key_name = _encryption_secret_raw.split("/", 1)
+    encryption_key = dbutils.secrets.get(scope=_scope, key=_key_name)
+elif _encryption_secret_raw:
+    print("WARNING: encryption_secret does not contain '/'. Treating as a literal key. "
+          "For production use, provide scope/key (e.g. my-scope/aes-key) to resolve via Databricks Secrets.")
+    encryption_key = _encryption_secret_raw
+else:
+    encryption_key = None
 
 # Profile overrides (fast/deep force specific settings; custom uses widget values as-is)
 if detection_profile == "fast":
@@ -358,7 +382,23 @@ if not 0.0 <= score_threshold <= 1.0:
 if num_cores < 1:
     raise ValueError(f"Number of cores must be a positive integer, got {num_cores}")
 
-if input_mode == "table_column":
+if input_mode == "full_table":
+    if output_mode == "in_place":
+        raise ValueError(
+            "In-place mode is not yet supported for full_table redaction. "
+            "Use output_mode='separate' to write to a new table."
+        )
+    if refresh_approach == "incremental":
+        raise ValueError(
+            "Incremental (streaming) mode is not yet supported for full_table redaction. "
+            "Use refresh_approach='full'."
+        )
+    if masking_strategy == "encrypt" and not encryption_key:
+        raise ValueError("Encryption key is required when masking_strategy='encrypt'")
+    _source_columns = [c.name for c in spark.table(source_table).schema]
+    if doc_id_column not in _source_columns:
+        raise ValueError(f"Column '{doc_id_column}' not found in {source_table}. Available: {_source_columns}")
+elif input_mode == "table_column":
     _source_columns = [c.name for c in spark.table(source_table).schema]
     for _col in [doc_id_column, text_column]:
         if _col not in _source_columns:
@@ -401,7 +441,11 @@ if "client" not in dbr_version:
 
 # COMMAND ----------
 
-if input_mode == "table_tag":
+if input_mode == "full_table":
+    print(f"Input Mode: Full Table Redaction")
+    print(f"Will discover PII columns via UC tags and apply NER + structured masking")
+    print(f"Masking Strategy: {masking_strategy}")
+elif input_mode == "table_tag":
     print(f"Input Mode: Table + Tag")
     print(f"Searching for columns with {tag_name}='{tag_value}' in {source_table}")
 
@@ -432,8 +476,12 @@ print("=" * 80)
 print("STARTING REDACTION PIPELINE")
 print("=" * 80)
 print(f"Detection Profile: {detection_profile}")
+print(f"Input Mode: {input_mode}")
 print(f"Source Table: {source_table}")
-print(f"Text Column: {text_column}")
+if input_mode == "full_table":
+    print(f"Masking Strategy: {masking_strategy}")
+else:
+    print(f"Text Column: {text_column}")
 print(f"Use Presidio: {use_presidio}")
 print(f"Use AI Query: {use_ai_query}")
 print(f"Use GLiNER: {use_gliner}")
@@ -483,7 +531,21 @@ else:
     # Batch approach - full refresh
     print("Using FULL (batch) approach...")
 
-    if input_mode == "table_tag":
+    if input_mode == "full_table":
+        text_columns = extra_params.get("text_columns") if extra_params else None
+        structured_columns = extra_params.get("structured_columns") if extra_params else None
+        result_df = run_table_redaction(
+            spark=spark,
+            source_table=source_table,
+            output_table=output_table,
+            masking_strategy=masking_strategy,
+            encryption_key=encryption_key,
+            doc_id_column=doc_id_column,
+            config=config,
+            text_columns=text_columns,
+            structured_columns=structured_columns,
+        )
+    elif input_mode == "table_tag":
         result_df = run_redaction_pipeline_by_tag(
             spark=spark,
             source_table=source_table,
@@ -536,25 +598,33 @@ display(result_df)
 
 # COMMAND ----------
 
-redacted_col_name = f"{text_column}_redacted"
-
-# Check which columns are available based on output_strategy
-if redacted_col_name in result_df.columns and text_column in result_df.columns:
-    summary_df = result_df.selectExpr(
-        "COUNT(*) as total_documents",
-        f"AVG(LENGTH({text_column})) as avg_original_length",
-        f"AVG(LENGTH({redacted_col_name})) as avg_redacted_length",
-    )
-    display(summary_df)
-elif redacted_col_name in result_df.columns:
-    # Production mode - only redacted column available
-    summary_df = result_df.selectExpr(
-        "COUNT(*) as total_documents",
-        f"AVG(LENGTH({redacted_col_name})) as avg_redacted_length",
-    )
-    display(summary_df)
+if input_mode == "full_table":
+    _redacted_cols = [c for c in result_df.columns if c.endswith("_redacted")]
+    print(f"Full-table redaction: {len(_redacted_cols)} redacted column(s)")
+    _exprs = ["COUNT(*) as total_documents"]
+    for _rc in _redacted_cols:
+        _orig = _rc.removesuffix("_redacted")
+        if _orig in result_df.columns:
+            _exprs.append(f"AVG(LENGTH(`{_orig}`)) as avg_len_{_orig}")
+        _exprs.append(f"AVG(LENGTH(`{_rc}`)) as avg_len_{_rc}")
+    display(result_df.selectExpr(*_exprs))
 else:
-    print(f"Output table has {result_df.count()} documents")
+    redacted_col_name = f"{text_column}_redacted"
+    if redacted_col_name in result_df.columns and text_column in result_df.columns:
+        summary_df = result_df.selectExpr(
+            "COUNT(*) as total_documents",
+            f"AVG(LENGTH({text_column})) as avg_original_length",
+            f"AVG(LENGTH({redacted_col_name})) as avg_redacted_length",
+        )
+        display(summary_df)
+    elif redacted_col_name in result_df.columns:
+        summary_df = result_df.selectExpr(
+            "COUNT(*) as total_documents",
+            f"AVG(LENGTH({redacted_col_name})) as avg_redacted_length",
+        )
+        display(summary_df)
+    else:
+        print(f"Output table has {result_df.count()} documents")
 
 # COMMAND ----------
 
@@ -563,9 +633,10 @@ else:
 
 # COMMAND ----------
 
-if text_column in result_df.columns and redacted_col_name in result_df.columns:
-    comparison_df = result_df.select(doc_id_column, text_column, redacted_col_name)
-    display(comparison_df.limit(10))
+if input_mode == "full_table":
+    display(result_df.limit(10))
+elif text_column in result_df.columns and f"{text_column}_redacted" in result_df.columns:
+    display(result_df.select(doc_id_column, text_column, f"{text_column}_redacted").limit(10))
 else:
     print("Sample comparisons only available in validation output mode")
     display(result_df.limit(10))
@@ -577,7 +648,7 @@ else:
 
 # COMMAND ----------
 
-if output_strategy == "validation":
+if output_strategy == "validation" and input_mode != "full_table":
     if use_presidio and "presidio_results_struct" in result_df.columns:
         print("=== Presidio Detection Stats ===")
         presidio_stats = result_df.selectExpr(
@@ -589,7 +660,7 @@ if output_strategy == "validation":
 
 # COMMAND ----------
 
-if output_strategy == "validation":
+if output_strategy == "validation" and input_mode != "full_table":
     if use_ai_query and "ai_results_struct" in result_df.columns:
         print("=== AI Query Detection Stats ===")
         ai_stats = result_df.selectExpr(
@@ -601,7 +672,7 @@ if output_strategy == "validation":
 
 # COMMAND ----------
 
-if output_strategy == "validation":
+if output_strategy == "validation" and input_mode != "full_table":
     if use_gliner and "gliner_results_struct" in result_df.columns:
         print("=== GLiNER Detection Stats ===")
         gliner_stats = result_df.selectExpr(

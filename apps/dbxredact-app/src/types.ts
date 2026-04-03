@@ -127,6 +127,14 @@ export interface Finding {
   explanation?: string;
 }
 
+export interface DiscoverColumnsResponse {
+  text_columns: string[];
+  structured_columns: Record<string, string>;
+  untagged_columns: string[];
+  doc_id_candidates: string[];
+  warnings: string[];
+}
+
 export interface Annotation {
   annotation_id?: string;
   doc_id: string;

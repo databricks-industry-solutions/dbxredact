@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
+import { SkeletonRows } from "../components/Skeleton";
 import { useGet } from "../hooks/useApi";
 import type { JobHistoryItem } from "../types";
 
@@ -65,9 +66,11 @@ export default function ReviewPage() {
     if (sourceInfo.columns.includes("doc_id")) setDocIdCol("doc_id");
   }, [sourceInfo]);
 
+  const redactedCols = (outputInfo?.columns ?? []).filter((c) => c.endsWith("_redacted"));
+
   useEffect(() => {
     if (!outputInfo) return;
-    if (outputInfo.columns.includes("text_redacted")) setOutputCol("text_redacted");
+    if (redactedCols.length) setOutputCol(redactedCols[0]);
     else if (outputInfo.columns.includes("redacted_text")) setOutputCol("redacted_text");
     else if (outputInfo.columns.length) setOutputCol(outputInfo.columns[0]);
   }, [outputInfo]);
@@ -121,6 +124,11 @@ export default function ReviewPage() {
           </div>
           <div>
             <TablePicker value={outputTable} onChange={(v) => { setOutputTable(v); setOffset(0); }} label="Output Table (redacted text)" />
+            {redactedCols.length > 1 && (
+              <div className="mt-2 text-xs bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded px-3 py-2 text-blue-700 dark:text-blue-300">
+                This table has {redactedCols.length} redacted columns. Use the dropdown to compare each.
+              </div>
+            )}
             {outputCols.length > 0 && (
               <div className="mt-2">
                 <label className="block text-xs font-medium mb-1 text-gray-500 dark:text-gray-400">Redacted text column</label>
@@ -133,7 +141,7 @@ export default function ReviewPage() {
         </div>
       </div>
 
-      {loading && <p className="text-sm text-gray-500 dark:text-gray-400 animate-pulse">Loading...</p>}
+      {loading && <SkeletonRows rows={4} />}
 
       {doc && (
         <>

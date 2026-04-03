@@ -37,6 +37,13 @@ async def run_pipeline(body: PipelineRunRequest):
                 f"Estimated cost ${est['estimated_cost_usd']:.4f} exceeds limit ${body.max_cost_usd:.4f}",
             )
 
+    is_full_table = body.redaction_scope == "full_table"
+
+    if is_full_table and is_in_place:
+        raise HTTPException(400, "full_table scope cannot be combined with in_place output mode")
+    if is_full_table and body.refresh_approach == "incremental":
+        raise HTTPException(400, "full_table scope does not support incremental refresh")
+
     notebook_params = {
         "source_table": body.source_table,
         "text_column": body.text_column,
@@ -65,9 +72,20 @@ async def run_pipeline(body: PipelineRunRequest):
         "allow_consensus_redaction": "true" if config.get("alignment_mode", "union") == "consensus" else "false",
         "audit_table": f"{CATALOG}.{SCHEMA}.redact_audit_log",
     }
-    ep = config.get("extra_params")
-    if ep:
-        notebook_params["extra_params"] = json.dumps(ep) if not isinstance(ep, str) else ep
+
+    if is_full_table:
+        notebook_params["input_mode"] = "full_table"
+        notebook_params["masking_strategy"] = body.masking_strategy or "mask"
+        extra = {}
+        if body.text_columns:
+            extra["text_columns"] = body.text_columns
+        if body.structured_columns:
+            extra["structured_columns"] = body.structured_columns
+        notebook_params["extra_params"] = json.dumps(extra)
+    else:
+        ep = config.get("extra_params")
+        if ep:
+            notebook_params["extra_params"] = json.dumps(ep) if not isinstance(ep, str) else ep
 
     run_id = trigger_pipeline_run(notebook_params, cluster_profile=body.cluster_profile)
     status = get_run_status(run_id)
@@ -295,6 +313,73 @@ async def cost_estimate(
         "cluster_profile": cluster_profile,
         "detection_profile": detection_profile,
         "use_ai_query": use_ai_query,
+    }
+
+
+_STRING_TYPES = {"string", "varchar", "char", "text"}
+
+
+@router.get("/discover-columns")
+async def discover_columns(table: str):
+    """Discover PII columns via UC tags. Mirrors src/dbxredact/metadata.discover_pii_columns."""
+    qualified = quote_table(table)
+    parts = qualified.replace("`", "").split(".")
+    if len(parts) != 3:
+        raise HTTPException(400, "Table must be fully qualified: catalog.schema.table")
+    cat, sch, tbl = parts
+    for p in (cat, sch, tbl):
+        validate_identifier(p)
+
+    cols = fetch_all(
+        f"SELECT column_name, data_type FROM system.information_schema.columns "
+        f"WHERE table_catalog = '{cat}' AND table_schema = '{sch}' AND table_name = '{tbl}'"
+    )
+    col_types = {r["column_name"]: r["data_type"].lower() for r in cols}
+
+    try:
+        tags_rows = fetch_all(
+            f"SELECT column_name, tag_name, tag_value FROM system.information_schema.column_tags "
+            f"WHERE table_catalog = '{cat}' AND table_schema = '{sch}' AND table_name = '{tbl}'"
+        )
+    except Exception:
+        tags_rows = []
+
+    col_tags: dict[str, dict[str, str]] = {}
+    for r in tags_rows:
+        col_tags.setdefault(r["column_name"], {})[r["tag_name"]] = r["tag_value"]
+
+    text_columns: list[str] = []
+    structured_columns: dict[str, str] = {}
+    untagged_columns: list[str] = []
+    doc_id_candidates: list[str] = []
+    warnings: list[str] = []
+
+    for col_name, dtype in col_types.items():
+        tags = col_tags.get(col_name, {})
+        is_protected = tags.get("data_classification") == "protected"
+        pii_type = tags.get("pii_type")
+
+        if is_protected:
+            if pii_type and pii_type != "free_text":
+                structured_columns[col_name] = pii_type
+            elif dtype in _STRING_TYPES:
+                text_columns.append(col_name)
+            else:
+                warnings.append(
+                    f"Column '{col_name}' is tagged protected but has no pii_type "
+                    f"and is {dtype} type -- skipped"
+                )
+        else:
+            untagged_columns.append(col_name)
+            if col_name.endswith("_id") or col_name == "doc_id":
+                doc_id_candidates.append(col_name)
+
+    return {
+        "text_columns": text_columns,
+        "structured_columns": structured_columns,
+        "untagged_columns": untagged_columns,
+        "doc_id_candidates": doc_id_candidates,
+        "warnings": warnings,
     }
 
 
