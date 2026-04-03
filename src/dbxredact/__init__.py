@@ -21,6 +21,8 @@ from .config import (
     ENTITY_TEXT_IGNORE_PATTERNS,
     should_ignore_entity,
     GLINER_LABEL_MAP,
+    GLINER_MODEL_PRESETS,
+    get_gliner_preset,
     DEFAULT_GLINER_THRESHOLD,
     JUDGE_PROMPT_SKELETON,
     NEXT_ACTION_PROMPT_SKELETON,
@@ -86,10 +88,17 @@ from .redaction import (
     RedactionStrategy,
 )
 
+from .masking import (
+    apply_structured_masking,
+    MaskingStrategy,
+    MASKING_RULES,
+)
+
 from .metadata import (
     get_columns_by_tag,
     get_protected_columns,
     get_table_metadata,
+    discover_pii_columns,
 )
 
 from .active_learning import (
@@ -115,6 +124,7 @@ from .pipeline import (
     run_redaction_pipeline,
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
+    run_table_redaction,
     OutputStrategy,
     OutputMode,
     AlignmentMode,
@@ -135,6 +145,8 @@ __all__ = [
     "ENTITY_TEXT_IGNORE_PATTERNS",
     "should_ignore_entity",
     "GLINER_LABEL_MAP",
+    "GLINER_MODEL_PRESETS",
+    "get_gliner_preset",
     "DEFAULT_GLINER_THRESHOLD",
     "JUDGE_PROMPT_SKELETON",
     "NEXT_ACTION_PROMPT_SKELETON",
@@ -183,10 +195,15 @@ __all__ = [
     "create_redaction_audit_udf",
     "create_redacted_table",
     "RedactionStrategy",
+    # Masking
+    "apply_structured_masking",
+    "MaskingStrategy",
+    "MASKING_RULES",
     # Metadata
     "get_columns_by_tag",
     "get_protected_columns",
     "get_table_metadata",
+    "discover_pii_columns",
     # Active Learning
     "compute_document_uncertainty",
     "build_review_queue",
@@ -207,6 +224,7 @@ __all__ = [
     "run_redaction_pipeline",
     "run_redaction_pipeline_streaming",
     "run_redaction_pipeline_by_tag",
+    "run_table_redaction",
     "OutputStrategy",
     "OutputMode",
     "AlignmentMode",

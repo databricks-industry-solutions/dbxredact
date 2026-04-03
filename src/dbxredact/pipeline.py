@@ -23,7 +23,8 @@ from pyspark.sql.types import (
 from .detection import run_detection
 from .alignment import align_entities_udf
 from .redaction import create_redaction_udf, create_redaction_audit_udf, RedactionStrategy
-from .metadata import get_columns_by_tag
+from .masking import apply_structured_masking, MaskingStrategy
+from .metadata import get_columns_by_tag, discover_pii_columns
 from .config import DEFAULT_GLINER_MODEL, DEFAULT_GLINER_THRESHOLD, DEFAULT_GLINER_MAX_WORDS, DEFAULT_AI_REASONING_EFFORT, RedactionConfig
 from .entity_filter import EntityFilter, apply_safe_filter, apply_block_filter
 
@@ -1276,4 +1277,160 @@ def run_redaction_pipeline_by_tag(
             entity_filter=entity_filter,
         )
 
+    return result_df
+
+
+def run_table_redaction(
+    spark: SparkSession,
+    source_table: str,
+    output_table: Optional[str] = None,
+    masking_strategy: MaskingStrategy = "mask",
+    encryption_key: Optional[str] = None,
+    doc_id_column: str = "doc_id",
+    use_presidio: bool = True,
+    use_ai_query: bool = True,
+    use_gliner: bool = False,
+    redaction_strategy: RedactionStrategy = "generic",
+    endpoint: Optional[str] = None,
+    score_threshold: float = 0.5,
+    gliner_model: str = DEFAULT_GLINER_MODEL,
+    gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
+    gliner_max_words: int = None,
+    num_cores: int = 10,
+    output_strategy: OutputStrategy = "production",
+    max_rows: Optional[int] = 10000,
+    reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
+    presidio_model_size: str = None,
+    ai_model_type: str = "foundation",
+    alignment_mode: AlignmentMode = "union",
+    fuzzy_threshold: int = 50,
+    presidio_pattern_only: bool = False,
+    classification_tag: str = "data_classification",
+    classification_value: str = "protected",
+    type_tag: str = "pii_type",
+    text_columns: Optional[list] = None,
+    structured_columns: Optional[dict] = None,
+    entity_filter: Optional[EntityFilter] = None,
+    config: Optional[RedactionConfig] = None,
+) -> DataFrame:
+    """Unified table-level redaction: NER for text columns, rule-based masking
+    for structured PII columns, all in a single read/write pass.
+
+    Uses ``discover_pii_columns()`` to auto-classify columns via UC tags unless
+    *text_columns* and *structured_columns* are provided explicitly.
+
+    Args:
+        source_table: Fully qualified table name (catalog.schema.table).
+        output_table: If set, writes the result to this table.
+        masking_strategy: Strategy for structured columns ("mask"/"hash"/"encrypt").
+        encryption_key: Required when masking_strategy is "encrypt".
+        text_columns: Override auto-discovered text columns for NER.
+        structured_columns: Override auto-discovered structured column map.
+        (remaining args forwarded to run_detection_pipeline / _apply_redaction)
+
+    Returns:
+        DataFrame with all PII columns redacted/masked.
+    """
+    t_start = time.time()
+
+    if text_columns is None or structured_columns is None:
+        discovery = discover_pii_columns(
+            spark, source_table,
+            classification_tag=classification_tag,
+            classification_value=classification_value,
+            type_tag=type_tag,
+        )
+        if text_columns is None:
+            text_columns = discovery["text_columns"]
+        if structured_columns is None:
+            structured_columns = discovery["structured_columns"]
+        for w in discovery.get("warnings", []):
+            logger.warning(w)
+
+    if not text_columns and not structured_columns:
+        raise ValueError(
+            f"No PII columns found in {source_table}. "
+            "Tag columns or pass text_columns/structured_columns explicitly."
+        )
+
+    logger.info(
+        "run_table_redaction: %d text column(s), %d structured column(s)",
+        len(text_columns), len(structured_columns),
+    )
+
+    source_df = spark.table(source_table)
+    if max_rows:
+        source_df = source_df.limit(max_rows)
+    source_df.persist(StorageLevel.MEMORY_AND_DISK)
+
+    _DETECTION_INTERMEDIATES = [
+        "presidio_results_struct", "ai_results_struct",
+        "gliner_results_struct", "aligned_entities",
+        "_entity_count", "_detection_status",
+        "_ai_detection_failed",
+    ]
+
+    result_df = source_df
+    prev_cache = None
+    multi_col = len(text_columns) > 1
+
+    for i, text_col in enumerate(text_columns):
+        logger.info("NER redaction on text column %d/%d: %s", i + 1, len(text_columns), text_col)
+        detection_df = run_detection_pipeline(
+            spark=spark,
+            source_df=result_df,
+            doc_id_column=doc_id_column,
+            text_column=text_col,
+            use_presidio=use_presidio,
+            use_ai_query=use_ai_query,
+            use_gliner=use_gliner,
+            endpoint=endpoint,
+            score_threshold=score_threshold,
+            gliner_model=gliner_model,
+            gliner_threshold=gliner_threshold,
+            gliner_max_words=gliner_max_words,
+            num_cores=num_cores,
+            reasoning_effort=reasoning_effort,
+            presidio_model_size=presidio_model_size,
+            presidio_pattern_only=presidio_pattern_only,
+            ai_model_type=ai_model_type,
+            alignment_mode=alignment_mode,
+            fuzzy_threshold=fuzzy_threshold,
+            entity_filter=entity_filter,
+        )
+        entities_column = _get_entities_column(detection_df, use_aligned=True)
+        result_df = _apply_redaction(
+            detection_df, text_col, entities_column, redaction_strategy
+        )
+
+        cols_to_drop = [c for c in _DETECTION_INTERMEDIATES if c in result_df.columns]
+        if cols_to_drop:
+            result_df = result_df.drop(*cols_to_drop)
+
+        if multi_col:
+            result_df = result_df.localCheckpoint(eager=True)
+            if prev_cache is not None:
+                prev_cache.unpersist()
+            prev_cache = result_df
+
+    if structured_columns:
+        logger.info("Structured masking on %d column(s)", len(structured_columns))
+        result_df = apply_structured_masking(
+            result_df,
+            structured_columns,
+            strategy=masking_strategy,
+            encryption_key=encryption_key,
+        )
+
+    if output_table:
+        result_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(output_table)
+        logger.info("Output written to %s", output_table)
+    else:
+        logger.warning(
+            "No output_table provided -- results will not be persisted to any table. "
+            "The returned DataFrame must be written by the caller."
+        )
+
+    source_df.unpersist()
+    logger.info("run_table_redaction complete in %.1fs", time.time() - t_start)
     return result_df
