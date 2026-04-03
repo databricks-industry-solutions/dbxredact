@@ -3,6 +3,7 @@ import { useGet, apiPost } from "../hooks/useApi";
 import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
 import DataTable, { type Column } from "../components/DataTable";
+import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
 import type { Config, RunStatus, JobHistoryItem } from "../types";
 
@@ -125,7 +126,7 @@ export default function BenchmarkPage() {
         <div>
           <label className="block text-sm font-medium mb-1">Configuration</label>
           {loadingConfigs ? (
-            <p className="text-xs text-gray-400">Loading configs...</p>
+            <SkeletonRows rows={2} />
           ) : !configs?.length ? (
             <p className="text-xs text-gray-400">No configs found. Create one on the Config page first.</p>
           ) : (

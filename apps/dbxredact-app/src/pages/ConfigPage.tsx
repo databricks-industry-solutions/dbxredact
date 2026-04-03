@@ -3,6 +3,7 @@ import { useGet, apiPost, apiPut, apiDelete } from "../hooks/useApi";
 import ErrorBanner from "../components/ErrorBanner";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
+import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
 import type { Config } from "../types";
 
@@ -270,9 +271,12 @@ export default function ConfigPage() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">GLiNER Model</label>
-              <input className="input-field" value={form.gliner_model}
+              <select className="input-field" value={form.gliner_model}
                 disabled={isPreset}
-                onChange={(e) => set("gliner_model", e.target.value)} />
+                onChange={(e) => set("gliner_model", e.target.value)}>
+                <option value="nvidia/gliner-PII">nvidia/gliner-PII (best accuracy)</option>
+                <option value="urchade/gliner_multi_pii-v1">urchade/gliner_multi_pii-v1 (Apache 2.0)</option>
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">GLiNER Threshold</label>
@@ -295,7 +299,7 @@ export default function ConfigPage() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-gray-500">Loading...</p>
+        <SkeletonRows rows={4} />
       ) : (
         <DataTable<Config & Record<string, unknown>>
           data={(configs ?? []) as (Config & Record<string, unknown>)[]}

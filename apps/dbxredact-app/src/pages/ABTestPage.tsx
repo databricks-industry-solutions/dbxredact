@@ -3,11 +3,12 @@ import { useGet, apiPost } from "../hooks/useApi";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import TablePicker, { type TableRef, emptyTableRef, toQualified } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
+import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
 import type { Config, ABTest } from "../types";
 
 export default function ABTestPage() {
-  const { data: tests, refetch, error: testsError } = useGet<ABTest[]>("/ab-tests/");
+  const { data: tests, loading: testsLoading, refetch, error: testsError } = useGet<ABTest[]>("/ab-tests/");
   const { data: configs, error: configsError } = useGet<Config[]>("/config/");
   const [name, setName] = useState("");
   const [configA, setConfigA] = useState("");
@@ -128,7 +129,9 @@ export default function ABTestPage() {
         </div>
       </div>
 
-      {tests?.length ? (
+      {testsLoading ? (
+        <SkeletonRows rows={3} />
+      ) : tests?.length ? (
         <>
           <h3 className="text-lg font-semibold mb-3">Tests</h3>
           <div className="space-y-4">

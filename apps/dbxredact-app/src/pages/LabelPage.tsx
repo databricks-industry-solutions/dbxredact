@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import EntityHighlighter from "../components/EntityHighlighter";
 import ErrorBanner from "../components/ErrorBanner";
+import { SkeletonRows } from "../components/Skeleton";
 import Tabs from "../components/Tabs";
 import { useGet, apiPost } from "../hooks/useApi";
 import { useToast } from "../hooks/useToast";
@@ -316,7 +317,7 @@ export default function LabelPage() {
         <span className="text-xs text-gray-400">Highlight text (mouse or Shift+Arrow) to label it</span>
       </div>
 
-      {(loading || preLoading) && <p className="text-sm text-gray-500 dark:text-gray-400 animate-pulse">Loading documents...</p>}
+      {(loading || preLoading) && <SkeletonRows rows={4} />}
 
       {mode === "unlabeled" && unlabeledDoc && (
         <div className="max-w-3xl">

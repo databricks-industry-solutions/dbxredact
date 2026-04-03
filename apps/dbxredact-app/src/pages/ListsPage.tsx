@@ -6,6 +6,7 @@ import ErrorBanner from "../components/ErrorBanner";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
 import Tabs from "../components/Tabs";
+import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
 import { ENTITY_TYPES } from "../constants";
 
@@ -165,7 +166,7 @@ function SuggestionsSection({ onApprove }: { onApprove: (value: string, listType
       <div className="max-w-xl mb-4">
         <TablePicker value={sourceTable} onChange={(v) => { setSourceTable(v); setDismissed(new Set()); }} label="Benchmark Source Table" />
       </div>
-      {loading && <p className="text-xs text-gray-400 animate-pulse">Loading suggestions...</p>}
+      {loading && <SkeletonRows rows={3} />}
       {approveError && (
         <div className="text-xs text-red-600 dark:text-red-400 mb-2">{approveError}</div>
       )}

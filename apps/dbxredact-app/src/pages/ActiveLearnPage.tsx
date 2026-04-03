@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { useGet, apiPost } from "../hooks/useApi";
 import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
+import { SkeletonRows } from "../components/Skeleton";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
 import { useToast } from "../hooks/useToast";
 import type { ActiveLearnItem, ActiveLearnStats } from "../types";
 
 export default function ActiveLearnPage() {
-  const { data: queue, refetch: refetchQueue, error: queueError } = useGet<ActiveLearnItem[]>("/active-learn/queue?status=pending");
+  const { data: queue, loading: queueLoading, refetch: refetchQueue, error: queueError } = useGet<ActiveLearnItem[]>("/active-learn/queue?status=pending");
   const { data: stats, refetch: refetchStats, error: statsError } = useGet<ActiveLearnStats>("/active-learn/stats");
   const [detectionTable, setDetectionTable] = useState<TableRef>(emptyTableRef);
   const [topK, setTopK] = useState(100);
@@ -134,12 +135,14 @@ export default function ActiveLearnPage() {
       </div>
 
       <h3 className="text-lg font-semibold mb-3">Review Queue</h3>
-      <DataTable<ActiveLearnItem & Record<string, unknown>>
-        data={(queue ?? []) as (ActiveLearnItem & Record<string, unknown>)[]}
-        rowKey={(item) => item.doc_id}
-        emptyMessage="No items in queue. Build a queue from detection results to get started."
-        columns={queueColumns}
-      />
+      {queueLoading ? <SkeletonRows rows={4} /> : (
+        <DataTable<ActiveLearnItem & Record<string, unknown>>
+          data={(queue ?? []) as (ActiveLearnItem & Record<string, unknown>)[]}
+          rowKey={(item) => item.doc_id}
+          emptyMessage="No items in queue. Build a queue from detection results to get started."
+          columns={queueColumns}
+        />
+      )}
     </div>
   );
 }
