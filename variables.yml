@@ -41,6 +41,9 @@ variables:
   reasoning_effort:
     description: "AI Query reasoning effort level: low, medium, or high"
     default: "low"
+  gliner_model:
+    description: "GLiNER model: nvidia/gliner-PII (best accuracy, CC-BY-NC) or urchade/gliner_multi_pii-v1 (Apache 2.0)"
+    default: "nvidia/gliner-PII"
   gliner_max_words:
     description: "GLiNER chunk size in words (256=fine-grained/high recall, 512=faster)"
     default: "256"

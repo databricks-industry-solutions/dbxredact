@@ -169,9 +169,11 @@ DEFAULT_OVERLAP_TOLERANCE = 0
 DEFAULT_AI_CONFIDENCE_SCORE = 0.8
 DEFAULT_AI_REASONING_EFFORT = "low"  # Valid: "low", "medium", "high"
 
-# GLiNER defaults
+# ---------------------------------------------------------------------------
+# GLiNER defaults  (nvidia/gliner-PII)
 # Labels must match the nvidia/nemotron-pii training data (lowercase with underscores).
 # The model uses these as zero-shot prompts, so exact label text matters.
+# ---------------------------------------------------------------------------
 DEFAULT_GLINER_MODEL = "nvidia/gliner-PII"
 DEFAULT_GLINER_LABELS = [
     "name",
@@ -213,8 +215,6 @@ DEFAULT_GLINER_LABELS = [
     "pin",
 ]
 
-# Maps nemotron-pii training labels -> standardized output entity types.
-# Multiple input labels can map to the same output type.
 GLINER_LABEL_MAP = {
     "name": "PERSON",
     "first_name": "PERSON",
@@ -258,7 +258,6 @@ DEFAULT_GLINER_THRESHOLD = 0.2
 DEFAULT_GLINER_MAX_WORDS = 256
 
 DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
-    # Keys must match DEFAULT_GLINER_LABELS exactly
     "name": 0.15,
     "first_name": 0.15,
     "last_name": 0.15,
@@ -297,6 +296,190 @@ DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
     "employee_id": 0.35,
     "pin": 0.4,
 }
+
+# ---------------------------------------------------------------------------
+# GLiNER preset: urchade/gliner_multi_pii-v1  (Apache 2.0)
+# Uses natural-language labels; maps to the same standardized entity types.
+# ---------------------------------------------------------------------------
+_URCHADE_GLINER_LABELS = [
+    "person",
+    "email address",
+    "phone number",
+    "mobile phone number",
+    "landline phone number",
+    "fax number",
+    "address",
+    "postal code",
+    "social security number",
+    "national id number",
+    "identity card number",
+    "identity document number",
+    "tax identification number",
+    "date of birth",
+    "credit card number",
+    "credit card expiration date",
+    "cvv",
+    "cvc",
+    "bank account number",
+    "iban",
+    "ip address",
+    "organization",
+    "passport number",
+    "driver's license number",
+    "registration number",
+    "license plate number",
+    "vehicle registration number",
+    "serial number",
+    "username",
+    "social media handle",
+    "digital signature",
+    "health insurance id number",
+    "health insurance number",
+    "national health insurance number",
+    "insurance number",
+    "medical condition",
+    "medication",
+    "blood type",
+    "visa number",
+    "flight number",
+    "reservation number",
+    "transaction number",
+    "birth certificate number",
+    "train ticket number",
+    "passport expiration date",
+    "insurance company",
+    "cpf",
+    "cnpj",
+]
+
+_URCHADE_GLINER_LABEL_MAP = {
+    "person": "PERSON",
+    "email address": "EMAIL_ADDRESS",
+    "phone number": "PHONE_NUMBER",
+    "mobile phone number": "PHONE_NUMBER",
+    "landline phone number": "PHONE_NUMBER",
+    "fax number": "PHONE_NUMBER",
+    "address": "LOCATION",
+    "postal code": "LOCATION",
+    "social security number": "US_SSN",
+    "national id number": "ID_NUMBER",
+    "identity card number": "ID_NUMBER",
+    "identity document number": "ID_NUMBER",
+    "tax identification number": "ID_NUMBER",
+    "date of birth": "DATE_TIME",
+    "credit card number": "CREDIT_CARD",
+    "credit card expiration date": "CREDIT_CARD",
+    "cvv": "CREDIT_CARD",
+    "cvc": "CREDIT_CARD",
+    "bank account number": "ACCOUNT_NUMBER",
+    "iban": "ACCOUNT_NUMBER",
+    "ip address": "IP_ADDRESS",
+    "organization": "ORGANIZATION",
+    "passport number": "ID_NUMBER",
+    "driver's license number": "LICENSE_NUMBER",
+    "registration number": "ID_NUMBER",
+    "license plate number": "VEHICLE_IDENTIFIER",
+    "vehicle registration number": "VEHICLE_IDENTIFIER",
+    "serial number": "ID_NUMBER",
+    "username": "ONLINE_IDENTIFIER",
+    "social media handle": "ONLINE_IDENTIFIER",
+    "digital signature": "ONLINE_IDENTIFIER",
+    "health insurance id number": "HEALTH_PLAN_NUMBER",
+    "health insurance number": "HEALTH_PLAN_NUMBER",
+    "national health insurance number": "HEALTH_PLAN_NUMBER",
+    "insurance number": "HEALTH_PLAN_NUMBER",
+    "medical condition": "MEDICAL_INFO",
+    "medication": "MEDICAL_INFO",
+    "blood type": "MEDICAL_INFO",
+    "visa number": "ID_NUMBER",
+    "flight number": "ID_NUMBER",
+    "reservation number": "ID_NUMBER",
+    "transaction number": "ID_NUMBER",
+    "birth certificate number": "ID_NUMBER",
+    "train ticket number": "ID_NUMBER",
+    "passport expiration date": "DATE_TIME",
+    "insurance company": "ORGANIZATION",
+    "cpf": "ID_NUMBER",
+    "cnpj": "ID_NUMBER",
+}
+
+_URCHADE_GLINER_THRESHOLDS_BY_TYPE = {
+    "person": 0.15,
+    "email address": 0.3,
+    "phone number": 0.3,
+    "mobile phone number": 0.3,
+    "landline phone number": 0.3,
+    "fax number": 0.3,
+    "address": 0.2,
+    "postal code": 0.3,
+    "social security number": 0.4,
+    "national id number": 0.35,
+    "identity card number": 0.35,
+    "identity document number": 0.35,
+    "tax identification number": 0.35,
+    "date of birth": 0.25,
+    "credit card number": 0.4,
+    "credit card expiration date": 0.35,
+    "cvv": 0.4,
+    "cvc": 0.4,
+    "bank account number": 0.35,
+    "iban": 0.35,
+    "ip address": 0.3,
+    "organization": 0.3,
+    "passport number": 0.35,
+    "driver's license number": 0.35,
+    "registration number": 0.35,
+    "license plate number": 0.35,
+    "vehicle registration number": 0.35,
+    "serial number": 0.35,
+    "username": 0.3,
+    "social media handle": 0.3,
+    "digital signature": 0.35,
+    "health insurance id number": 0.35,
+    "health insurance number": 0.35,
+    "national health insurance number": 0.35,
+    "insurance number": 0.35,
+    "medical condition": 0.3,
+    "medication": 0.3,
+    "blood type": 0.35,
+    "visa number": 0.35,
+    "flight number": 0.35,
+    "reservation number": 0.35,
+    "transaction number": 0.35,
+    "birth certificate number": 0.35,
+    "train ticket number": 0.35,
+    "passport expiration date": 0.35,
+    "insurance company": 0.3,
+    "cpf": 0.35,
+    "cnpj": 0.35,
+}
+
+# ---------------------------------------------------------------------------
+# Preset registry: bundles model -> (labels, label_map, thresholds)
+# ---------------------------------------------------------------------------
+GLINER_MODEL_PRESETS = {
+    "nvidia/gliner-PII": {
+        "labels": DEFAULT_GLINER_LABELS,
+        "label_map": GLINER_LABEL_MAP,
+        "thresholds": DEFAULT_GLINER_THRESHOLDS_BY_TYPE,
+    },
+    "urchade/gliner_multi_pii-v1": {
+        "labels": _URCHADE_GLINER_LABELS,
+        "label_map": _URCHADE_GLINER_LABEL_MAP,
+        "thresholds": _URCHADE_GLINER_THRESHOLDS_BY_TYPE,
+    },
+}
+
+
+def get_gliner_preset(model_name: str) -> dict:
+    """Return the preset (labels, label_map, thresholds) for a GLiNER model.
+
+    Falls back to the nvidia defaults for unknown model names so that existing
+    custom-model workflows keep working.
+    """
+    return GLINER_MODEL_PRESETS.get(
+        model_name, GLINER_MODEL_PRESETS[DEFAULT_GLINER_MODEL]
+    )
 
 # Confidence thresholds
 HIGH_CONFIDENCE_THRESHOLD = 0.7

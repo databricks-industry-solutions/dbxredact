@@ -118,6 +118,11 @@ dbutils.widgets.text(
     label="14. GLiNER Max Words (chunk size)",
 )
 dbutils.widgets.text(
+    name="gliner_model",
+    defaultValue="nvidia/gliner-PII",
+    label="15. GLiNER Model Name",
+)
+dbutils.widgets.text(
     name="safe_list_table",
     defaultValue="",
     label="15. Safe List Table (optional, fully qualified)",
@@ -156,6 +161,7 @@ max_rows_str = dbutils.widgets.get("max_rows")
 max_rows = None if max_rows_str == "0" else int(max_rows_str)
 reasoning_effort = dbutils.widgets.get("reasoning_effort")
 gliner_max_words = int(dbutils.widgets.get("gliner_max_words"))
+gliner_model = dbutils.widgets.get("gliner_model").strip()
 safe_list_table = dbutils.widgets.get("safe_list_table").strip()
 block_list_table = dbutils.widgets.get("block_list_table").strip()
 
@@ -240,6 +246,7 @@ config = RedactionConfig(
     use_gliner=use_gliner,
     endpoint=endpoint if use_ai_query else None,
     score_threshold=score_threshold,
+    gliner_model=gliner_model,
     gliner_max_words=gliner_max_words,
     num_cores=num_cores,
     alignment_mode=alignment_mode,
