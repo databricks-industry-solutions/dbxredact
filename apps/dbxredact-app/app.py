@@ -15,7 +15,14 @@ from api.services.db import execute, fetch_one, _table, CATALOG, SCHEMA, WAREHOU
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="dbxredact", version="0.1.2")
+def _get_version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("dbxredact")
+    except Exception:
+        return "0.0.0-dev"
+
+app = FastAPI(title="dbxredact", version=_get_version())
 
 _allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
@@ -40,8 +47,9 @@ async def database_error_handler(request: Request, exc: DatabaseError):
 
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):
-    logger.error("Unhandled error on %s: %s: %s", request.url.path, type(exc).__name__, exc)
-    detail = str(exc) if _DEBUG else "Internal server error"
+    cid = str(uuid.uuid4())[:8]
+    logger.error("Unhandled error [%s] on %s: %s: %s", cid, request.url.path, type(exc).__name__, exc)
+    detail = f"[{cid}] {type(exc).__name__}: {exc}" if _DEBUG else f"Internal server error (ref: {cid})"
     return JSONResponse(status_code=500, content={"error": detail})
 
 
@@ -87,7 +95,8 @@ TABLE_DDLS = [
     TBLPROPERTIES ('delta.deletedFileRetentionDuration' = 'interval 90 days')""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_job_history (
         run_id BIGINT, config_id STRING, source_table STRING, output_table STRING,
-        status STRING, cost_estimate_usd DOUBLE, started_at TIMESTAMP, completed_at TIMESTAMP
+        status STRING, cost_estimate_usd DOUBLE, started_at TIMESTAMP, completed_at TIMESTAMP,
+        run_page_url STRING, job_type STRING
     )""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_ab_tests (
         test_id STRING, name STRING, config_a_id STRING, config_b_id STRING,

@@ -30,6 +30,10 @@ async def run_pipeline(body: PipelineRunRequest):
             text_column=body.text_column,
             endpoint=config.get("endpoint", "databricks-gpt-oss-120b"),
             max_rows=body.max_rows or 10000,
+            cluster_profile=body.cluster_profile,
+            use_gliner=str(config.get("use_gliner", False)).lower() == "true",
+            use_ai_query=str(config.get("use_ai_query", True)).lower() == "true",
+            detection_profile=config.get("detection_profile", "fast"),
         )
         if est["estimated_cost_usd"] > body.max_cost_usd:
             raise HTTPException(
@@ -71,6 +75,7 @@ async def run_pipeline(body: PipelineRunRequest):
         "confirm_destructive": "true" if is_in_place else "false",
         "allow_consensus_redaction": "true" if config.get("alignment_mode", "union") == "consensus" else "false",
         "audit_table": f"{CATALOG}.{SCHEMA}.redact_audit_log",
+        "output_strategy": body.output_strategy,
     }
 
     if is_full_table:

@@ -104,7 +104,9 @@ CREATE TABLE IF NOT EXISTS {prefix}.redact_job_history (
     status STRING,
     cost_estimate_usd DOUBLE,
     started_at TIMESTAMP,
-    completed_at TIMESTAMP
+    completed_at TIMESTAMP,
+    run_page_url STRING,
+    job_type STRING
 )
 """)
 print(f"Created {prefix}.redact_job_history")

@@ -25,6 +25,14 @@ resources:
           default: ${var.gliner_model}
         - name: gliner_max_words
           default: ${var.gliner_max_words}
+        - name: gliner_threshold
+          default: "0.2"
+        - name: redaction_strategy
+          default: "typed"
+        - name: presidio_model_size
+          default: "trf"
+        - name: presidio_pattern_only
+          default: "false"
       job_clusters:
         - job_cluster_key: benchmark_cluster
           new_cluster:
@@ -55,6 +63,10 @@ resources:
               reasoning_effort: "{{job.parameters.reasoning_effort}}"
               gliner_model: "{{job.parameters.gliner_model}}"
               gliner_max_words: "{{job.parameters.gliner_max_words}}"
+              gliner_threshold: "{{job.parameters.gliner_threshold}}"
+              redaction_strategy: "{{job.parameters.redaction_strategy}}"
+              presidio_model_size: "{{job.parameters.presidio_model_size}}"
+              presidio_pattern_only: "{{job.parameters.presidio_pattern_only}}"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
@@ -125,13 +137,17 @@ resources:
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
+    # -- Pipeline jobs --------------------------------------------------------
+    # The 6 pipeline variants share identical notebook + base_parameters.
+    # YAML anchors eliminate the duplication; only cluster size & type differ.
+
     redaction_pipeline_cpu_small:
       name: "[${bundle.target}] dbxredact - Redaction Pipeline (CPU Small)"
       tasks:
         - task_key: run_redaction
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
-            base_parameters:
+            base_parameters: &pipeline_base_params
               source_table: ""
               text_column: ""
               output_table: ""
@@ -152,6 +168,15 @@ resources:
               reasoning_effort: ${var.reasoning_effort}
               gliner_model: ${var.gliner_model}
               gliner_max_words: ${var.gliner_max_words}
+              gliner_threshold: "0.2"
+              presidio_model_size: "trf"
+              presidio_pattern_only: "false"
+              output_mode: "separate"
+              confirm_destructive: "false"
+              allow_consensus_redaction: "false"
+              safe_list_table: ""
+              block_list_table: ""
+              audit_table: ""
               num_cores: "8"
           new_cluster:
             spark_version: "17.3.x-scala2.13"
@@ -160,7 +185,7 @@ resources:
             node_type_id: ${var.cpu_node_type}
             num_workers: 2
             data_security_mode: SINGLE_USER
-          libraries:
+          libraries: &pipeline_libs
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
     redaction_pipeline_cpu_medium:
@@ -170,26 +195,7 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
             base_parameters:
-              source_table: ""
-              text_column: ""
-              output_table: ""
-              doc_id_column: "doc_id"
-              input_mode: "table_column"
-              masking_strategy: "mask"
-              detection_profile: ${var.detection_profile}
-              use_presidio: "true"
-              use_ai_query: "true"
-              use_gliner: "true"
-              redaction_strategy: "typed"
-              endpoint: "databricks-gpt-oss-120b"
-              score_threshold: "0.5"
-              refresh_approach: "full"
-              output_strategy: "production"
-              max_rows: ${var.max_rows}
-              alignment_mode: "union"
-              reasoning_effort: ${var.reasoning_effort}
-              gliner_model: ${var.gliner_model}
-              gliner_max_words: ${var.gliner_max_words}
+              <<: *pipeline_base_params
               num_cores: "20"
           new_cluster:
             spark_version: "17.3.x-scala2.13"
@@ -198,8 +204,7 @@ resources:
             node_type_id: ${var.cpu_node_type}
             num_workers: 5
             data_security_mode: SINGLE_USER
-          libraries:
-            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+          libraries: *pipeline_libs
 
     redaction_pipeline_cpu_large:
       name: "[${bundle.target}] dbxredact - Redaction Pipeline (CPU Large)"
@@ -208,26 +213,7 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
             base_parameters:
-              source_table: ""
-              text_column: ""
-              output_table: ""
-              doc_id_column: "doc_id"
-              input_mode: "table_column"
-              masking_strategy: "mask"
-              detection_profile: ${var.detection_profile}
-              use_presidio: "true"
-              use_ai_query: "true"
-              use_gliner: "true"
-              redaction_strategy: "typed"
-              endpoint: "databricks-gpt-oss-120b"
-              score_threshold: "0.5"
-              refresh_approach: "full"
-              output_strategy: "production"
-              max_rows: ${var.max_rows}
-              alignment_mode: "union"
-              reasoning_effort: ${var.reasoning_effort}
-              gliner_model: ${var.gliner_model}
-              gliner_max_words: ${var.gliner_max_words}
+              <<: *pipeline_base_params
               num_cores: "40"
           new_cluster:
             spark_version: "17.3.x-scala2.13"
@@ -236,8 +222,7 @@ resources:
             node_type_id: ${var.cpu_node_type}
             num_workers: 10
             data_security_mode: SINGLE_USER
-          libraries:
-            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+          libraries: *pipeline_libs
 
     redaction_pipeline_gpu_small:
       name: "[${bundle.target}] dbxredact - Redaction Pipeline (GPU Small)"
@@ -246,26 +231,7 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
             base_parameters:
-              source_table: ""
-              text_column: ""
-              output_table: ""
-              doc_id_column: "doc_id"
-              input_mode: "table_column"
-              masking_strategy: "mask"
-              detection_profile: ${var.detection_profile}
-              use_presidio: "true"
-              use_ai_query: "true"
-              use_gliner: "true"
-              redaction_strategy: "typed"
-              endpoint: "databricks-gpt-oss-120b"
-              score_threshold: "0.5"
-              refresh_approach: "full"
-              output_strategy: "production"
-              max_rows: ${var.max_rows}
-              alignment_mode: "union"
-              reasoning_effort: ${var.reasoning_effort}
-              gliner_model: ${var.gliner_model}
-              gliner_max_words: ${var.gliner_max_words}
+              <<: *pipeline_base_params
               num_cores: "8"
           new_cluster:
             spark_version: "17.3.x-gpu-ml-scala2.13"
@@ -274,8 +240,7 @@ resources:
             data_security_mode: SINGLE_USER
             spark_conf:
               spark.task.resource.gpu.amount: "0.25"
-          libraries:
-            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+          libraries: *pipeline_libs
 
     redaction_pipeline_gpu_medium:
       name: "[${bundle.target}] dbxredact - Redaction Pipeline (GPU Medium)"
@@ -284,26 +249,7 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
             base_parameters:
-              source_table: ""
-              text_column: ""
-              output_table: ""
-              doc_id_column: "doc_id"
-              input_mode: "table_column"
-              masking_strategy: "mask"
-              detection_profile: ${var.detection_profile}
-              use_presidio: "true"
-              use_ai_query: "true"
-              use_gliner: "true"
-              redaction_strategy: "typed"
-              endpoint: "databricks-gpt-oss-120b"
-              score_threshold: "0.5"
-              refresh_approach: "full"
-              output_strategy: "production"
-              max_rows: ${var.max_rows}
-              alignment_mode: "union"
-              reasoning_effort: ${var.reasoning_effort}
-              gliner_model: ${var.gliner_model}
-              gliner_max_words: ${var.gliner_max_words}
+              <<: *pipeline_base_params
               num_cores: "20"
           new_cluster:
             spark_version: "17.3.x-gpu-ml-scala2.13"
@@ -312,8 +258,7 @@ resources:
             data_security_mode: SINGLE_USER
             spark_conf:
               spark.task.resource.gpu.amount: "0.25"
-          libraries:
-            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+          libraries: *pipeline_libs
 
     redaction_pipeline_gpu_large:
       name: "[${bundle.target}] dbxredact - Redaction Pipeline (GPU Large)"
@@ -322,26 +267,7 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
             base_parameters:
-              source_table: ""
-              text_column: ""
-              output_table: ""
-              doc_id_column: "doc_id"
-              input_mode: "table_column"
-              masking_strategy: "mask"
-              detection_profile: ${var.detection_profile}
-              use_presidio: "true"
-              use_ai_query: "true"
-              use_gliner: "true"
-              redaction_strategy: "typed"
-              endpoint: "databricks-gpt-oss-120b"
-              score_threshold: "0.5"
-              refresh_approach: "full"
-              output_strategy: "production"
-              max_rows: ${var.max_rows}
-              alignment_mode: "union"
-              reasoning_effort: ${var.reasoning_effort}
-              gliner_model: ${var.gliner_model}
-              gliner_max_words: ${var.gliner_max_words}
+              <<: *pipeline_base_params
               num_cores: "40"
           new_cluster:
             spark_version: "17.3.x-gpu-ml-scala2.13"
@@ -350,5 +276,4 @@ resources:
             data_security_mode: SINGLE_USER
             spark_conf:
               spark.task.resource.gpu.amount: "0.25"
-          libraries:
-            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+          libraries: *pipeline_libs

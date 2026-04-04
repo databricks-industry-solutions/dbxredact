@@ -53,6 +53,7 @@ class PipelineRunRequest(BaseModel):
     text_columns: Optional[List[str]] = None
     structured_columns: Optional[Dict[str, str]] = None
     masking_strategy: Optional[str] = "mask"
+    output_strategy: Literal["production", "validation"] = "production"
 
 
 class RunStatusResponse(BaseModel):

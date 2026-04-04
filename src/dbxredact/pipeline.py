@@ -699,6 +699,8 @@ def run_redaction_pipeline(
     t_write_done = time.time()
     logger.info("Redaction + write: %.1fs | Total pipeline: %.1fs", t_write_done - t_redact_start, t_write_done - t_pipeline_start)
 
+    if output_mode != "in_place" and output_strategy == "production":
+        return output_df
     return result_df
 
 
