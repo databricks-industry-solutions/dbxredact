@@ -7,6 +7,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.sql import StatementParameterListItem
 
 logger = logging.getLogger(__name__)
 
@@ -91,13 +92,36 @@ def _classify_error(exc: Exception) -> DatabaseError:
     return DatabaseError(msg, 500)
 
 
-def _execute_with_retry(statement: str):
+_PYFORMAT_RE = re.compile(r"%\((\w+)\)s")
+
+
+def _prepare_params(
+    sql: str, params: Dict[str, Any]
+) -> tuple:
+    """Convert %(key)s placeholders + dict to :key placeholders + SDK param list."""
+    sdk_params: List[StatementParameterListItem] = []
+    for k, v in params.items():
+        if v is None:
+            sdk_params.append(StatementParameterListItem(name=k, value=None))
+        else:
+            sdk_params.append(StatementParameterListItem(name=k, value=str(v)))
+    statement = _PYFORMAT_RE.sub(lambda m: f":{m.group(1)}", sql)
+    return statement, sdk_params
+
+
+def _execute_with_retry(
+    statement: str,
+    sdk_params: Optional[List[StatementParameterListItem]] = None,
+):
     """Execute a statement with exponential backoff on transient failures."""
     last_exc = None
     for attempt in range(_MAX_RETRIES):
         try:
             result = _get_client().statement_execution.execute_statement(
-                warehouse_id=WAREHOUSE_ID, statement=statement, wait_timeout="30s",
+                warehouse_id=WAREHOUSE_ID,
+                statement=statement,
+                wait_timeout="30s",
+                parameters=sdk_params or None,
             )
             if result.status and result.status.error:
                 raise RuntimeError(f"SQL error: {result.status.error.message}")
@@ -128,38 +152,25 @@ def _sql_summary(statement: str) -> str:
 
 
 def execute(sql: str, params: Optional[Dict[str, Any]] = None) -> None:
-    """Execute a SQL statement (INSERT/UPDATE/DELETE). Params are interpolated manually."""
-    statement = _interpolate(sql, params) if params else sql
+    """Execute a SQL statement (INSERT/UPDATE/DELETE) with native parameterized values."""
+    if params:
+        statement, sdk_params = _prepare_params(sql, params)
+    else:
+        statement, sdk_params = sql, None
     logger.debug("execute: %s", _sql_summary(statement))
-    _execute_with_retry(statement)
+    _execute_with_retry(statement, sdk_params)
 
 
 def fetch_all(sql: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    statement = _interpolate(sql, params) if params else sql
+    if params:
+        statement, sdk_params = _prepare_params(sql, params)
+    else:
+        statement, sdk_params = sql, None
     logger.debug("fetch_all: %s", _sql_summary(statement))
-    result = _execute_with_retry(statement)
+    result = _execute_with_retry(statement, sdk_params)
     return _parse_result(result)
 
 
 def fetch_one(sql: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     rows = fetch_all(sql, params)
     return rows[0] if rows else None
-
-
-def _interpolate(sql: str, params: Dict[str, Any]) -> str:
-    """Replace %(key)s placeholders with escaped values.
-
-    The Databricks statement execution API doesn't support parameterized queries
-    in the same way as DB-API cursors, so we do safe interpolation here.
-    """
-    escaped = {}
-    for k, v in params.items():
-        if v is None:
-            escaped[k] = "NULL"
-        elif isinstance(v, bool):
-            escaped[k] = "true" if v else "false"
-        elif isinstance(v, (int, float)):
-            escaped[k] = str(v)
-        else:
-            escaped[k] = "'" + str(v).replace("'", "''") + "'"
-    return sql % escaped

@@ -1,6 +1,7 @@
 """Rule-based structured column masking -- mask, hash, or encrypt."""
 
 import logging
+import uuid
 from typing import Callable, Dict, Literal, Optional
 
 from pyspark.sql import DataFrame
@@ -8,6 +9,7 @@ from pyspark.sql.column import Column
 from pyspark.sql.functions import (
     base64,
     col,
+    concat,
     lit,
     regexp_replace,
     sha2,
@@ -57,16 +59,27 @@ def _build_mask_expr(
     return when(c.isNull(), lit(None)).otherwise(masked)
 
 
-def _build_hash_expr(c: Column) -> Column:
-    return when(c.isNull(), lit(None)).otherwise(
-        sha2(c.cast("string"), 256)
-    )
+def _build_hash_expr(c: Column, salt: str = "") -> Column:
+    value = concat(c.cast("string"), lit(salt)) if salt else c.cast("string")
+    return when(c.isNull(), lit(None)).otherwise(sha2(value, 256))
+
+
+def _resolve_encryption_key(key: str) -> str:
+    """Resolve a key that may be a Databricks secret reference (secret://scope/key)."""
+    if key.startswith("secret://"):
+        parts = key[len("secret://"):].split("/", 1)
+        scope, secret_key = parts[0], parts[1]
+        from pyspark.sql import SparkSession
+        spark = SparkSession.getActiveSession()
+        return spark._jvm.com.databricks.dbutils_v1.DBUtilsHolder.dbutils().secrets().get(scope, secret_key)
+    return key
 
 
 def _build_encrypt_expr(c: Column, key: str) -> Column:
     from pyspark.sql.functions import aes_encrypt
+    resolved = _resolve_encryption_key(key)
     return when(c.isNull(), lit(None)).otherwise(
-        base64(aes_encrypt(c.cast("string"), lit(key)))
+        base64(aes_encrypt(c.cast("string"), lit(resolved)))
     )
 
 
@@ -99,6 +112,7 @@ def apply_structured_masking(
     label_mode: str = "typed",
     encryption_key: Optional[str] = None,
     hash_algorithm: str = "sha2",
+    hash_salt: Optional[str] = None,
 ) -> DataFrame:
     """Apply rule-based masking to structured PII columns in a single pass.
 
@@ -118,6 +132,10 @@ def apply_structured_masking(
             when *strategy* is ``"mask"`` and the pii_type has no rule.
         encryption_key: Required when *strategy* is ``"encrypt"``.
         hash_algorithm: Reserved for future use (currently always SHA-256).
+        hash_salt: Salt prepended before hashing when *strategy* is
+            ``"hash"``. If ``None``, a random UUID is generated per call.
+            Without a salt, low-cardinality fields (SSNs, zip codes) are
+            vulnerable to rainbow-table reversal.
 
     Returns:
         DataFrame with PII columns masked/hashed/encrypted.
@@ -127,6 +145,12 @@ def apply_structured_masking(
 
     if strategy == "encrypt" and not encryption_key:
         raise ValueError("encryption_key is required when strategy='encrypt'")
+
+    if strategy == "hash" and hash_salt is None:
+        hash_salt = uuid.uuid4().hex
+        logger.info("Generated random hash salt for this masking run (pass hash_salt= for deterministic joins)")
+
+    salt = hash_salt or ""
 
     top_level: Dict[str, str] = {}
     nested: Dict[str, str] = {}
@@ -147,7 +171,7 @@ def apply_structured_masking(
                         _build_mask_expr(c, pii_type, label_mode).alias(field.name)
                     )
                 elif strategy == "hash":
-                    select_exprs.append(_build_hash_expr(c).alias(field.name))
+                    select_exprs.append(_build_hash_expr(c, salt).alias(field.name))
                 else:
                     select_exprs.append(
                         _build_encrypt_expr(c, encryption_key).alias(field.name)
@@ -160,7 +184,7 @@ def apply_structured_masking(
         if strategy == "mask":
             fn = lambda c, pt=pii_type: _build_mask_expr(c, pt, label_mode)
         elif strategy == "hash":
-            fn = _build_hash_expr
+            fn = lambda c, s=salt: _build_hash_expr(c, s)
         else:
             fn = lambda c, k=encryption_key: _build_encrypt_expr(c, k)
         df = _mask_nested_field(df, dotted_path, fn)

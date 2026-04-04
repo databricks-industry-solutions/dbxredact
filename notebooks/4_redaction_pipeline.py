@@ -576,6 +576,12 @@ if output_mode == "in_place":
 else:
     print(f"Redacted table saved to: {output_table}")
 
+if output_strategy == "validation":
+    print("\nWARNING: Validation output contains raw PII (original text + entity spans).")
+    print(f"Table '{output_table}' should have a retention policy applied.")
+    print("Use the app's POST /api/admin/purge-detection-results endpoint or set a")
+    print("Delta table retention policy to ensure PII is not retained indefinitely.")
+
 # COMMAND ----------
 
 # Read from saved table to avoid re-executing the lazy pipeline (which would re-run AI Query, doubling token costs)
