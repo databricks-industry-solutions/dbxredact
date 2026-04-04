@@ -23,10 +23,33 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 export interface UseGetOptions {
   deps?: unknown[];
   enabled?: boolean;
+  /** Number of retries with exponential backoff (default 0). */
+  retries?: number;
+}
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => { clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); }, { once: true });
+  });
+}
+
+async function fetchWithRetry<T>(path: string, signal: AbortSignal, retries: number): Promise<T> {
+  let lastError: Error | undefined;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await apiFetch<T>(path, { signal });
+    } catch (e: any) {
+      if (signal.aborted) throw e;
+      lastError = e;
+      if (attempt < retries) await delay(1000 * 2 ** attempt, signal);
+    }
+  }
+  throw lastError;
 }
 
 export function useGet<T>(path: string, opts?: UseGetOptions) {
-  const { deps = [], enabled = true } = opts ?? {};
+  const { deps = [], enabled = true, retries = 0 } = opts ?? {};
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,11 +65,12 @@ export function useGet<T>(path: string, opts?: UseGetOptions) {
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
-    apiFetch<T>(path, { signal: controller.signal })
+    setError(null);
+    fetchWithRetry<T>(path, controller.signal, retries)
       .then((d) => { if (!controller.signal.aborted) setData(d); })
       .catch((e) => { if (!controller.signal.aborted) setError(e.message); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-  }, [path, enabled, ...deps]);
+  }, [path, enabled, retries, ...deps]);
 
   useEffect(() => {
     refetch();

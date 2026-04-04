@@ -95,7 +95,11 @@ def _find_entity_positions(
 
 
 def _parse_entity_list(raw) -> list:
-    """Parse an entity list from either a JSON string or a list of Row/dict objects."""
+    """Parse an entity list from either a JSON string or a list of Row/dict objects.
+
+    Deduplicates by (entity, entity_type) to guard against LLM hallucination
+    where the model repeats the same entity hundreds of times.
+    """
     if raw is None:
         return []
     if isinstance(raw, str):
@@ -105,12 +109,26 @@ def _parse_entity_list(raw) -> list:
             return []
         if isinstance(parsed, dict) and "result" in parsed:
             parsed = parsed["result"]
-        if isinstance(parsed, list):
-            return parsed
+        if not isinstance(parsed, list):
+            return []
+        entities = parsed
+    elif isinstance(raw, list):
+        entities = [r.asDict() if hasattr(r, "asDict") else dict(r) for r in raw]
+    else:
         return []
-    if isinstance(raw, list):
-        return [r.asDict() if hasattr(r, "asDict") else dict(r) for r in raw]
-    return []
+
+    seen = set()
+    deduped = []
+    for e in entities:
+        key = (e.get("entity"), e.get("entity_type"))
+        if key not in seen:
+            seen.add(key)
+            deduped.append(e)
+    if len(deduped) < len(entities):
+        logger.info(
+            "Deduplicated AI response from %d to %d entities", len(entities), len(deduped)
+        )
+    return deduped
 
 
 def format_entity_response_object_udf(
@@ -129,16 +147,14 @@ def format_entity_response_object_udf(
     for entity_list, sentence in zip(identified_entities_series, sentences):
         entities = _parse_entity_list(entity_list)
 
-        mention_counts: dict = {}
-        for entity in entities:
-            if "entity" in entity and "entity_type" in entity:
-                key = (entity["entity"], entity["entity_type"])
-                mention_counts[key] = mention_counts.get(key, 0) + 1
-
         new_entity_list = []
         unlocated_count = 0
 
-        for (entity_text, entity_type), llm_count in mention_counts.items():
+        for entity in entities:
+            entity_text = entity.get("entity")
+            entity_type = entity.get("entity_type")
+            if not entity_text or not entity_type:
+                continue
             if should_ignore_entity(entity_text, entity_type):
                 continue
             positions = _find_entity_positions(entity_text, sentence)
@@ -150,12 +166,6 @@ def format_entity_response_object_udf(
                 )
                 unlocated_count += 1
                 continue
-
-            if len(positions) < llm_count:
-                logger.info(
-                    "AI reported %d mentions of entity (%s, %d chars) but only located %d",
-                    llm_count, entity_type, len(entity_text), len(positions),
-                )
 
             for start, end in positions:
                 new_entity_list.append({
@@ -169,8 +179,8 @@ def format_entity_response_object_udf(
 
         if unlocated_count > 0:
             logger.warning(
-                "%d AI-detected entities could not be located in text (out of %d unique)",
-                unlocated_count, len(mention_counts),
+                "%d AI-detected entities could not be located in text (out of %d)",
+                unlocated_count, len(entities),
             )
         new_entity_series.append(new_entity_list)
 

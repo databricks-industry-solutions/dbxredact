@@ -80,7 +80,7 @@ export default function ReviewPage() {
 
   const { data: compareData, loading, error: compareError } = useGet<CompareData>(
     `/review/compare?${compareParams}`,
-    { enabled: isSourceReady && isOutputReady, deps: [srcQualified, sourceCol, outQualified, outputCol, docIdCol, offset] },
+    { enabled: isSourceReady && isOutputReady && !!sourceInfo && !!outputInfo, retries: 2, deps: [srcQualified, sourceCol, outQualified, outputCol, docIdCol, offset] },
   );
 
   const displayError = error || compareError || historyError || "";
