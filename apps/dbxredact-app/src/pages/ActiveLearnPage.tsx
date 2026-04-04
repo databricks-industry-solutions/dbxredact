@@ -135,6 +135,9 @@ export default function ActiveLearnPage() {
       </div>
 
       <h3 className="text-lg font-semibold mb-3">Review Queue</h3>
+      <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">
+        "Mark Reviewed" removes a document from the pending queue. Entity-level corrections are not yet captured here -- use the Review page for detailed annotation.
+      </p>
       {queueLoading ? <SkeletonRows rows={4} /> : (
         <DataTable<ActiveLearnItem & Record<string, unknown>>
           data={(queue ?? []) as (ActiveLearnItem & Record<string, unknown>)[]}

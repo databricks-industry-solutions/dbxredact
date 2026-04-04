@@ -6,8 +6,7 @@ import DataTable, { type Column } from "../components/DataTable";
 import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
 import type { Config, RunStatus, JobHistoryItem } from "../types";
-
-const TERMINAL_STATES = ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"];
+import { TERMINAL_STATES } from "../constants";
 
 export default function BenchmarkPage() {
   const [sourceTable, setSourceTable] = useState<TableRef>(emptyTableRef);
@@ -19,7 +18,7 @@ export default function BenchmarkPage() {
   const failCountRef = useRef(0);
   const { toast } = useToast();
   const { data: configs, loading: loadingConfigs, error: configsError } = useGet<Config[]>("/config/");
-  const { data: history, refetch: refetchHistory, error: historyError } = useGet<JobHistoryItem[]>("/benchmark/history");
+  const { data: history, loading: loadingHistory, refetch: refetchHistory, error: historyError } = useGet<JobHistoryItem[]>("/benchmark/history");
 
   const displayError = error || configsError || historyError || "";
 
@@ -103,7 +102,7 @@ export default function BenchmarkPage() {
       }`}>{h.status}</span>
     )},
     { key: "started_at", header: "Started", render: (h) => <span className="text-gray-500 dark:text-gray-400">{h.started_at}</span> },
-    { key: "run_page_url", header: "", render: (h) =>
+    { key: "run_page_url", header: "", sortable: false, searchable: false, render: (h) =>
       h.run_page_url ? (
         <a href={h.run_page_url as string} target="_blank" rel="noreferrer"
           className="text-blue-600 dark:text-blue-400 underline text-xs">View</a>
@@ -169,12 +168,27 @@ export default function BenchmarkPage() {
             <span>Run #{runStatus.run_id} -- <b>{runStatus.state}</b></span>
             {runStatus.result_state && <span className="opacity-70">({runStatus.result_state})</span>}
           </div>
-          {runStatus.run_page_url && (
-            <a href={runStatus.run_page_url} target="_blank" rel="noreferrer"
-              className="text-blue-600 dark:text-blue-400 underline text-xs mt-1 inline-block">
-              View in Databricks
-            </a>
-          )}
+          <div className="flex items-center gap-3 mt-1">
+            {runStatus.run_page_url && (
+              <a href={runStatus.run_page_url} target="_blank" rel="noreferrer"
+                className="text-blue-600 dark:text-blue-400 underline text-xs">
+                View in Databricks
+              </a>
+            )}
+            {isActive && (
+              <button className="text-xs text-red-600 dark:text-red-400 underline"
+                onClick={async () => {
+                  try {
+                    await apiPost(`/benchmark/cancel/${runStatus.run_id}`, {});
+                    setRunStatus((prev) => prev ? { ...prev, state: "CANCELLED", result_state: "CANCELLED" } : prev);
+                    toast("Benchmark cancelled");
+                    refetchHistory();
+                  } catch (e: unknown) {
+                    setError(e instanceof Error ? e.message : "Failed to cancel");
+                  }
+                }}>Cancel</button>
+            )}
+          </div>
         </div>
       )}
 
@@ -182,6 +196,7 @@ export default function BenchmarkPage() {
         Recent Benchmark Runs
         <button type="button" onClick={() => refetchHistory()} className="btn-secondary text-sm">Refresh</button>
       </h3>
+      {loadingHistory && <SkeletonRows rows={3} className="mb-4" />}
       <DataTable<JobHistoryItem & Record<string, unknown>>
         data={(history ?? []) as (JobHistoryItem & Record<string, unknown>)[]}
         rowKey={(h) => String(h.run_id)}

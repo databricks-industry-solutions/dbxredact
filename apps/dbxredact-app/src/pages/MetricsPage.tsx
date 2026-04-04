@@ -17,38 +17,46 @@ type Tab = "detection" | "evaluation" | "judge";
 export default function MetricsPage() {
   const [baseTable, setBaseTable] = useState<TableRef>(emptyTableRef);
   const [tab, setTab] = useState<Tab>("detection");
+  const [showOverrides, setShowOverrides] = useState(false);
+  const [detOverride, setDetOverride] = useState("");
+  const [evalOverride, setEvalOverride] = useState("");
+  const [judgeOverride, setJudgeOverride] = useState("");
 
   const hasTable = isComplete(baseTable);
   const qualified = toQualified(baseTable);
 
   const tableMap: Record<Tab, string> = {
-    detection: `${qualified}_detection_results`,
-    evaluation: `${qualified}_evaluation_results`,
-    judge: `${qualified}_judge_results`,
+    detection: detOverride || `${qualified}_detection_results`,
+    evaluation: evalOverride || `${qualified}_evaluation_results`,
+    judge: judgeOverride || `${qualified}_judge_results`,
   };
 
-  const detEnc = encodeURIComponent(tableMap.detection);
+  const detTable = tableMap.detection;
+  const evalTable = tableMap.evaluation;
+  const judgeTable = tableMap.judge;
+
+  const detEnc = encodeURIComponent(detTable);
   const { data: summary, loading: loadSum, error: summaryError } = useGet<DetectionSummary>(
-    `/metrics/summary?output_table=${detEnc}`, { enabled: hasTable && tab === "detection", deps: [qualified] },
+    `/metrics/summary?output_table=${detEnc}`, { enabled: hasTable && tab === "detection", deps: [detTable] },
   );
   const { data: byType, loading: loadType } = useGet<EntityByType[]>(
-    `/metrics/by-type?output_table=${detEnc}`, { enabled: hasTable && tab === "detection", deps: [qualified] },
+    `/metrics/by-type?output_table=${detEnc}`, { enabled: hasTable && tab === "detection", deps: [detTable] },
   );
   const { data: confDist, loading: loadConf } = useGet<ConfidenceBucket[]>(
-    `/metrics/confidence-distribution?output_table=${detEnc}`, { enabled: hasTable && tab === "detection", deps: [qualified] },
+    `/metrics/confidence-distribution?output_table=${detEnc}`, { enabled: hasTable && tab === "detection", deps: [detTable] },
   );
   const { data: examples, loading: loadEx } = useGet<DetectionExample[]>(
-    `/metrics/examples?output_table=${detEnc}`, { enabled: hasTable && tab === "detection", deps: [qualified] },
+    `/metrics/examples?output_table=${detEnc}`, { enabled: hasTable && tab === "detection", deps: [detTable] },
   );
 
-  const evalEnc = encodeURIComponent(tableMap.evaluation);
+  const evalEnc = encodeURIComponent(evalTable);
   const { data: evalRows, loading: loadEval, error: evalError } = useGet<EvalRow[]>(
-    `/metrics/evaluation?eval_table=${evalEnc}`, { enabled: hasTable && tab === "evaluation", deps: [qualified] },
+    `/metrics/evaluation?eval_table=${evalEnc}`, { enabled: hasTable && tab === "evaluation", deps: [evalTable] },
   );
 
-  const judgeEnc = encodeURIComponent(tableMap.judge);
+  const judgeEnc = encodeURIComponent(judgeTable);
   const { data: judgeRows, loading: loadJudge, error: judgeError } = useGet<JudgeRow[]>(
-    `/metrics/judge?judge_table=${judgeEnc}`, { enabled: hasTable && tab === "judge", deps: [qualified] },
+    `/metrics/judge?judge_table=${judgeEnc}`, { enabled: hasTable && tab === "judge", deps: [judgeTable] },
   );
 
   const [error, setError] = useState("");
@@ -73,6 +81,20 @@ export default function MetricsPage() {
 
       <div className="mb-5 max-w-2xl">
         <TablePicker value={baseTable} onChange={setBaseTable} label="Benchmark Source Table" />
+        <button type="button" className="text-xs text-blue-600 dark:text-blue-400 mt-1.5"
+          onClick={() => setShowOverrides(!showOverrides)}>
+          {showOverrides ? "Hide table overrides" : "Override derived table names"}
+        </button>
+        {showOverrides && (
+          <div className="grid grid-cols-1 gap-2 mt-2">
+            <input className="input-field text-xs" placeholder={`${qualified}_detection_results`}
+              value={detOverride} onChange={(e) => setDetOverride(e.target.value)} />
+            <input className="input-field text-xs" placeholder={`${qualified}_evaluation_results`}
+              value={evalOverride} onChange={(e) => setEvalOverride(e.target.value)} />
+            <input className="input-field text-xs" placeholder={`${qualified}_judge_results`}
+              value={judgeOverride} onChange={(e) => setJudgeOverride(e.target.value)} />
+          </div>
+        )}
       </div>
 
       {hasTable && (

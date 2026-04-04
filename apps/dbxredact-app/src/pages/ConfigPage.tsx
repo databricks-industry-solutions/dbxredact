@@ -42,6 +42,7 @@ const DEFAULTS = {
   gliner_max_words: 256,
   presidio_model_size: "trf",
   presidio_pattern_only: true,
+  extra_params: null as Record<string, unknown> | null,
 };
 
 export default function ConfigPage() {
@@ -50,6 +51,8 @@ export default function ConfigPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [extraParamsText, setExtraParamsText] = useState("");
+  const [extraParamsError, setExtraParamsError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Config | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const { toast } = useToast();
@@ -70,15 +73,34 @@ export default function ConfigPage() {
 
   async function save() {
     setSaving(true);
+    let parsedExtra: Record<string, unknown> | null = null;
+    if (extraParamsText.trim()) {
+      try {
+        const parsed = JSON.parse(extraParamsText);
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+          setExtraParamsError("Must be a JSON object (not array or primitive)");
+          setSaving(false);
+          return;
+        }
+        parsedExtra = parsed;
+        setExtraParamsError("");
+      } catch {
+        setExtraParamsError("Invalid JSON");
+        setSaving(false);
+        return;
+      }
+    }
+    const payload = { ...form, extra_params: parsedExtra };
     try {
       if (editingId) {
-        await apiPut(`/config/${editingId}`, form);
+        await apiPut(`/config/${editingId}`, payload);
         toast("Config updated");
       } else {
-        await apiPost("/config/", form);
+        await apiPost("/config/", payload);
         toast("Config saved");
       }
       setForm(DEFAULTS);
+      setExtraParamsText("");
       setEditingId(null);
       refetch();
     } catch (e: unknown) {
@@ -89,6 +111,8 @@ export default function ConfigPage() {
 
   function startEdit(c: Config) {
     setEditingId(c.config_id);
+    setExtraParamsText(c.extra_params ? JSON.stringify(c.extra_params, null, 2) : "");
+    setExtraParamsError("");
     setForm({
       name: c.name,
       detection_profile: c.detection_profile || "custom",
@@ -105,6 +129,7 @@ export default function ConfigPage() {
       gliner_max_words: c.gliner_max_words || 256,
       presidio_model_size: c.presidio_model_size || "trf",
       presidio_pattern_only: c.presidio_pattern_only ?? true,
+      extra_params: c.extra_params || null,
     });
     setShowAdvanced(true);
   }
@@ -112,6 +137,8 @@ export default function ConfigPage() {
   function cancelEdit() {
     setEditingId(null);
     setForm(DEFAULTS);
+    setExtraParamsText("");
+    setExtraParamsError("");
   }
 
   async function confirmDelete() {
@@ -284,6 +311,21 @@ export default function ConfigPage() {
                 value={form.gliner_threshold}
                 disabled={isPreset}
                 onChange={(e) => set("gliner_threshold", parseFloat(e.target.value))} />
+            </div>
+            <div className="col-span-2 border-t pt-3 mt-1">
+              <details>
+                <summary className="text-sm text-blue-600 dark:text-blue-400 cursor-pointer select-none">
+                  Extra Parameters (JSON)
+                </summary>
+                <div className="mt-2">
+                  <textarea className="input-field font-mono text-xs w-full" rows={4}
+                    placeholder='{"custom_key": "value"}'
+                    value={extraParamsText}
+                    onChange={(e) => { setExtraParamsText(e.target.value); setExtraParamsError(""); }} />
+                  {extraParamsError && <p className="text-xs text-red-500 mt-1">{extraParamsError}</p>}
+                  <p className="text-xs text-gray-400 mt-1">Passed as additional notebook parameters at runtime.</p>
+                </div>
+              </details>
             </div>
           </>
         )}

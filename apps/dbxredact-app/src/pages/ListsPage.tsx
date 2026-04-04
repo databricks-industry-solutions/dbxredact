@@ -11,8 +11,8 @@ import { useToast } from "../hooks/useToast";
 import { ENTITY_TYPES } from "../constants";
 
 export default function ListsPage() {
-  const { data: blockList, refetch: refetchBlock, error: blockError } = useGet<ListEntry[]>("/lists/block");
-  const { data: safeList, refetch: refetchSafe, error: safeError } = useGet<ListEntry[]>("/lists/safe");
+  const { data: blockList, loading: loadingBlock, refetch: refetchBlock, error: blockError } = useGet<ListEntry[]>("/lists/block");
+  const { data: safeList, loading: loadingSafe, refetch: refetchSafe, error: safeError } = useGet<ListEntry[]>("/lists/safe");
 
   const [value, setValue] = useState("");
   const [isPattern, setIsPattern] = useState(false);
@@ -123,6 +123,7 @@ export default function ListsPage() {
         <button className="btn-primary" disabled={!value.trim()} onClick={add}>Add</button>
       </div>
 
+      {(tab === "block" ? loadingBlock : loadingSafe) && <SkeletonRows rows={3} className="mb-4" />}
       <DataTable<ListEntry & Record<string, unknown>>
         data={(list ?? []) as (ListEntry & Record<string, unknown>)[]}
         rowKey={(e) => e.entry_id ?? ""}

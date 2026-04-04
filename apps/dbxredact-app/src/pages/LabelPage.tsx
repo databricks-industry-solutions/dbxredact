@@ -225,7 +225,7 @@ export default function LabelPage() {
     }
     window.addEventListener("keydown", handleKeys);
     return () => window.removeEventListener("keydown", handleKeys);
-  });
+  }, [mode, labels, saving, isDirty, docs.length, preDocs.length, currentIdx, preIdx]);
 
   const unlabeledDoc = docs[currentIdx];
   const preDoc = preDocs[preIdx];

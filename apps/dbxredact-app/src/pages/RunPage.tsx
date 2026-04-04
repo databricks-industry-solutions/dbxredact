@@ -7,6 +7,7 @@ import DataTable, { type Column } from "../components/DataTable";
 import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
 import type { Config, RunStatus, JobHistoryItem, DiscoverColumnsResponse } from "../types";
+import { TERMINAL_STATES } from "../constants";
 
 interface TableInfo {
   columns: string[];
@@ -27,11 +28,9 @@ interface CostEstimate {
   use_ai_query: boolean;
 }
 
-const TERMINAL_STATES = ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"];
-
 export default function RunPage() {
   const { data: configs, loading: configsLoading, error: configsError } = useGet<Config[]>("/config/");
-  const { data: history, refetch: refetchHistory, error: historyError } = useGet<JobHistoryItem[]>("/pipeline/history");
+  const { data: history, loading: loadingHistory, refetch: refetchHistory, error: historyError } = useGet<JobHistoryItem[]>("/pipeline/history");
   const [configId, setConfigId] = useState("");
   const [sourceTable, setSourceTable] = useState<TableRef>(emptyTableRef);
   const [outputTable, setOutputTable] = useState("");
@@ -46,6 +45,8 @@ export default function RunPage() {
   const [selectedTextCols, setSelectedTextCols] = useState<string[]>([]);
   const [selectedStructCols, setSelectedStructCols] = useState<Record<string, string>>({});
   const [maskingStrategy, setMaskingStrategy] = useState<"mask" | "hash" | "encrypt">("mask");
+  const [outputStrategy, setOutputStrategy] = useState<"production" | "validation">("production");
+  const [maxCostUsd, setMaxCostUsd] = useState<number | null>(null);
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const [running, setRunning] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -166,6 +167,8 @@ export default function RunPage() {
         cluster_profile: clusterProfile,
         refresh_approach: refreshApproach,
         output_mode: outputMode,
+        output_strategy: outputStrategy,
+        max_cost_usd: maxCostUsd ?? undefined,
       };
       if (isFullTable) {
         payload.text_columns = selectedTextCols;
@@ -197,7 +200,7 @@ export default function RunPage() {
       }`}>{h.status}</span>
     )},
     { key: "started_at", header: "Started", render: (h) => <span className="text-gray-500 dark:text-gray-400">{h.started_at}</span> },
-    { key: "run_page_url", header: "", render: (h) =>
+    { key: "run_page_url", header: "", sortable: false, searchable: false, render: (h) =>
       h.run_page_url ? (
         <a href={h.run_page_url as string} target="_blank" rel="noreferrer"
           className="text-blue-600 dark:text-blue-400 underline text-xs">View</a>
@@ -417,6 +420,14 @@ export default function RunPage() {
             <option value="incremental" disabled={isFullTable}>Incremental (append)</option>
           </select>
         </div>
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Output Strategy</label>
+          <select className="input-field" value={outputStrategy}
+            onChange={(e) => setOutputStrategy(e.target.value as "production" | "validation")}>
+            <option value="production">Production (minimal output)</option>
+            <option value="validation">Validation (full debug data)</option>
+          </select>
+        </div>
         {refreshApproach === "full" && outputTable && (
           <div className="col-span-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
             Full refresh will overwrite the existing output table if it exists.
@@ -448,6 +459,14 @@ export default function RunPage() {
                   <div><span className="text-gray-500">Total est.:</span> <span className="font-bold text-blue-700 dark:text-blue-300">${costEstimate.estimated_cost_usd.toFixed(4)}</span></div>
                 </div>
               )}
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-blue-200 dark:border-blue-800">
+                <label className="text-xs text-gray-500 whitespace-nowrap">Cost limit (USD):</label>
+                <input type="number" step="0.01" min="0" className="input-field w-28 text-xs"
+                  placeholder="none"
+                  value={maxCostUsd ?? ""}
+                  onChange={(e) => setMaxCostUsd(e.target.value ? Number(e.target.value) : null)} />
+                {maxCostUsd != null && <span className="text-[10px] text-gray-400">Run will be rejected if estimate exceeds this</span>}
+              </div>
             </div>
           </details>
         )}
@@ -478,12 +497,27 @@ export default function RunPage() {
             <span>Run #{runStatus.run_id} -- <b>{runStatus.state}</b></span>
             {runStatus.result_state && <span className="opacity-70">({runStatus.result_state})</span>}
           </div>
-          {runStatus.run_page_url && (
-            <a href={runStatus.run_page_url} target="_blank" rel="noreferrer"
-              className="text-blue-600 dark:text-blue-400 underline text-xs mt-1 inline-block">
-              View in Databricks
-            </a>
-          )}
+          <div className="flex items-center gap-3 mt-1">
+            {runStatus.run_page_url && (
+              <a href={runStatus.run_page_url} target="_blank" rel="noreferrer"
+                className="text-blue-600 dark:text-blue-400 underline text-xs">
+                View in Databricks
+              </a>
+            )}
+            {isRunning && (
+              <button className="text-xs text-red-600 dark:text-red-400 underline"
+                onClick={async () => {
+                  try {
+                    await apiPost(`/pipeline/cancel/${runStatus.run_id}`, {});
+                    setRunStatus((prev) => prev ? { ...prev, state: "CANCELLED", result_state: "CANCELLED" } : prev);
+                    toast("Pipeline cancelled");
+                    refetchHistory();
+                  } catch (e: unknown) {
+                    setError(e instanceof Error ? e.message : "Failed to cancel");
+                  }
+                }}>Cancel</button>
+            )}
+          </div>
         </div>
       )}
 
@@ -491,6 +525,7 @@ export default function RunPage() {
         Recent Runs
         <button type="button" onClick={() => refetchHistory()} className="btn-secondary text-sm">Refresh</button>
       </h3>
+      {loadingHistory && <SkeletonRows rows={3} />}
       <DataTable<JobHistoryItem & Record<string, unknown>>
         data={(history ?? []) as (JobHistoryItem & Record<string, unknown>)[]}
         rowKey={(h) => String(h.run_id)}

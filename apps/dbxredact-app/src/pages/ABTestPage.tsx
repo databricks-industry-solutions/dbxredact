@@ -88,7 +88,7 @@ export default function ABTestPage() {
         <div className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
           <b>How to use:</b> 1) Create at least two detection configs on the Config page (e.g. one with Presidio only, one with all methods).
           2) Pick a source table with labeled ground truth. 3) Set a sample size (number of documents to compare).
-          4) Click "Create Test", then "Run Test". Results will show which config performs better.
+          4) Click "Create Test" to save the comparison. Running tests and viewing results is coming soon.
         </div>
       </div>
 
@@ -149,7 +149,9 @@ export default function ABTestPage() {
                   A: {configName(t.config_a_id)} | B: {configName(t.config_b_id)} | {t.source_table} | n={t.sample_size}
                 </div>
                 {t.status === "created" && (
-                  <button className="btn-success text-sm" onClick={() => runTest(t.test_id)}>Run Test</button>
+                  <button className="btn-success text-sm opacity-50 cursor-not-allowed" disabled title="Results polling and metric comparison are not yet wired end-to-end">
+                    Run Test (Coming Soon)
+                  </button>
                 )}
                 {metricsChart(t)}
                 {t.winner && <p className="text-sm mt-3 font-semibold text-emerald-600 dark:text-emerald-400">Winner: Config {t.winner}</p>}
