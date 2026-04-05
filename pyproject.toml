@@ -1,6 +1,6 @@
 [project]
 name = "dbxredact"
-version = "0.1.2"
+version = "0.2.1"
 description = "PII/PHI detection and redaction library for Databricks"
 readme = "README.md"
 authors = [

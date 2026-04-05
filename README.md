@@ -130,7 +130,7 @@ To use this approach, clone the repo into a [Databricks Git Folder](https://docs
 %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
 
 # Or, if you have a pre-built wheel in a UC volume:
-%pip install /Volumes/your_catalog/your_schema/wheels/dbxredact-0.1.2-py3-none-any.whl
+%pip install /Volumes/your_catalog/your_schema/wheels/dbxredact-0.2.1-py3-none-any.whl
 ```
 
 Then open `notebooks/4_redaction_pipeline.py`, configure the widgets at the top of the notebook, and run all cells. You will need to attach the notebook to an ML-runtime cluster yourself.
