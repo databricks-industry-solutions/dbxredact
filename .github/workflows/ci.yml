@@ -30,48 +30,69 @@ jobs:
         python-version: ["3.10", "3.11"]
     steps:
       - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Poetry
-        run: pipx install poetry
+      - name: Load cached venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-py${{ matrix.python-version }}-
       - name: Install dependencies
-        run: poetry install --with dev
+        run: uv sync
       - name: Run unit tests with coverage
-        run: poetry run pytest tests/ -x -q --ignore=tests/integration --cov=dbxredact --cov-report=term-missing --cov-fail-under=40
+        run: uv run pytest tests/ -x -q --ignore=tests/integration --cov=dbxredact --cov-report=term-missing --cov-fail-under=40
       - name: Build wheel
-        run: poetry build
+        run: uv build
 
   test-app:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Poetry
-        run: pipx install poetry
-      - name: Install app dependencies
+      - name: Load cached venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-app-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-py3.11-app-
+      - name: Install dependencies
         run: |
-          poetry install --with dev
-          pip install -r apps/dbxredact-app/requirements.txt
+          uv sync --extra app
+          uv pip install -r apps/dbxredact-app/requirements.txt
       - name: Run app tests
-        run: poetry run pytest apps/dbxredact-app/tests/ -x -q
+        run: uv run pytest apps/dbxredact-app/tests/ -x -q
 
   test-integration:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Poetry
-        run: pipx install poetry
+      - name: Load cached venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-py3.11-
       - name: Install dependencies
-        run: poetry install --with dev
+        run: uv sync
       - name: Run integration tests
-        run: poetry run pytest tests/integration/ -x -q
+        run: uv run pytest tests/integration/ -x -q
 
   frontend:
     runs-on: ubuntu-latest

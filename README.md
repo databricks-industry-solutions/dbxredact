@@ -29,7 +29,7 @@ dbxredact detects and redacts Protected Health Information (PHI) and Personally 
 ## Prerequisites
 
 - [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html) >= 0.283.0
-- [Poetry](https://python-poetry.org/docs/#installation) >= 2.0
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) >= 0.4
 - [Node.js / npm](https://nodejs.org/) >= 18 (for the web app frontend build)
 - Python >= 3.10
 - A Databricks workspace with Unity Catalog enabled
@@ -46,7 +46,7 @@ cd dbxredact
 
 ### 2. Install prerequisites
 
-Make sure you have the tools listed in [Prerequisites](#prerequisites) installed: Databricks CLI (>= 0.283.0), Poetry (>= 2.0), Node.js/npm (>= 18), and Python (>= 3.10).
+Make sure you have the tools listed in [Prerequisites](#prerequisites) installed: Databricks CLI (>= 0.283.0), uv (>= 0.4), Node.js/npm (>= 18), and Python (>= 3.10).
 
 Authenticate the Databricks CLI to your workspace:
 
@@ -98,7 +98,7 @@ WAREHOUSE_ID=your_warehouse_id
 The script is interactive -- it prompts before each step (press Enter to proceed, `n` to skip, `q` to quit). It will:
 
 1. Generate `databricks.yml` from the template using your env file values
-2. Build the Python wheel with Poetry
+2. Build the Python wheel with uv
 3. Upload the wheel to your Unity Catalog volume
 4. Validate and deploy the Databricks Asset Bundle (jobs, app, and artifacts)
 5. Grant UC permissions to the app service principal
@@ -302,7 +302,7 @@ flowchart TB
     subgraph Local["Local Dev Environment"]
         DEV["dev.env\nCATALOG, SCHEMA, HOST"]
         SCRIPT["scripts/run_benchmark.sh\n-p job_params"]
-        DEPLOY["deploy.sh\npoetry build + bundle deploy"]
+        DEPLOY["deploy.sh\nuv build + bundle deploy"]
         LOGS["benchmark_results/\nstdout, stderr, summary"]
     end
 
@@ -556,7 +556,7 @@ The audit log records `run_id`, `doc_id`, `entity_type`, `entity_count`, `detect
 dbxredact/
   databricks.yml.template    # DAB config template (deploy.sh generates databricks.yml)
   deploy.sh                  # Build, configure, and deploy script
-  pyproject.toml             # Poetry dependencies and build config
+  pyproject.toml             # Dependencies and build config (PEP 621 + hatchling)
   variables.yml              # Bundle variables (catalog, schema, etc.)
   example.env                # Template for dev.env / prod.env
   src/dbxredact/             # Core Python library
@@ -594,8 +594,8 @@ dbxredact/
 ## Testing
 
 ```bash
-poetry install --with dev
-poetry run pytest tests/ -x -q --ignore=tests/integration
+uv sync
+uv run pytest tests/ -x -q --ignore=tests/integration
 ```
 
 Integration tests (`tests/integration/`) require a live Spark cluster and are excluded from local/CI runs.

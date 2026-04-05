@@ -4,6 +4,12 @@
 
 set -euo pipefail
 
+# Bridge pip index config to UV_INDEX_URL for internal PyPI proxies
+if [ -z "${UV_INDEX_URL:-}" ]; then
+    _pip_idx=$(pip3 config get global.index-url 2>/dev/null || true)
+    [ -n "$_pip_idx" ] && export UV_INDEX_URL="$_pip_idx"
+fi
+
 cleanup() {
     local code=$?
     if [ $code -ne 0 ]; then
@@ -132,8 +138,8 @@ fi
 
 # Build wheel
 WHEEL_PATH="dist/${WHEEL_FILE}"
-if confirm "Build wheel with poetry (version ${PACKAGE_VERSION})"; then
-    poetry build
+if confirm "Build wheel with uv (version ${PACKAGE_VERSION})"; then
+    uv build
     echo "Built wheel: ${WHEEL_PATH}"
 fi
 

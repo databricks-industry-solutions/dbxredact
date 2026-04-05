@@ -24,8 +24,7 @@ build/
 venv/
 ENV/
 
-# Poetry
-poetry.lock
+# Lock files are tracked (uv.lock is committed for reproducibility)
 
 # Testing
 .pytest_cache/

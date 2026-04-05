@@ -10,19 +10,19 @@ dbxredact is a Python library + Databricks App for PII/PHI detection and redacti
 
 ```bash
 # Install dependencies
-poetry install --with dev
+uv sync
 
 # Build wheel
-poetry build
+uv build
 
 # Run library unit tests (excludes integration tests)
-poetry run pytest tests/ -x -q --ignore=tests/integration
+uv run pytest tests/ -x -q --ignore=tests/integration
 
 # Run integration tests (requires PySpark)
-poetry run pytest tests/integration/ -x -q
+uv run pytest tests/integration/ -x -q
 
 # Run app API tests
-poetry run pytest apps/dbxredact-app/tests/ -x -q
+uv run pytest apps/dbxredact-app/tests/ -x -q
 
 # Lint
 ruff check src/ apps/dbxredact-app/
