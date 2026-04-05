@@ -227,7 +227,7 @@ The app is defined in `apps/dbxredact-app/` and deployed via the Databricks Asse
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABRICKS_WAREHOUSE_ID` | (required) | SQL warehouse for app queries |
+| `DATABRICKS_WAREHOUSE_ID` | (required) | SQL warehouse for app queries (note: the *job* variable is `WAREHOUSE_ID`; the *app* uses `DATABRICKS_WAREHOUSE_ID`) |
 | `CATALOG` / `SCHEMA` | (required) | Unity Catalog location for app tables |
 | `ALLOWED_ORIGINS` | `*` | Comma-separated CORS origins (set for production) |
 | `RETENTION_DAYS` | `90` | Days before PII retention warnings fire for annotation/ground-truth tables |
@@ -478,14 +478,29 @@ FROM catalog.schema.original o
 JOIN catalog.schema.redacted r ON o.doc_id = r.doc_id
 ```
 
-### Multiple Column Redaction
+### Multiple Column / Table-Level Redaction
 
-Currently, each pipeline run processes a single text column. Multi-column support is on the roadmap. For now, run the pipeline once per column and join outputs downstream on `doc_id`:
+`run_table_redaction` handles multiple text columns and structured PII columns in a single pass. It runs NER on each text column independently and applies rule-based masking to structured columns (SSN, phone, email, etc.):
 
 ```python
-for col in ["notes", "address", "comments"]:
-    run_redaction_pipeline(spark, source_table=..., text_column=col,
-                           output_table=f"..._{col}_redacted", ...)
+from dbxredact.pipeline import run_table_redaction
+
+result_df = run_table_redaction(
+    spark=spark,
+    source_table="catalog.schema.patients",
+    output_table="catalog.schema.patients_redacted",
+    text_columns=["clinical_notes", "discharge_summary"],
+    structured_columns={"ssn": "ssn", "phone": "phone", "email": "email"},
+    redaction_strategy="typed",
+    masking_strategy="mask",  # or "hash" / "encrypt"
+)
+```
+
+If you only need single-column NER redaction, `run_redaction_pipeline` is simpler:
+
+```python
+run_redaction_pipeline(spark, source_table=..., text_column="notes",
+                       output_table=..., config=config)
 ```
 
 ### Document Length
@@ -595,10 +610,18 @@ dbxredact/
 
 ```bash
 uv sync
+
+# Unit tests (no external dependencies)
 uv run pytest tests/ -x -q --ignore=tests/integration
+
+# Integration tests (uses local PySpark -- no Databricks connection needed)
+uv run pytest tests/integration/ -x -q
+
+# App API tests
+uv run pytest apps/dbxredact-app/tests/ -x -q
 ```
 
-Integration tests (`tests/integration/`) require a live Spark cluster and are excluded from local/CI runs.
+Unit tests and integration tests should be run separately (different CI jobs). Integration tests use a local SparkSession and test the full detection/redaction pipeline with mocked detectors.
 
 ## Compute Types
 Use an ML cluster - not currently working on serverless. GLiNER models perform better on GPU, but other models do not.
@@ -654,6 +677,17 @@ Set these variables in `variables.yml` before running `./deploy.sh prod`:
 - `current_working_directory`: Workspace path for artifact deployment (e.g. `/Workspace/Shared/dbxredact`)
 
 The `prod` target enforces `run_as` permissions and requires explicit user configuration.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `deploy.sh` fails at `uv build` | uv not installed or missing from PATH | `curl -LsSf https://astral.sh/uv/install.sh \| sh` then re-open terminal |
+| Wheel install fails behind corporate proxy | `UV_INDEX_URL` not set | `export UV_INDEX_URL=$(pip3 config get global.index-url)` before running `deploy.sh` |
+| Job fails with `ModuleNotFoundError: dbxredact` | Wheel not installed on cluster | Verify the wheel library is attached to your cluster or installed via `%pip install` |
+| App shows "warehouse not found" | Wrong env var name | The app expects `DATABRICKS_WAREHOUSE_ID`, not `WAREHOUSE_ID` (which is the *job* variable) |
+| `run_table_redaction` results are non-deterministic | Missing `doc_id_column` | Ensure your source table has a unique document ID column and pass it via `doc_id_column=` |
+| GLiNER model download fails on air-gapped cluster | No HuggingFace Hub access | Pre-download the model to a UC Volume and set `model_path` in config |
 
 ## Compliance and Responsibility
 
