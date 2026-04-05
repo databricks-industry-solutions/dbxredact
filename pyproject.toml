@@ -55,5 +55,5 @@ addopts = "-x -q"
 source = ["dbxredact"]
 
 [tool.coverage.report]
-fail_under = 30
+fail_under = 40
 show_missing = true

@@ -1333,6 +1333,35 @@ def run_table_redaction(
     Returns:
         DataFrame with all PII columns redacted/masked.
     """
+    if config is not None:
+        _v = _apply_config(config, {
+            "use_presidio": use_presidio, "use_ai_query": use_ai_query,
+            "use_gliner": use_gliner, "endpoint": endpoint,
+            "score_threshold": score_threshold, "gliner_model": gliner_model,
+            "gliner_threshold": gliner_threshold, "gliner_max_words": gliner_max_words,
+            "num_cores": num_cores, "reasoning_effort": reasoning_effort,
+            "presidio_model_size": presidio_model_size,
+            "presidio_pattern_only": presidio_pattern_only,
+            "ai_model_type": ai_model_type, "alignment_mode": alignment_mode,
+            "fuzzy_threshold": fuzzy_threshold, "redaction_strategy": redaction_strategy,
+            "output_strategy": output_strategy, "max_rows": max_rows,
+            "entity_filter": entity_filter,
+        })
+        (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
+         gliner_model, gliner_threshold, gliner_max_words, num_cores,
+         reasoning_effort, presidio_model_size, presidio_pattern_only,
+         ai_model_type, alignment_mode, fuzzy_threshold, redaction_strategy,
+         output_strategy, max_rows, entity_filter) = (
+            _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
+            _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
+            _v["gliner_threshold"], _v["gliner_max_words"], _v["num_cores"],
+            _v["reasoning_effort"], _v["presidio_model_size"],
+            _v["presidio_pattern_only"], _v["ai_model_type"],
+            _v["alignment_mode"], _v["fuzzy_threshold"],
+            _v["redaction_strategy"], _v["output_strategy"],
+            _v["max_rows"], _v["entity_filter"],
+        )
+
     t_start = time.time()
 
     if text_columns is None or structured_columns is None:
@@ -1362,7 +1391,7 @@ def run_table_redaction(
 
     source_df = spark.table(source_table)
     if max_rows:
-        source_df = source_df.limit(max_rows)
+        source_df = source_df.orderBy(doc_id_column).limit(max_rows)
     source_df.persist(StorageLevel.MEMORY_AND_DISK)
 
     _DETECTION_INTERMEDIATES = [

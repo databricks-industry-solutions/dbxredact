@@ -89,23 +89,25 @@ async def purge_annotations(retention_days: int = Query(default=None)):
 @router.post("/purge-detection-results", status_code=200)
 async def purge_detection_results(
     table_name: str = Query(..., description="Fully qualified detection results table (catalog.schema.table)"),
-    retention_days: int = Query(default=None),
 ):
-    """Drop or truncate a detection results table that contains raw PII.
+    """Delete ALL rows from a detection results table that contains raw PII.
 
     Detection output tables (e.g. *_detection_results) store the original text
     column and entity literals inside struct fields.  They are created by
     pipeline jobs, not the app, so they are not covered by purge-annotations.
+
+    Unlike purge-annotations (which supports date-based retention), this
+    endpoint always performs a full purge because detection tables lack a
+    ``created_at`` column.
     """
     qt = quote_table(table_name)
-    days = retention_days if retention_days is not None else RETENTION_DAYS
     before = fetch_one(f"SELECT count(*) as cnt FROM {qt}")
     total = int(before.get("cnt", 0)) if before else 0
     if total == 0:
         return {"table": table_name, "purged": 0, "note": "table is empty"}
     execute(f"DELETE FROM {qt} WHERE 1=1")
     logger.info("Purged all %d rows from detection results table %s", total, table_name)
-    return {"table": table_name, "purged": total, "retention_days": days}
+    return {"table": table_name, "purged": total}
 
 
 @router.get("/retention-status")
