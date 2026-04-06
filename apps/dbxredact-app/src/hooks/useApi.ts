@@ -9,11 +9,26 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.text();
-    let message = `${res.status}: ${body}`;
+    let message: string;
     try {
       const json = JSON.parse(body);
-      if (json.error) message = json.error;
-    } catch { /* body wasn't JSON */ }
+      message = json.error || json.detail || json.message || `Request failed (${res.status})`;
+    } catch {
+      const STATUS_MESSAGES: Record<number, string> = {
+        400: "Bad request -- check your inputs and try again.",
+        401: "Authentication required. Please reload the page.",
+        403: "You don't have permission for this operation.",
+        404: "The requested resource was not found.",
+        409: "Conflict -- this operation is already in progress.",
+        422: "Invalid input -- please check your form values.",
+        429: "Too many requests. Please wait a moment and try again.",
+        500: "Internal server error. Check the app logs for details.",
+        502: "The server is temporarily unavailable. Please try again.",
+        503: "Service unavailable. The backend may be starting up.",
+        504: "Request timed out. The operation may still be running.",
+      };
+      message = STATUS_MESSAGES[res.status] || `Request failed (${res.status}). Please try again.`;
+    }
     throw new Error(message);
   }
   if (res.status === 204) return undefined as unknown as T;

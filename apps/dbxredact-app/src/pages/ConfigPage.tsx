@@ -21,8 +21,8 @@ const PROFILE_PRESETS: Record<string, Partial<typeof DEFAULTS>> = {
 };
 
 const PROFILE_DESCRIPTIONS: Record<string, string> = {
-  fast: "AI Query + GLiNER + Presidio (pattern-only). Highest accuracy (F1~0.86) and precision (P~0.92). Pattern-only Presidio adds deterministic regex backup (SSN, phone, MRN, dates) without spaCy. Best for routine redaction and large-scale batch jobs.",
-  deep: "All three detectors with fine-grained GLiNER chunking and medium LLM reasoning. Maximum recall (R~0.95) for compliance-critical workloads. Slower and more expensive.",
+  fast: "Best for most workloads. Uses all three detection methods (AI Query, GLiNER, Presidio regex) with settings optimized for speed and high precision -- minimizes false positives so clean data stays clean. Recommended for routine redaction and large tables.",
+  deep: "Maximum thoroughness for compliance-critical data. All detectors run with higher sensitivity to catch as much PII as possible, at the cost of more false positives and slower runtime. Use when missing PII is unacceptable (e.g. HIPAA, GDPR audits).",
   custom: "Configure detection methods and parameters manually.",
 };
 

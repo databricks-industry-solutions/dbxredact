@@ -9,6 +9,7 @@ export interface TableRef {
 export const emptyTableRef: TableRef = { catalog: "", schema: "", table: "" };
 
 export function toQualified(v: TableRef): string {
+  if (!v.catalog || !v.schema || !v.table) return "";
   return `${v.catalog}.${v.schema}.${v.table}`;
 }
 

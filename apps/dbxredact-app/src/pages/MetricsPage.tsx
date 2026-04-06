@@ -75,8 +75,8 @@ export default function MetricsPage() {
       <h2 className="page-title">Metrics Dashboard</h2>
       <ErrorBanner message={displayError} onDismiss={() => setError("")} />
       <p className="page-desc">
-        Pick the original source table (e.g. <code className="text-xs font-mono">jsl_benchmark</code>).
-        All result tables are derived automatically with standard suffixes.
+        Select the benchmark source table. Detection, evaluation, and judge result tables are derived
+        automatically using standard suffixes (<code className="text-xs font-mono">_detection_results</code>, etc.).
       </p>
 
       <div className="mb-5 max-w-2xl">

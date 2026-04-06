@@ -21,6 +21,12 @@ interface CompareRow {
   redacted_text: string;
 }
 
+function parseTableRef(qualified: string): TableRef | null {
+  const parts = qualified?.split(".");
+  if (parts?.length === 3 && parts.every(Boolean)) return { catalog: parts[0], schema: parts[1], table: parts[2] };
+  return null;
+}
+
 export default function ReviewPage() {
   const [sourceTable, setSourceTable] = useState<TableRef>(emptyTableRef);
   const [outputTable, setOutputTable] = useState<TableRef>(emptyTableRef);
@@ -29,26 +35,38 @@ export default function ReviewPage() {
   const [docIdCol, setDocIdCol] = useState("doc_id");
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState("");
-  const [suggested, setSuggested] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string>("");
 
   const srcQualified = toQualified(sourceTable);
   const outQualified = toQualified(outputTable);
   const isSourceReady = isComplete(sourceTable);
   const isOutputReady = isComplete(outputTable);
 
-  const { data: historyData, error: historyError } = useGet<JobHistoryItem[]>("/pipeline/history", { enabled: !suggested });
+  const { data: historyData, error: historyError } = useGet<JobHistoryItem[]>("/pipeline/history");
+
+  const completedRuns = (historyData ?? []).filter((h) => h.status === "SUCCESS" && h.output_table);
 
   useEffect(() => {
-    if (suggested || !historyData) return;
-    const completed = historyData.find((h) => h.status === "SUCCESS");
-    if (completed) {
-      const srcParts = completed.source_table.split(".");
-      const outParts = completed.output_table.split(".");
-      if (srcParts.length === 3) setSourceTable({ catalog: srcParts[0], schema: srcParts[1], table: srcParts[2] });
-      if (outParts.length === 3) setOutputTable({ catalog: outParts[0], schema: outParts[1], table: outParts[2] });
+    if (selectedRunId || !completedRuns.length) return;
+    const run = completedRuns[0];
+    setSelectedRunId(String(run.run_id));
+    const src = parseTableRef(run.source_table);
+    const out = parseTableRef(run.output_table);
+    if (src) setSourceTable(src);
+    if (out) setOutputTable(out);
+  }, [completedRuns.length]);
+
+  function selectRun(runId: string) {
+    setSelectedRunId(runId);
+    setOffset(0);
+    const run = completedRuns.find((r) => String(r.run_id) === runId);
+    if (run) {
+      const src = parseTableRef(run.source_table);
+      const out = parseTableRef(run.output_table);
+      if (src) setSourceTable(src);
+      if (out) setOutputTable(out);
     }
-    setSuggested(true);
-  }, [historyData, suggested]);
+  }
 
   const { data: sourceInfo } = useGet<TableInfo>(
     `/pipeline/table-info?table=${encodeURIComponent(srcQualified)}`,
@@ -97,9 +115,28 @@ export default function ReviewPage() {
       <ErrorBanner message={displayError} onDismiss={() => setError("")} />
       <h2 className="page-title">Review Redaction Output</h2>
       <p className="page-desc">
-        Compare original text side-by-side with the redacted output. Pick a source table and a redacted output table,
-        then navigate through documents to review results.
+        Compare original text side-by-side with the redacted output. Select a completed run or manually pick tables.
       </p>
+
+      {/* Quick-select from run history */}
+      {completedRuns.length > 0 && (
+        <div className="mb-4 max-w-4xl">
+          <label className="block text-sm font-medium mb-1.5">Select a completed run</label>
+          <select className="input-field max-w-lg" value={selectedRunId}
+            onChange={(e) => selectRun(e.target.value)}>
+            {completedRuns.map((r) => (
+              <option key={r.run_id} value={String(r.run_id)}>
+                {r.source_table} {r.started_at ? `(${r.started_at})` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {!completedRuns.length && !historyError && (
+        <div className="mb-4 text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg p-3 max-w-4xl">
+          No completed pipeline runs found. <a href="/run" className="text-blue-600 dark:text-blue-400 font-medium hover:underline">Run a pipeline first</a>.
+        </div>
+      )}
 
       <div className="card p-5 mb-6 space-y-4 max-w-4xl">
         <div className="grid grid-cols-2 gap-4">

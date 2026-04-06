@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { useGet, apiPost } from "../hooks/useApi";
 import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
@@ -75,7 +76,6 @@ export default function RunPage() {
     if (discovered.doc_id_candidates.length) setDocIdCol(discovered.doc_id_candidates[0]);
   }, [discovered]);
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const failCountRef = useRef(0);
 
   useEffect(() => {
@@ -115,42 +115,48 @@ export default function RunPage() {
     },
   );
 
+  const pollCountRef = useRef(0);
+
   useEffect(() => {
-    if (runStatus && runStatus.state && !TERMINAL_STATES.includes(runStatus.state)) {
-      failCountRef.current = 0;
-      pollRef.current = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/pipeline/status/${runStatus.run_id}`);
-          if (res.ok) {
-            failCountRef.current = 0;
-            const updated: RunStatus = await res.json();
-            setRunStatus(updated);
-            if (updated.state && TERMINAL_STATES.includes(updated.state)) {
-              clearInterval(pollRef.current!);
-              pollRef.current = null;
-              refetchHistory();
-            }
-          } else {
-            failCountRef.current++;
-            if (failCountRef.current >= 5) {
-              clearInterval(pollRef.current!);
-              pollRef.current = null;
-              setRunStatus((prev) => prev ? { ...prev, state: "TERMINATED", result_state: "UNKNOWN" } : prev);
-              refetchHistory();
-            }
+    if (!runStatus?.state || TERMINAL_STATES.includes(runStatus.state)) return;
+    failCountRef.current = 0;
+    pollCountRef.current = 0;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    async function poll() {
+      try {
+        const res = await fetch(`/api/pipeline/status/${runStatus!.run_id}`);
+        if (res.ok) {
+          failCountRef.current = 0;
+          const updated: RunStatus = await res.json();
+          setRunStatus(updated);
+          if (updated.state && TERMINAL_STATES.includes(updated.state)) {
+            refetchHistory();
+            return;
           }
-        } catch {
+        } else {
           failCountRef.current++;
           if (failCountRef.current >= 5) {
-            clearInterval(pollRef.current!);
-            pollRef.current = null;
             setRunStatus((prev) => prev ? { ...prev, state: "TERMINATED", result_state: "UNKNOWN" } : prev);
             refetchHistory();
+            return;
           }
         }
-      }, 5000);
+      } catch {
+        failCountRef.current++;
+        if (failCountRef.current >= 5) {
+          setRunStatus((prev) => prev ? { ...prev, state: "TERMINATED", result_state: "UNKNOWN" } : prev);
+          refetchHistory();
+          return;
+        }
+      }
+      pollCountRef.current++;
+      const interval = Math.min(3000 * Math.pow(1.5, Math.min(pollCountRef.current, 10)), 30000);
+      timeoutId = setTimeout(poll, interval);
     }
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    timeoutId = setTimeout(poll, 3000);
+    return () => { if (timeoutId) clearTimeout(timeoutId); };
   }, [runStatus?.run_id, runStatus?.state]);
 
   async function launch() {
@@ -208,32 +214,44 @@ export default function RunPage() {
     },
   ];
 
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const canLaunch = !running && !!configId && hasTable;
+
   return (
     <div>
       <h2 className="page-title">Run Pipeline</h2>
       <p className="page-desc">Execute the PII redaction pipeline on a Unity Catalog table.</p>
       <ErrorBanner message={displayError} onDismiss={() => setError("")} />
 
-      <div className="card p-5 mb-6 grid grid-cols-2 gap-4 max-w-2xl">
-        <div className="col-span-2">
+      {/* Step 1: Essentials */}
+      <div className="card p-5 mb-4 max-w-2xl space-y-4">
+        <div>
           <label className="block text-sm font-medium mb-1.5">Config</label>
-          <select className="input-field" value={configId}
-            onChange={(e) => setConfigId(e.target.value)}>
-            {configsLoading && <option value="">Loading configs...</option>}
-            {!configsLoading && !configs?.length && <option value="">No configs found</option>}
-            {configs?.map((c) => <option key={c.config_id} value={c.config_id}>{c.name}</option>)}
-          </select>
+          {configsLoading ? (
+            <SkeletonRows rows={1} />
+          ) : !configs?.length ? (
+            <div className="text-sm text-gray-500 dark:text-gray-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-3">
+              No detection configs found.{" "}
+              <a href="/config" className="text-blue-600 dark:text-blue-400 font-medium hover:underline">Create one first</a>.
+            </div>
+          ) : (
+            <select className="input-field" value={configId}
+              onChange={(e) => setConfigId(e.target.value)}>
+              {configs.map((c) => <option key={c.config_id} value={c.config_id}>{c.name}</option>)}
+            </select>
+          )}
         </div>
-        <div className="col-span-2">
+        <div>
           <TablePicker value={sourceTable} onChange={setSourceTable} label="Source Table" />
-          {loadingTable && <SkeletonRows rows={2} className="mt-1" />}
+          {loadingTable && <SkeletonRows rows={1} className="mt-1" />}
           {tableInfo && (
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {tableInfo.row_count.toLocaleString()} rows, {tableInfo.columns.length} columns
             </p>
           )}
         </div>
-        <div className="col-span-2">
+        <div>
           <label className="block text-sm font-medium mb-1.5">Redaction Scope</label>
           <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
             {(["single_column", "full_table"] as const).map((scope) => (
@@ -251,24 +269,16 @@ export default function RunPage() {
               </button>
             ))}
           </div>
+          <p className="text-xs text-gray-400 mt-1">
+            {isFullTable
+              ? "Detects PII across all tagged columns using NER and rule-based masking."
+              : "Runs NER detection on a single text column."}
+          </p>
         </div>
-        {outputMode === "separate" && (
-          <div className="col-span-2">
-            <label className="block text-sm font-medium mb-1.5">
-              Output Table <span className="text-gray-400 font-normal">(defaults to source_table_redacted)</span>
-            </label>
-            <input className="input-field" value={outputTable}
-              onChange={(e) => setOutputTable(e.target.value)} placeholder="catalog.schema.output_table" />
-          </div>
-        )}
-        {outputMode === "in_place" && !isFullTable && (
-          <div className="col-span-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 p-3 text-sm text-amber-800 dark:text-amber-200">
-            <strong>Destructive operation:</strong> The <code>{textCol}</code> column in the source table will be permanently overwritten with redacted text.
-          </div>
-        )}
 
+        {/* Column config -- single column mode */}
         {!isFullTable && (
-          <>
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1.5">Text Column</label>
               {columnOptions.length ? (
@@ -293,11 +303,12 @@ export default function RunPage() {
                   onChange={(e) => setDocIdCol(e.target.value)} />
               )}
             </div>
-          </>
+          </div>
         )}
 
+        {/* Column config -- full table mode */}
         {isFullTable && hasTable && (
-          <div className="col-span-2 border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-4">
+          <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-4">
             {loadingDiscovery && <p className="text-sm text-gray-400 animate-pulse">Discovering columns...</p>}
             {discovered && !loadingDiscovery && (
               <>
@@ -370,71 +381,10 @@ export default function RunPage() {
             )}
           </div>
         )}
-        <div>
-          <label className="block text-sm font-medium mb-1.5">
-            Max Rows
-            {tableInfo && <span className="text-gray-400 font-normal ml-1">({tableInfo.row_count.toLocaleString()} total)</span>}
-          </label>
-          <input type="number" className="input-field" value={maxRows}
-            onChange={(e) => setMaxRows(parseInt(e.target.value))} />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Cluster Size</label>
-          <select className="input-field" value={clusterSize}
-            onChange={(e) => setClusterSize(e.target.value as "small" | "medium" | "large")}>
-            <option value="small">Small (2 workers)</option>
-            <option value="medium">Medium (5 workers)</option>
-            <option value="large">Large (10 workers)</option>
-          </select>
-        </div>
-        <div className="col-span-2 flex items-center gap-3">
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" className="sr-only peer" checked={useGpu}
-              onChange={(e) => setUseGpu(e.target.checked)} />
-            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600
-              peer-checked:after:translate-x-full peer-checked:after:border-white after:content-['']
-              after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300
-              after:border after:rounded-full after:h-4 after:w-4 after:transition-all
-              peer-checked:bg-blue-600" />
-          </label>
-          <span className="text-sm font-medium">GPU cluster</span>
-          {usesGliner && !useGpu && (
-            <span className="text-xs text-amber-600 dark:text-amber-400">GPU recommended when GLiNER is enabled</span>
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Output Mode</label>
-          <select className="input-field" value={outputMode}
-            onChange={(e) => setOutputMode(e.target.value as "separate" | "in_place")}
-            disabled={isFullTable}>
-            <option value="separate">Separate table</option>
-            <option value="in_place" disabled={isFullTable}>In-place (destructive)</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Refresh Mode</label>
-          <select className="input-field" value={refreshApproach}
-            onChange={(e) => setRefreshApproach(e.target.value as "full" | "incremental")}
-            disabled={isFullTable}>
-            <option value="full">Full (overwrite)</option>
-            <option value="incremental" disabled={isFullTable}>Incremental (append)</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1.5">Output Strategy</label>
-          <select className="input-field" value={outputStrategy}
-            onChange={(e) => setOutputStrategy(e.target.value as "production" | "validation")}>
-            <option value="production">Production (minimal output)</option>
-            <option value="validation">Validation (full debug data)</option>
-          </select>
-        </div>
-        {refreshApproach === "full" && outputTable && (
-          <div className="col-span-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
-            Full refresh will overwrite the existing output table if it exists.
-          </div>
-        )}
+
+        {/* Cost estimate -- inline before launch button */}
         {showCostPanel && hasTable && (
-          <details className="col-span-2 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50/50 dark:bg-blue-900/10">
+          <details className="border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50/50 dark:bg-blue-900/10">
             <summary
               className="text-xs font-semibold text-blue-700 dark:text-blue-300 cursor-pointer select-none p-3"
               title="Estimates are directional, based on observed benchmarks with ensemble detection. Actual costs vary with data shape, cluster load, and model endpoint."
@@ -464,20 +414,115 @@ export default function RunPage() {
                 <input type="number" step="0.01" min="0" className="input-field w-28 text-xs"
                   placeholder="none"
                   value={maxCostUsd ?? ""}
-                  onChange={(e) => setMaxCostUsd(e.target.value ? Number(e.target.value) : null)} />
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setMaxCostUsd(v === "" ? null : Math.max(0, Number(v)));
+                  }} />
                 {maxCostUsd != null && <span className="text-[10px] text-gray-400">Run will be rejected if estimate exceeds this</span>}
               </div>
             </div>
           </details>
         )}
 
-        <div className="col-span-2 pt-2">
-          <button className="btn-success" disabled={running || !configId || !hasTable}
+        {/* Launch */}
+        <div className="pt-1">
+          <button className="btn-success w-full sm:w-auto" disabled={!canLaunch}
             onClick={() => outputMode === "in_place" ? setConfirmOpen(true) : launch()}>
             {running ? "Launching..." : "Run Pipeline"}
           </button>
         </div>
       </div>
+
+      {/* Step 2: Advanced settings -- collapsed by default */}
+      <details className="card mb-6 max-w-2xl" open={showAdvanced}
+        onToggle={(e) => setShowAdvanced((e.target as HTMLDetailsElement).open)}>
+        <summary className="px-5 py-3 text-sm font-medium cursor-pointer select-none text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors">
+          Advanced Settings
+        </summary>
+        <div className="px-5 pb-5 grid grid-cols-2 gap-4 border-t border-gray-100 dark:border-gray-700 pt-4">
+          {outputMode === "separate" && (
+            <div className="col-span-2">
+              <label className="block text-sm font-medium mb-1.5">
+                Output Table <span className="text-gray-400 font-normal">(defaults to source_table_redacted)</span>
+              </label>
+              <input className="input-field" value={outputTable}
+                onChange={(e) => setOutputTable(e.target.value)} placeholder="catalog.schema.output_table" />
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium mb-1.5">
+              Max Rows
+              {tableInfo && <span className="text-gray-400 font-normal ml-1">({tableInfo.row_count.toLocaleString()} total)</span>}
+            </label>
+            <input type="number" className="input-field" min={1}
+              value={maxRows}
+              onChange={(e) => {
+                const v = parseInt(e.target.value);
+                if (!isNaN(v) && v > 0) setMaxRows(v);
+              }} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Cluster Size</label>
+            <select className="input-field" value={clusterSize}
+              onChange={(e) => setClusterSize(e.target.value as "small" | "medium" | "large")}>
+              <option value="small">Small (2 workers)</option>
+              <option value="medium">Medium (5 workers)</option>
+              <option value="large">Large (10 workers)</option>
+            </select>
+          </div>
+          <div className="col-span-2 flex items-center gap-3">
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={useGpu}
+                onChange={(e) => setUseGpu(e.target.checked)} />
+              <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600
+                peer-checked:after:translate-x-full peer-checked:after:border-white after:content-['']
+                after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300
+                after:border after:rounded-full after:h-4 after:w-4 after:transition-all
+                peer-checked:bg-blue-600" />
+            </label>
+            <span className="text-sm font-medium">GPU cluster</span>
+            {usesGliner && !useGpu && (
+              <span className="text-xs text-amber-600 dark:text-amber-400">GPU recommended when GLiNER is enabled</span>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Output Mode</label>
+            <select className="input-field" value={outputMode}
+              onChange={(e) => setOutputMode(e.target.value as "separate" | "in_place")}
+              disabled={isFullTable}>
+              <option value="separate">Separate table</option>
+              <option value="in_place" disabled={isFullTable}>In-place (destructive)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Refresh Mode</label>
+            <select className="input-field" value={refreshApproach}
+              onChange={(e) => setRefreshApproach(e.target.value as "full" | "incremental")}
+              disabled={isFullTable}>
+              <option value="full">Full (overwrite)</option>
+              <option value="incremental" disabled={isFullTable}>Incremental (append)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Output Detail</label>
+            <select className="input-field" value={outputStrategy}
+              onChange={(e) => setOutputStrategy(e.target.value as "production" | "validation")}>
+              <option value="production">Minimal (redacted text only)</option>
+              <option value="validation">Full (includes detection details for debugging)</option>
+            </select>
+          </div>
+          {outputMode === "in_place" && !isFullTable && (
+            <div className="col-span-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 p-3 text-sm text-amber-800 dark:text-amber-200">
+              <strong>Destructive operation:</strong> The <code>{textCol}</code> column in the source table will be permanently overwritten with redacted text.
+            </div>
+          )}
+          {refreshApproach === "full" && outputTable && (
+            <div className="col-span-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+              Full refresh will overwrite the existing output table if it exists.
+            </div>
+          )}
+        </div>
+      </details>
 
       <ConfirmDialog
         open={confirmOpen}
@@ -503,6 +548,11 @@ export default function RunPage() {
                 className="text-blue-600 dark:text-blue-400 underline text-xs">
                 View in Databricks
               </a>
+            )}
+            {!isRunning && (runStatus.result_state === "SUCCESS" || runStatus.state === "TERMINATED") && (
+              <Link to="/review" className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium">
+                Review Results
+              </Link>
             )}
             {isRunning && (
               <button className="text-xs text-red-600 dark:text-red-400 underline"

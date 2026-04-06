@@ -261,7 +261,13 @@ export default function LabelPage() {
       />
 
       <div className="card p-5 mb-6 max-w-3xl space-y-3">
-        <TablePicker value={table} onChange={setTable} label="Source Table" />
+        <TablePicker value={table} onChange={(v) => {
+          if (!confirmDiscardIfDirty()) return;
+          setTable(v);
+          setLabels([]);
+          setEditLabels([]);
+          setIsDirty(false);
+        }} label="Source Table" />
         {columns.length > 0 && (
           <div className="grid grid-cols-2 gap-3">
             <div>
