@@ -5,6 +5,7 @@ import time
 from typing import Optional
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import col, expr
+from pyspark.sql.types import StringType
 
 from .presidio import make_presidio_batch_udf
 from .ai_detector import make_prompt, format_entity_response_object_udf, _get_format_entity_udf
@@ -167,13 +168,22 @@ def run_ai_query_detection(
     base_df = df.repartition(_smart_partitions(df, num_cores)) if _repartition else df
     entity_udf = _get_format_entity_udf()
 
+    col_type = base_df.schema[text_column].dataType
+    if not isinstance(col_type, StringType):
+        logger.warning(
+            "text_column '%s' has type %s (not StringType); casting to string for entity position matching.",
+            text_column, col_type,
+        )
+
+    text_col = col(text_column).cast("string")
+
     if ai_model_type == "external":
         result_df = (
             base_df
             .withColumn("raw_response", expr(ai_query_expr))
             .withColumn(
                 "ai_results_struct",
-                entity_udf(col("raw_response"), col(text_column)),
+                entity_udf(col("raw_response"), text_col),
             )
         )
     else:
@@ -182,7 +192,7 @@ def run_ai_query_detection(
             .withColumn("response", expr(ai_query_expr))
             .withColumn(
                 "ai_results_struct",
-                entity_udf(col("response.result"), col(text_column)),
+                entity_udf(col("response.result"), text_col),
             )
         )
 

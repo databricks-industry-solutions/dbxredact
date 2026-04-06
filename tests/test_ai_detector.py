@@ -244,6 +244,32 @@ class TestFormatEntityResponseObjectUdf:
         assert len(ents) == 2
 
 
+class TestNonStringInputHandling:
+    """Verify behavior when sentence values are not strings (e.g. int columns)."""
+
+    def test_int_sentence_after_str_cast(self):
+        """Simulate the fix: caller casts int to str before the UDF sees it."""
+        entities = pd.Series([
+            '[{"entity": "12345", "entity_type": "US_SSN"}]',
+        ])
+        sentences = pd.Series([str(12345)])
+        result = format_entity_response_object_udf(entities, sentences)
+        ents = result.iloc[0]
+        assert len(ents) == 1
+        assert ents[0]["entity"] == "12345"
+        assert ents[0]["start"] == 0
+        assert ents[0]["end"] == 5
+
+    def test_int_sentence_without_cast_raises(self):
+        """Without the cast fix, an int sentence would crash in re.finditer."""
+        entities = pd.Series([
+            '[{"entity": "12345", "entity_type": "US_SSN"}]',
+        ])
+        sentences = pd.Series([12345])
+        with pytest.raises(TypeError, match="expected string"):
+            format_entity_response_object_udf(entities, sentences)
+
+
 class TestPromptNoLongerRequestsDuplicates:
 
     def test_prompt_asks_for_unique_entities(self):
