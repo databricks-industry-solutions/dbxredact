@@ -1,15 +1,65 @@
-"""Admin routes for governance operations (purge, audit)."""
+"""Admin routes for governance operations (purge, audit, health)."""
 
 import logging
 import os
 from typing import Optional
 from fastapi import APIRouter, Query
-from api.services.db import execute, fetch_one, fetch_all, _table, validate_identifier
+from api.services.db import execute, fetch_one, fetch_all, _table, quote_table, validate_identifier, WAREHOUSE_ID, CATALOG, SCHEMA
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "90"))
+
+REQUIRED_TABLES = [
+    "redact_annotations",
+    "redact_detection_results",
+    "redact_audit_log",
+    "redact_ground_truths",
+]
+
+
+@router.get("/health/deep")
+async def deep_health():
+    """Validate warehouse connectivity, required tables, and job resources."""
+    checks = {}
+
+    # 1. Warehouse ping
+    try:
+        fetch_one("SELECT 1 AS ok")
+        checks["warehouse"] = {"ok": True, "warehouse_id": WAREHOUSE_ID}
+    except Exception as exc:
+        checks["warehouse"] = {"ok": False, "error": str(exc)}
+
+    # 2. Required tables exist
+    table_results = {}
+    for tbl in REQUIRED_TABLES:
+        try:
+            fetch_one(f"SELECT 1 FROM {_table(tbl)} LIMIT 1")
+            table_results[tbl] = "ok"
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "not_found" in msg or "table_or_view_not_found" in msg:
+                table_results[tbl] = "missing"
+            elif "permission" in msg or "access_denied" in msg:
+                table_results[tbl] = "permission_denied"
+            else:
+                table_results[tbl] = f"error: {exc}"
+    checks["tables"] = table_results
+
+    # 3. Job env vars
+    job_env = {}
+    for var in ("PIPELINE_JOB_NAME", "BENCHMARK_JOB_NAME"):
+        val = os.environ.get(var, "")
+        job_env[var] = "set" if val else "missing"
+    checks["job_env"] = job_env
+
+    all_ok = (
+        checks["warehouse"].get("ok")
+        and all(v == "ok" for v in table_results.values())
+        and all(v == "set" for v in job_env.values())
+    )
+    return {"healthy": all_ok, "checks": checks}
 
 
 @router.post("/purge-annotations", status_code=200)
@@ -34,6 +84,30 @@ async def purge_annotations(retention_days: int = Query(default=None)):
             logger.info("Purged %d rows from %s (older than %d days)", count, table_name, days)
         results[table_name] = {"purged": count}
     return {"retention_days": days, "tables": results}
+
+
+@router.post("/purge-detection-results", status_code=200)
+async def purge_detection_results(
+    table_name: str = Query(..., description="Fully qualified detection results table (catalog.schema.table)"),
+):
+    """Delete ALL rows from a detection results table that contains raw PII.
+
+    Detection output tables (e.g. *_detection_results) store the original text
+    column and entity literals inside struct fields.  They are created by
+    pipeline jobs, not the app, so they are not covered by purge-annotations.
+
+    Unlike purge-annotations (which supports date-based retention), this
+    endpoint always performs a full purge because detection tables lack a
+    ``created_at`` column.
+    """
+    qt = quote_table(table_name)
+    before = fetch_one(f"SELECT count(*) as cnt FROM {qt}")
+    total = int(before.get("cnt", 0)) if before else 0
+    if total == 0:
+        return {"table": table_name, "purged": 0, "note": "table is empty"}
+    execute(f"DELETE FROM {qt} WHERE 1=1")
+    logger.info("Purged all %d rows from detection results table %s", total, table_name)
+    return {"table": table_name, "purged": total}
 
 
 @router.get("/retention-status")

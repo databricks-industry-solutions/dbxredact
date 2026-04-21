@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import { useGet } from "../hooks/useApi";
 import type { Config, JobHistoryItem, ActiveLearnStats } from "../types";
-
-const TERMINAL = ["TERMINATED", "SUCCESS", "SKIPPED", "INTERNAL_ERROR"];
+import { TERMINAL_STATES } from "../constants";
+import { SkeletonRows } from "../components/Skeleton";
+import ErrorBanner from "../components/ErrorBanner";
 
 interface AuditSummary {
   total_runs?: number;
@@ -16,7 +17,7 @@ function fmt(n: number | undefined): string {
 }
 
 function StatusDot({ status }: { status: string }) {
-  if (TERMINAL.includes(status)) {
+  if (TERMINAL_STATES.includes(status)) {
     const ok = status === "TERMINATED" || status === "SUCCESS";
     return (
       <span className={`inline-block w-2 h-2 rounded-full ${ok ? "bg-emerald-500" : "bg-red-500"}`} />
@@ -26,10 +27,10 @@ function StatusDot({ status }: { status: string }) {
 }
 
 export default function HomePage() {
-  const { data: configs } = useGet<Config[]>("/config/");
-  const { data: history } = useGet<JobHistoryItem[]>("/pipeline/history?limit=5");
-  const { data: alStats } = useGet<ActiveLearnStats>("/active-learn/stats");
-  const { data: auditSummary } = useGet<AuditSummary>("/admin/audit-summary");
+  const { data: configs, loading: loadingConfigs, error: configsError } = useGet<Config[]>("/config/");
+  const { data: history, loading: loadingHistory, error: historyError } = useGet<JobHistoryItem[]>("/pipeline/history?limit=5");
+  const { data: alStats, error: alError } = useGet<ActiveLearnStats>("/active-learn/stats");
+  const { data: auditSummary, loading: loadingAudit, error: auditError } = useGet<AuditSummary>("/admin/audit-summary");
 
   const configCount = configs?.length ?? 0;
   const recentRuns = history ?? [];
@@ -55,27 +56,34 @@ export default function HomePage() {
         </p>
       </div>
 
+      <ErrorBanner message={configsError || historyError || alError || auditError} />
+
       {/* Outcome-oriented stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <div className="stat-card">
-          <div className="stat-label">PII Items Detected</div>
-          <div className="stat-value">{fmt(auditSummary?.total_entities)}</div>
+      {loadingAudit ? (
+        <SkeletonRows rows={2} className="mb-8" />
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+          <div className="stat-card">
+            <div className="stat-label">PII Items Detected</div>
+            <div className="stat-value">{fmt(auditSummary?.total_entities)}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Documents Processed</div>
+            <div className="stat-value">{fmt(auditSummary?.total_docs)}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Detection Runs</div>
+            <div className="stat-value">{fmt(auditSummary?.total_runs)}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Active Learn Queue</div>
+            <div className="stat-value">{alStats?.pending ?? 0}</div>
+          </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-label">Documents Processed</div>
-          <div className="stat-value">{fmt(auditSummary?.total_docs)}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Detection Runs</div>
-          <div className="stat-value">{fmt(auditSummary?.total_runs)}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Active Learn Queue</div>
-          <div className="stat-value">{alStats?.pending ?? 0}</div>
-        </div>
-      </div>
+      )}
 
       {/* Last Run Summary */}
+      {loadingHistory && <SkeletonRows rows={3} className="mb-8" />}
       {lastRun && (
         <div className="card p-5 mb-8">
           <div className="flex items-center justify-between mb-3">
@@ -97,12 +105,12 @@ export default function HomePage() {
                 {new Date(lastRun.started_at).toLocaleString()}
               </div>
             )}
-            {TERMINAL.includes(lastRun.status) && (
+            {TERMINAL_STATES.includes(lastRun.status) && (
               <Link to="/review" className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors">
                 Review Results
               </Link>
             )}
-            {!TERMINAL.includes(lastRun.status) && (
+            {!TERMINAL_STATES.includes(lastRun.status) && (
               <div className="ml-auto text-xs text-blue-500 flex items-center gap-1.5">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
                 Running...

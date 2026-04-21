@@ -88,6 +88,28 @@ class TestComputeDocumentUncertainty:
                          "low_confidence_count", "uncertainty_score"}
         assert set(result.columns) == expected_cols
 
+    def test_uncertainty_score_clamped_to_unit_interval(self, spark):
+        """Score=0.0 + all low-conf would yield 1.3 unclamped; must be clamped to 1.0."""
+        df = spark.createDataFrame([
+            Row(doc_id="d1", aligned_entities=[
+                _entity("a", "PERSON", 0, 1, presidio=0.0),
+                _entity("b", "PERSON", 2, 3, presidio=0.0),
+            ]),
+        ], DOC_SCHEMA)
+        result = compute_document_uncertainty(df).collect()
+        assert result[0]["uncertainty_score"] == pytest.approx(1.0)
+
+    def test_uncertainty_score_minimum_bounded(self, spark):
+        """Perfect scores should yield uncertainty >= 0.0."""
+        df = spark.createDataFrame([
+            Row(doc_id="d1", aligned_entities=[
+                _entity("John", "PERSON", 0, 4, presidio=1.0),
+                _entity("Jane", "PERSON", 5, 9, presidio=1.0),
+            ]),
+        ], DOC_SCHEMA)
+        result = compute_document_uncertainty(df).collect()
+        assert result[0]["uncertainty_score"] >= 0.0
+
 
 class TestBuildReviewQueue:
 
@@ -159,3 +181,38 @@ class TestComputeDetectorDisagreement:
         df = spark.createDataFrame([Row(doc_id="d1", text="hello")])
         with pytest.raises(ValueError, match="aligned_entities column required"):
             compute_detector_disagreement(df)
+
+
+class TestCalibratedUncertainty:
+
+    def test_calibrated_uncertainty_uses_calibrated_scores(self, spark):
+        """With calibration, raw low scores are mapped higher, reducing uncertainty."""
+        from dbxredact.calibration import CalibratedScorer
+
+        cal = CalibratedScorer()
+        cal.fit("presidio", [0.1, 0.3, 0.5, 0.7, 0.9], [0, 0, 1, 1, 1])
+
+        df = spark.createDataFrame([
+            Row(doc_id="d1", aligned_entities=[
+                _entity("John", "PERSON", 0, 4, presidio=0.3),
+                _entity("Jane", "PERSON", 5, 9, presidio=0.3),
+            ]),
+        ], DOC_SCHEMA)
+
+        raw_result = compute_document_uncertainty(df).collect()[0]
+        cal_result = compute_document_uncertainty(df, calibration=cal).collect()[0]
+
+        assert cal_result["avg_score"] != pytest.approx(raw_result["avg_score"], abs=0.01)
+        assert 0.0 <= cal_result["uncertainty_score"] <= 1.0
+
+    def test_calibration_none_unchanged(self, spark):
+        """calibration=None should produce the same result as omitting it."""
+        df = spark.createDataFrame([
+            Row(doc_id="d1", aligned_entities=[
+                _entity("John", "PERSON", 0, 4, presidio=0.8),
+            ]),
+        ], DOC_SCHEMA)
+
+        r1 = compute_document_uncertainty(df).collect()[0]
+        r2 = compute_document_uncertainty(df, calibration=None).collect()[0]
+        assert r1["uncertainty_score"] == pytest.approx(r2["uncertainty_score"])

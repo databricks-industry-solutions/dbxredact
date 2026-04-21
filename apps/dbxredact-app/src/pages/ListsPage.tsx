@@ -6,12 +6,13 @@ import ErrorBanner from "../components/ErrorBanner";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
 import Tabs from "../components/Tabs";
+import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
 import { ENTITY_TYPES } from "../constants";
 
 export default function ListsPage() {
-  const { data: blockList, refetch: refetchBlock, error: blockError } = useGet<ListEntry[]>("/lists/block");
-  const { data: safeList, refetch: refetchSafe, error: safeError } = useGet<ListEntry[]>("/lists/safe");
+  const { data: blockList, loading: loadingBlock, refetch: refetchBlock, error: blockError } = useGet<ListEntry[]>("/lists/block");
+  const { data: safeList, loading: loadingSafe, refetch: refetchSafe, error: safeError } = useGet<ListEntry[]>("/lists/safe");
 
   const [value, setValue] = useState("");
   const [isPattern, setIsPattern] = useState(false);
@@ -122,6 +123,7 @@ export default function ListsPage() {
         <button className="btn-primary" disabled={!value.trim()} onClick={add}>Add</button>
       </div>
 
+      {(tab === "block" ? loadingBlock : loadingSafe) && <SkeletonRows rows={3} className="mb-4" />}
       <DataTable<ListEntry & Record<string, unknown>>
         data={(list ?? []) as (ListEntry & Record<string, unknown>)[]}
         rowKey={(e) => e.entry_id ?? ""}
@@ -165,7 +167,7 @@ function SuggestionsSection({ onApprove }: { onApprove: (value: string, listType
       <div className="max-w-xl mb-4">
         <TablePicker value={sourceTable} onChange={(v) => { setSourceTable(v); setDismissed(new Set()); }} label="Benchmark Source Table" />
       </div>
-      {loading && <p className="text-xs text-gray-400 animate-pulse">Loading suggestions...</p>}
+      {loading && <SkeletonRows rows={3} />}
       {approveError && (
         <div className="text-xs text-red-600 dark:text-red-400 mb-2">{approveError}</div>
       )}

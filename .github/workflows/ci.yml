@@ -1,37 +1,111 @@
 name: CI
 
+# Paused -- CI runners not available. Re-enable by uncommenting push/pull_request triggers.
+# on:
+#   push:
+#     branches: [main, dev]
+#   pull_request:
+#     branches: [main, dev]
 on:
-  push:
-    branches: [main, dev]
-  pull_request:
-    branches: [main, dev]
+  workflow_dispatch:
 
 jobs:
-  test:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - name: Ruff lint
+        run: ruff check src/ apps/dbxredact-app/
+      - name: Ruff format check
+        run: ruff format --check src/ apps/dbxredact-app/
+
+  test-library:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.10", "3.11"]
-
     steps:
       - uses: actions/checkout@v4
-
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install Poetry
-        run: pipx install poetry
-
+      - name: Load cached venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-py${{ matrix.python-version }}-
       - name: Install dependencies
-        run: poetry install --with dev
-
-      - name: Run linting
-        run: poetry run python -m py_compile src/dbxredact/*.py
-
+        run: uv sync
       - name: Run unit tests with coverage
-        run: poetry run pytest tests/ -x -q --ignore=tests/integration --cov=dbxredact --cov-report=term-missing --cov-fail-under=30
-
+        run: uv run pytest tests/ -x -q --ignore=tests/integration --cov=dbxredact --cov-report=term-missing --cov-fail-under=40
       - name: Build wheel
-        run: poetry build
+        run: uv build
+
+  test-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Load cached venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-app-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-py3.11-app-
+      - name: Install dependencies
+        run: |
+          uv sync --extra app
+          uv pip install -r apps/dbxredact-app/requirements.txt
+      - name: Run app tests
+        run: uv run pytest apps/dbxredact-app/tests/ -x -q
+
+  test-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Load cached venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-py3.11-
+      - name: Install dependencies
+        run: uv sync
+      - name: Run integration tests
+        run: uv run pytest tests/integration/ -x -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install & typecheck
+        working-directory: apps/dbxredact-app
+        run: |
+          npm ci --no-audit --no-fund
+          npx tsc --noEmit || true
+      - name: Build
+        working-directory: apps/dbxredact-app
+        run: npm run build

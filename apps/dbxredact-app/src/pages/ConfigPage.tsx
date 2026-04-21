@@ -3,6 +3,7 @@ import { useGet, apiPost, apiPut, apiDelete } from "../hooks/useApi";
 import ErrorBanner from "../components/ErrorBanner";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
+import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
 import type { Config } from "../types";
 
@@ -20,8 +21,8 @@ const PROFILE_PRESETS: Record<string, Partial<typeof DEFAULTS>> = {
 };
 
 const PROFILE_DESCRIPTIONS: Record<string, string> = {
-  fast: "AI Query + GLiNER + Presidio (pattern-only). Highest accuracy (F1~0.86) and precision (P~0.92). Pattern-only Presidio adds deterministic regex backup (SSN, phone, MRN, dates) without spaCy. Best for routine redaction and large-scale batch jobs.",
-  deep: "All three detectors with fine-grained GLiNER chunking and medium LLM reasoning. Maximum recall (R~0.95) for compliance-critical workloads. Slower and more expensive.",
+  fast: "Best for most workloads. Uses all three detection methods (AI Query, GLiNER, Presidio regex) with settings optimized for speed and high precision -- minimizes false positives so clean data stays clean. Recommended for routine redaction and large tables.",
+  deep: "Maximum thoroughness for compliance-critical data. All detectors run with higher sensitivity to catch as much PII as possible, at the cost of more false positives and slower runtime. Use when missing PII is unacceptable (e.g. HIPAA, GDPR audits).",
   custom: "Configure detection methods and parameters manually.",
 };
 
@@ -41,6 +42,9 @@ const DEFAULTS = {
   gliner_max_words: 256,
   presidio_model_size: "trf",
   presidio_pattern_only: true,
+  language: "en",
+  translate_to: "none",
+  extra_params: null as Record<string, unknown> | null,
 };
 
 export default function ConfigPage() {
@@ -49,6 +53,8 @@ export default function ConfigPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [extraParamsText, setExtraParamsText] = useState("");
+  const [extraParamsError, setExtraParamsError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Config | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const { toast } = useToast();
@@ -69,15 +75,34 @@ export default function ConfigPage() {
 
   async function save() {
     setSaving(true);
+    let parsedExtra: Record<string, unknown> | null = null;
+    if (extraParamsText.trim()) {
+      try {
+        const parsed = JSON.parse(extraParamsText);
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+          setExtraParamsError("Must be a JSON object (not array or primitive)");
+          setSaving(false);
+          return;
+        }
+        parsedExtra = parsed;
+        setExtraParamsError("");
+      } catch {
+        setExtraParamsError("Invalid JSON");
+        setSaving(false);
+        return;
+      }
+    }
+    const payload = { ...form, extra_params: parsedExtra };
     try {
       if (editingId) {
-        await apiPut(`/config/${editingId}`, form);
+        await apiPut(`/config/${editingId}`, payload);
         toast("Config updated");
       } else {
-        await apiPost("/config/", form);
+        await apiPost("/config/", payload);
         toast("Config saved");
       }
       setForm(DEFAULTS);
+      setExtraParamsText("");
       setEditingId(null);
       refetch();
     } catch (e: unknown) {
@@ -88,6 +113,8 @@ export default function ConfigPage() {
 
   function startEdit(c: Config) {
     setEditingId(c.config_id);
+    setExtraParamsText(c.extra_params ? JSON.stringify(c.extra_params, null, 2) : "");
+    setExtraParamsError("");
     setForm({
       name: c.name,
       detection_profile: c.detection_profile || "custom",
@@ -104,6 +131,9 @@ export default function ConfigPage() {
       gliner_max_words: c.gliner_max_words || 256,
       presidio_model_size: c.presidio_model_size || "trf",
       presidio_pattern_only: c.presidio_pattern_only ?? true,
+      language: c.language || "en",
+      translate_to: c.translate_to || "none",
+      extra_params: c.extra_params || null,
     });
     setShowAdvanced(true);
   }
@@ -111,6 +141,8 @@ export default function ConfigPage() {
   function cancelEdit() {
     setEditingId(null);
     setForm(DEFAULTS);
+    setExtraParamsText("");
+    setExtraParamsError("");
   }
 
   async function confirmDelete() {
@@ -137,6 +169,7 @@ export default function ConfigPage() {
       <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">{c.redaction_strategy}</span>
     )},
     { key: "alignment_mode", header: "Mode" },
+    { key: "language", header: "Lang", render: (c) => (c.language || "en").toUpperCase(), sortable: false, searchable: false },
     { key: "_actions", header: "", sortable: false, searchable: false, render: (c) => (
       <span className="space-x-2">
         <button className="text-blue-500 dark:text-blue-400 hover:text-blue-700 text-xs font-medium transition-colors" onClick={() => startEdit(c)}>Edit</button>
@@ -224,6 +257,32 @@ export default function ConfigPage() {
           </select>
         </div>
 
+        {/* Language & Translation */}
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Document Language</label>
+          <select className="input-field" value={form.language}
+            onChange={(e) => set("language", e.target.value)}>
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+          </select>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {form.language === "es" ? "Detection uses AI Query only; Presidio/GLiNER are English-only." : "All detectors available."}
+          </p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Translate After Redaction</label>
+          <select className="input-field" value={form.translate_to}
+            onChange={(e) => set("translate_to", e.target.value)}>
+            <option value="none">None</option>
+            {form.language !== "en" && <option value="en">English</option>}
+          </select>
+          {form.translate_to !== "none" && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+              Adds translation + review passes (3x AI Query cost).
+            </p>
+          )}
+        </div>
+
         {/* Advanced settings */}
         <div className="col-span-2 border-t pt-3 mt-1">
           <button type="button"
@@ -270,9 +329,12 @@ export default function ConfigPage() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">GLiNER Model</label>
-              <input className="input-field" value={form.gliner_model}
+              <select className="input-field" value={form.gliner_model}
                 disabled={isPreset}
-                onChange={(e) => set("gliner_model", e.target.value)} />
+                onChange={(e) => set("gliner_model", e.target.value)}>
+                <option value="nvidia/gliner-PII">nvidia/gliner-PII (best accuracy)</option>
+                <option value="urchade/gliner_multi_pii-v1">urchade/gliner_multi_pii-v1 (Apache 2.0)</option>
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">GLiNER Threshold</label>
@@ -280,6 +342,21 @@ export default function ConfigPage() {
                 value={form.gliner_threshold}
                 disabled={isPreset}
                 onChange={(e) => set("gliner_threshold", parseFloat(e.target.value))} />
+            </div>
+            <div className="col-span-2 border-t pt-3 mt-1">
+              <details>
+                <summary className="text-sm text-blue-600 dark:text-blue-400 cursor-pointer select-none">
+                  Extra Parameters (JSON)
+                </summary>
+                <div className="mt-2">
+                  <textarea className="input-field font-mono text-xs w-full" rows={4}
+                    placeholder='{"custom_key": "value"}'
+                    value={extraParamsText}
+                    onChange={(e) => { setExtraParamsText(e.target.value); setExtraParamsError(""); }} />
+                  {extraParamsError && <p className="text-xs text-red-500 mt-1">{extraParamsError}</p>}
+                  <p className="text-xs text-gray-400 mt-1">Passed as additional notebook parameters at runtime.</p>
+                </div>
+              </details>
             </div>
           </>
         )}
@@ -295,7 +372,7 @@ export default function ConfigPage() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-gray-500">Loading...</p>
+        <SkeletonRows rows={4} />
       ) : (
         <DataTable<Config & Record<string, unknown>>
           data={(configs ?? []) as (Config & Record<string, unknown>)[]}

@@ -364,8 +364,12 @@ class TestReviewRoutes:
 
 class TestPipelineRoutes:
 
+    @patch("api.routes.pipeline.get_run_status", return_value={
+        "run_id": 123, "state": "RUNNING", "result_state": None,
+        "start_time": 1000, "end_time": None, "run_page_url": "https://example.com",
+    })
     @patch("api.routes.pipeline.fetch_all", side_effect=_mock_fetch_all)
-    def test_pipeline_history(self, _):
+    def test_pipeline_history(self, _, __):
         resp = client.get("/api/pipeline/history")
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
@@ -620,6 +624,165 @@ class TestSchemaValidation:
             "doc_id": "d1", "source_table": "cat.sch.tbl",
             "labels": [{"entity_text": "John", "entity_type": "PERSON", "start": -1, "end_pos": 4}],
         })
+        assert resp.status_code == 422
+
+
+# ===================================================================
+# Health check
+# ===================================================================
+
+# ===================================================================
+# Benchmark routes
+# ===================================================================
+
+class TestBenchmarkRoutes:
+
+    @patch("api.routes.benchmark.fetch_all", side_effect=_mock_fetch_all)
+    @patch("api.routes.benchmark.get_run_status", return_value={
+        "run_id": 123, "state": "TERMINATED", "result_state": "SUCCESS",
+        "start_time": 1000, "end_time": 2000, "run_page_url": "https://example.com",
+    })
+    @patch("api.routes.benchmark.execute", side_effect=_mock_execute)
+    def test_benchmark_history(self, _, __, ___):
+        resp = client.get("/api/benchmark/history")
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+    @patch("api.routes.benchmark.trigger_benchmark_run", return_value=500)
+    @patch("api.routes.benchmark.get_run_status", return_value={
+        "run_id": 500, "state": "RUNNING", "result_state": None,
+        "start_time": 1000, "end_time": None, "run_page_url": "https://example.com",
+    })
+    @patch("api.routes.benchmark.execute", side_effect=_mock_execute)
+    @patch("api.routes.benchmark.fetch_one", side_effect=_mock_fetch_one)
+    def test_run_benchmark_with_config(self, _, __, ___, mock_trigger):
+        resp = client.post("/api/benchmark/run", json={
+            "config_id": "cfg-1",
+            "source_table": "cat.sch.tbl",
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["run_id"] == 500
+        params = mock_trigger.call_args[0][0]
+        assert params["source_table"] == "cat.sch.tbl"
+        assert params["use_presidio"] == "true"
+        assert params["use_ai_query"] == "true"
+        assert params["gliner_threshold"] == "0.2"
+        assert params["redaction_strategy"] == "typed"
+        assert params["presidio_model_size"] == "trf"
+        assert params["presidio_pattern_only"] == "false"
+
+    @patch("api.routes.benchmark.trigger_benchmark_run", return_value=501)
+    @patch("api.routes.benchmark.get_run_status", return_value={
+        "run_id": 501, "state": "RUNNING", "result_state": None,
+        "start_time": 1000, "end_time": None, "run_page_url": None,
+    })
+    @patch("api.routes.benchmark.execute", side_effect=_mock_execute)
+    def test_run_benchmark_without_config(self, _, __, mock_trigger):
+        resp = client.post("/api/benchmark/run", json={})
+        assert resp.status_code == 200
+        params = mock_trigger.call_args[0][0]
+        assert params is None or params == {}
+
+    @patch("api.routes.benchmark.cancel_run")
+    @patch("api.routes.benchmark.execute", side_effect=_mock_execute)
+    def test_cancel_benchmark(self, _, mock_cancel):
+        resp = client.post("/api/benchmark/cancel/123")
+        assert resp.status_code == 204
+        mock_cancel.assert_called_once_with(123)
+
+    @patch("api.routes.benchmark.fetch_one", return_value=None)
+    def test_run_benchmark_404_when_config_missing(self, _):
+        resp = client.post("/api/benchmark/run", json={"config_id": "nonexistent"})
+        assert resp.status_code == 404
+
+
+class TestConfigToJobParams:
+    """Verify _config_to_job_params returns all expected keys."""
+
+    def test_all_expected_keys_present(self):
+        from api.routes.benchmark import _config_to_job_params
+        params = _config_to_job_params(_CONFIG_ROW)
+        expected = {
+            "endpoint", "alignment_mode", "use_presidio", "use_ai_query",
+            "use_gliner", "score_threshold", "detection_profile",
+            "reasoning_effort", "gliner_model", "gliner_max_words",
+            "presidio_model_size", "presidio_pattern_only",
+            "gliner_threshold", "redaction_strategy",
+        }
+        assert set(params.keys()) == expected
+
+    def test_values_match_config(self):
+        from api.routes.benchmark import _config_to_job_params
+        params = _config_to_job_params(_CONFIG_ROW)
+        assert params["endpoint"] == "databricks-gpt-oss-120b"
+        assert params["use_gliner"] == "false"
+        assert params["score_threshold"] == "0.5"
+        assert params["gliner_threshold"] == "0.2"
+        assert params["redaction_strategy"] == "typed"
+        assert params["presidio_model_size"] == "trf"
+        assert params["presidio_pattern_only"] == "false"
+
+    def test_defaults_when_config_empty(self):
+        from api.routes.benchmark import _config_to_job_params
+        params = _config_to_job_params({})
+        assert params["endpoint"] == "databricks-gpt-oss-120b"
+        assert params["gliner_threshold"] == "0.2"
+        assert params["redaction_strategy"] == "typed"
+        assert params["presidio_model_size"] == "trf"
+
+
+# ===================================================================
+# Metrics routes
+# ===================================================================
+
+class TestMetricsRoutes:
+
+    @patch("api.routes.metrics.fetch_one", return_value={
+        "total_documents": 100, "avg_entities_per_doc": 3.5, "total_entities": 350,
+    })
+    def test_metrics_summary(self, _):
+        resp = client.get("/api/metrics/summary?output_table=cat.sch.det")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total_documents"] == 100
+        assert body["total_entities"] == 350
+
+    @patch("api.routes.metrics.fetch_all", return_value=[
+        {"entity_type": "PERSON", "count": 50},
+        {"entity_type": "PHONE", "count": 30},
+    ])
+    def test_metrics_by_type(self, _):
+        resp = client.get("/api/metrics/by-type?output_table=cat.sch.det")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["entity_type"] == "PERSON"
+
+    @patch("api.routes.metrics.fetch_all", return_value=[
+        {"bucket": "0.9-1.0", "count": 40},
+    ])
+    def test_confidence_distribution(self, _):
+        resp = client.get("/api/metrics/confidence-distribution?output_table=cat.sch.det")
+        assert resp.status_code == 200
+
+    @patch("api.routes.metrics.fetch_all", return_value=[
+        {"method_name": "ensemble", "metric_name": "f1_score", "metric_value": 0.85, "match_mode": "strict"},
+    ])
+    def test_evaluation_metrics(self, _):
+        resp = client.get("/api/metrics/evaluation?eval_table=cat.sch.eval")
+        assert resp.status_code == 200
+        assert resp.json()[0]["metric_name"] == "f1_score"
+
+    @patch("api.routes.metrics.fetch_all", return_value=[
+        {"method": "aligned", "grade": "PASS", "count": 80},
+    ])
+    def test_judge_grades(self, _):
+        resp = client.get("/api/metrics/judge?judge_table=cat.sch.judge")
+        assert resp.status_code == 200
+
+    def test_metrics_summary_requires_table(self):
+        resp = client.get("/api/metrics/summary")
         assert resp.status_code == 422
 
 

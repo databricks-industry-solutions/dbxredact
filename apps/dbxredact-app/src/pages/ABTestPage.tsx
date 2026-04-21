@@ -3,11 +3,12 @@ import { useGet, apiPost } from "../hooks/useApi";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import TablePicker, { type TableRef, emptyTableRef, toQualified } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
+import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
 import type { Config, ABTest } from "../types";
 
 export default function ABTestPage() {
-  const { data: tests, refetch, error: testsError } = useGet<ABTest[]>("/ab-tests/");
+  const { data: tests, loading: testsLoading, refetch, error: testsError } = useGet<ABTest[]>("/ab-tests/");
   const { data: configs, error: configsError } = useGet<Config[]>("/config/");
   const [name, setName] = useState("");
   const [configA, setConfigA] = useState("");
@@ -76,20 +77,17 @@ export default function ABTestPage() {
   return (
     <div>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
+      <div className="mb-6 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 p-4 flex items-start gap-3">
+        <span className="text-xs font-bold px-2 py-0.5 rounded bg-indigo-600 text-white shrink-0 mt-0.5">Preview</span>
+        <div className="text-sm text-indigo-800 dark:text-indigo-200">
+          A/B Testing is in preview. You can create test definitions now. Automated execution and comparison are coming in a future release.
+        </div>
+      </div>
       <h2 className="page-title">A/B Testing</h2>
       <p className="page-desc">
         Compare two detection configurations on the same data to find the best setup.
         Create a test by choosing two configs and a labeled source table, then run it.
-        The system will execute both configurations on a random sample and compare precision, recall, and F1.
       </p>
-
-      <div className="card p-4 mb-6">
-        <div className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-          <b>How to use:</b> 1) Create at least two detection configs on the Config page (e.g. one with Presidio only, one with all methods).
-          2) Pick a source table with labeled ground truth. 3) Set a sample size (number of documents to compare).
-          4) Click "Create Test", then "Run Test". Results will show which config performs better.
-        </div>
-      </div>
 
       <div className="card p-5 mb-8 grid grid-cols-2 gap-4 max-w-2xl">
         <div className="col-span-2">
@@ -118,8 +116,11 @@ export default function ABTestPage() {
         </div>
         <div>
           <label className="block text-sm font-medium mb-1.5">Sample Size</label>
-          <input type="number" className="input-field" value={sampleSize}
-            onChange={(e) => setSampleSize(parseInt(e.target.value))} />
+          <input type="number" className="input-field" min={1} value={sampleSize}
+            onChange={(e) => {
+              const v = parseInt(e.target.value);
+              if (!isNaN(v) && v > 0) setSampleSize(v);
+            }} />
         </div>
         <div className="col-span-2 pt-2">
           <button className="btn-primary" disabled={!name || !configA || !configB || !sourceTable.table} onClick={create}>
@@ -128,7 +129,9 @@ export default function ABTestPage() {
         </div>
       </div>
 
-      {tests?.length ? (
+      {testsLoading ? (
+        <SkeletonRows rows={3} />
+      ) : tests?.length ? (
         <>
           <h3 className="text-lg font-semibold mb-3">Tests</h3>
           <div className="space-y-4">
@@ -146,7 +149,7 @@ export default function ABTestPage() {
                   A: {configName(t.config_a_id)} | B: {configName(t.config_b_id)} | {t.source_table} | n={t.sample_size}
                 </div>
                 {t.status === "created" && (
-                  <button className="btn-success text-sm" onClick={() => runTest(t.test_id)}>Run Test</button>
+                  <span className="text-xs text-gray-400 italic">Automated execution coming in a future release</span>
                 )}
                 {metricsChart(t)}
                 {t.winner && <p className="text-sm mt-3 font-semibold text-emerald-600 dark:text-emerald-400">Winner: Config {t.winner}</p>}

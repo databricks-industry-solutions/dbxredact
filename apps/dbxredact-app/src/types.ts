@@ -15,6 +15,8 @@ export interface Config {
   gliner_max_words?: number;
   presidio_model_size?: string;
   presidio_pattern_only?: boolean;
+  language?: string;
+  translate_to?: string;
   extra_params?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -125,6 +127,14 @@ export interface Finding {
   value?: string;
   status?: string;
   explanation?: string;
+}
+
+export interface DiscoverColumnsResponse {
+  text_columns: string[];
+  structured_columns: Record<string, string>;
+  untagged_columns: string[];
+  doc_id_candidates: string[];
+  warnings: string[];
 }
 
 export interface Annotation {

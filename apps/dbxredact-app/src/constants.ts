@@ -5,3 +5,7 @@ export const ENTITY_TYPES = [
 ] as const;
 
 export type EntityType = typeof ENTITY_TYPES[number];
+
+export const TERMINAL_STATES: string[] = [
+  "SUCCESS", "TERMINATED", "SKIPPED", "INTERNAL_ERROR", "FAILED", "CANCELLED", "CANCELED",
+];

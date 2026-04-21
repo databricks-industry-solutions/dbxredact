@@ -159,6 +159,121 @@ MedicalText: "SSN 123-45-6789. DOB: 24/07/1974. Phone: 608-555-7714. MRN: 040826
 response: [{{"entity": "123-45-6789", "entity_type": "US_SSN"}}, {{"entity": "24/07/1974", "entity_type": "DATE_TIME"}}, {{"entity": "608-555-7714", "entity_type": "PHONE_NUMBER"}}, {{"entity": "0408267", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{"entity": "15/03/25", "entity_type": "DATE_TIME"}}]
 """
 
+# ---------------------------------------------------------------------------
+# Spanish prompt for AI-based PHI detection
+# ---------------------------------------------------------------------------
+PHI_PROMPT_SKELETON_ES = """
+Eres un experto en la detección de Información de Salud Protegida (PHI) e Información de Identificación Personal (PII). Identificarás todas las entidades PHI/PII en un texto.
+
+La PHI que califica incluye:
+1. Nombres de personas;
+2. Todas las subdivisiones geográficas menores que un Estado, incluyendo dirección, ciudad, municipio, código postal y sus geocódigos equivalentes;
+3. Todos los elementos de fechas (excepto el año) directamente relacionados con un individuo, incluyendo fecha de nacimiento, fecha de ingreso, fecha de alta, fecha de fallecimiento; y todas las edades mayores de 89 años;
+4. Números de teléfono;
+5. Números de fax;
+6. Direcciones de correo electrónico;
+7. Números de seguridad social o equivalentes nacionales (CURP, RFC, DNI, NIE, RUT, etc.);
+8. Números de expediente médico;
+9. Números de beneficiario de plan de salud;
+10. Números de cuenta;
+11. Números de certificado/licencia;
+12. Identificadores de vehículos y números de serie, incluyendo placas;
+13. Identificadores y números de serie de dispositivos;
+14. URLs;
+15. Direcciones IP;
+16. Identificadores biométricos;
+17. Imágenes fotográficas de rostro completo;
+18. Cualquier otro número, característica o código de identificación único.
+
+Entidades adicionales a contar como PII:
+1. Nombres de hospitales e instalaciones de salud, incluyendo abreviaturas.
+
+Presta especial atención a:
+- Números de expediente médico (MRN): códigos numéricos de 5-10 dígitos
+- Números de certificado/licencia
+- Nombres de hospitales/instalaciones: nombres completos Y abreviaturas
+
+Cuando el texto sea financiero o comercial, también presta atención a:
+- Nombres de organizaciones/empresas
+- Números de cuenta financiera
+- IDs de referencia/caso
+- RFC/RUT/EIN/NIT u otros identificadores fiscales
+
+Identificarás toda la PHI/PII utilizando las siguientes etiquetas:
+
+{label_enums}
+
+Responde con una lista de diccionarios como [{{"entity": "María García López", "entity_type": "PERSON"}}, {{"entity": "123-45-6789", "entity_type": "US_SSN"}}]
+
+IMPORTANTE: Devuelve cada entidad EXACTAMENTE como aparece en el texto original. Copia el texto carácter por carácter -- no normalices espacios, corrijas ortografía ni reformules. Si el texto contiene "Juan\nPérez", devuelve "Juan\nPérez", no "Juan Pérez".
+
+Lista cada entidad única solo UNA VEZ. No repitas una entidad aunque aparezca múltiples veces en el texto.
+
+El texto está listado aquí:
+<TextoMedico>
+{{med_text}}
+<TextoMedico/>
+
+EJEMPLOS:
+TextoMedico: "Expediente: 222345 -- Atendí a la paciente María García López hoy a las 11:30 en el Hospital General de Springfield, quien presenta dolor de garganta y temperatura de 39.4°C"
+respuesta: [{{"entity": "María García López", "entity_type": "PERSON"}}, {{"entity": "222345", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{"entity": "Hospital General de Springfield", "entity_type": "HOSPITAL_NAME"}}]
+
+TextoMedico: "CURP: GARL850101HDFRRL09. Teléfono: 55-1234-5678. Correo: maria@ejemplo.com. Fecha de nacimiento: 01/01/1985."
+respuesta: [{{"entity": "GARL850101HDFRRL09", "entity_type": "ID_NUMBER"}}, {{"entity": "55-1234-5678", "entity_type": "PHONE_NUMBER"}}, {{"entity": "maria@ejemplo.com", "entity_type": "EMAIL_ADDRESS"}}, {{"entity": "01/01/1985", "entity_type": "BIRTH_DATE"}}]
+
+TextoMedico: "RE: Transferencia WIRE-2024-081590 -- Transferencia de $50,000 desde cuenta 8820-5567-1243 en Banco Nacional. Contacto: Luis Hernández, RFC LUH850101AB3."
+respuesta: [{{"entity": "WIRE-2024-081590", "entity_type": "ID_NUMBER"}}, {{"entity": "8820-5567-1243", "entity_type": "ID_NUMBER"}}, {{"entity": "Banco Nacional", "entity_type": "ORGANIZATION"}}, {{"entity": "Luis Hernández", "entity_type": "PERSON"}}, {{"entity": "LUH850101AB3", "entity_type": "ID_NUMBER"}}]
+
+TextoMedico: "NSS 123-45-6789. Fecha nac.: 24/07/1974. Tel: 608-555-7714. Expediente: 0408267. Cita programada: 15/03/25."
+respuesta: [{{"entity": "123-45-6789", "entity_type": "US_SSN"}}, {{"entity": "24/07/1974", "entity_type": "DATE_TIME"}}, {{"entity": "608-555-7714", "entity_type": "PHONE_NUMBER"}}, {{"entity": "0408267", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{"entity": "15/03/25", "entity_type": "DATE_TIME"}}]
+"""
+
+# Map language codes to their prompt skeletons
+PROMPT_SKELETON_BY_LANGUAGE = {
+    "en": PHI_PROMPT_SKELETON,
+    "es": PHI_PROMPT_SKELETON_ES,
+}
+
+# ---------------------------------------------------------------------------
+# Translation prompt -- translates redacted text while preserving markers
+# ---------------------------------------------------------------------------
+TRANSLATION_PROMPT_SKELETON = """You are a professional translator. Translate the following text from {source_lang} to {target_lang}.
+
+CRITICAL RULES:
+1. Preserve ALL redaction markers exactly as they appear. These are tokens like [REDACTED], [PERSON], [PHONE_NUMBER], [EMAIL_ADDRESS], [LOCATION], [DATE_TIME], [US_SSN], [MEDICAL_RECORD_NUMBER], [HOSPITAL_NAME], [ORGANIZATION], [ID_NUMBER], [BIRTH_DATE], [APPOINTMENT_DATE_TIME], [DRIVER_LICENSE], [VIN], [IP], [NRP], [UK_NHS], [AU_ACN], [AU_MEDICARE], [AU_TFN] or any text in square brackets that looks like a redaction placeholder.
+2. Do NOT translate, modify, or remove any text inside square brackets.
+3. Translate all other text naturally and fluently.
+4. Maintain the original formatting, paragraph breaks, and structure.
+
+Text to translate:
+{{text}}
+"""
+
+# ---------------------------------------------------------------------------
+# Review prompt -- English detection that ignores existing redaction markers
+# ---------------------------------------------------------------------------
+REVIEW_PROMPT_SKELETON = """You are an expert in Protected Health Information (PHI) and Personally Identifiable Information (PII) detection. You are performing a REVIEW pass on text that has already been partially redacted and translated.
+
+The text contains redaction markers in square brackets like [REDACTED], [PERSON], [PHONE_NUMBER], etc. These are ALREADY HANDLED -- ignore them completely.
+
+Your job: find any REMAINING PHI/PII that was MISSED in the initial redaction pass. Only report entities that are actual unredacted text, NOT the bracket markers themselves.
+
+You will identify remaining PHI/PII with the following enums as the "label":
+
+{label_enums}
+
+Respond with a list of dictionaries such as [{{"entity": "Alice Anderson", "entity_type": "PERSON"}}]
+
+IMPORTANT: Return each entity EXACTLY as it appears in the text. Copy the text character-for-character.
+List each unique entity only ONCE.
+If NO remaining PHI/PII is found, return an empty list: []
+
+The text is listed here:
+<ReviewText>
+{{med_text}}
+<ReviewText/>
+"""
+
 # Default thresholds
 DEFAULT_PRESIDIO_SCORE_THRESHOLD = 0.7
 DEFAULT_FUZZY_MATCH_THRESHOLD = 50
@@ -168,10 +283,14 @@ DEFAULT_OVERLAP_TOLERANCE = 0
 # AI entities get a default confidence of 0.8 since the LLM does not provide a per-entity score
 DEFAULT_AI_CONFIDENCE_SCORE = 0.8
 DEFAULT_AI_REASONING_EFFORT = "low"  # Valid: "low", "medium", "high"
+DEFAULT_AI_MAX_CHARS = 300_000
+DEFAULT_AI_OVERLAP_CHARS = 1_000
 
-# GLiNER defaults
+# ---------------------------------------------------------------------------
+# GLiNER defaults  (nvidia/gliner-PII)
 # Labels must match the nvidia/nemotron-pii training data (lowercase with underscores).
 # The model uses these as zero-shot prompts, so exact label text matters.
+# ---------------------------------------------------------------------------
 DEFAULT_GLINER_MODEL = "nvidia/gliner-PII"
 DEFAULT_GLINER_LABELS = [
     "name",
@@ -213,8 +332,6 @@ DEFAULT_GLINER_LABELS = [
     "pin",
 ]
 
-# Maps nemotron-pii training labels -> standardized output entity types.
-# Multiple input labels can map to the same output type.
 GLINER_LABEL_MAP = {
     "name": "PERSON",
     "first_name": "PERSON",
@@ -258,7 +375,6 @@ DEFAULT_GLINER_THRESHOLD = 0.2
 DEFAULT_GLINER_MAX_WORDS = 256
 
 DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
-    # Keys must match DEFAULT_GLINER_LABELS exactly
     "name": 0.15,
     "first_name": 0.15,
     "last_name": 0.15,
@@ -297,6 +413,190 @@ DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
     "employee_id": 0.35,
     "pin": 0.4,
 }
+
+# ---------------------------------------------------------------------------
+# GLiNER preset: urchade/gliner_multi_pii-v1  (Apache 2.0)
+# Uses natural-language labels; maps to the same standardized entity types.
+# ---------------------------------------------------------------------------
+_URCHADE_GLINER_LABELS = [
+    "person",
+    "email address",
+    "phone number",
+    "mobile phone number",
+    "landline phone number",
+    "fax number",
+    "address",
+    "postal code",
+    "social security number",
+    "national id number",
+    "identity card number",
+    "identity document number",
+    "tax identification number",
+    "date of birth",
+    "credit card number",
+    "credit card expiration date",
+    "cvv",
+    "cvc",
+    "bank account number",
+    "iban",
+    "ip address",
+    "organization",
+    "passport number",
+    "driver's license number",
+    "registration number",
+    "license plate number",
+    "vehicle registration number",
+    "serial number",
+    "username",
+    "social media handle",
+    "digital signature",
+    "health insurance id number",
+    "health insurance number",
+    "national health insurance number",
+    "insurance number",
+    "medical condition",
+    "medication",
+    "blood type",
+    "visa number",
+    "flight number",
+    "reservation number",
+    "transaction number",
+    "birth certificate number",
+    "train ticket number",
+    "passport expiration date",
+    "insurance company",
+    "cpf",
+    "cnpj",
+]
+
+_URCHADE_GLINER_LABEL_MAP = {
+    "person": "PERSON",
+    "email address": "EMAIL_ADDRESS",
+    "phone number": "PHONE_NUMBER",
+    "mobile phone number": "PHONE_NUMBER",
+    "landline phone number": "PHONE_NUMBER",
+    "fax number": "PHONE_NUMBER",
+    "address": "LOCATION",
+    "postal code": "LOCATION",
+    "social security number": "US_SSN",
+    "national id number": "ID_NUMBER",
+    "identity card number": "ID_NUMBER",
+    "identity document number": "ID_NUMBER",
+    "tax identification number": "ID_NUMBER",
+    "date of birth": "DATE_TIME",
+    "credit card number": "CREDIT_CARD",
+    "credit card expiration date": "CREDIT_CARD",
+    "cvv": "CREDIT_CARD",
+    "cvc": "CREDIT_CARD",
+    "bank account number": "ACCOUNT_NUMBER",
+    "iban": "ACCOUNT_NUMBER",
+    "ip address": "IP_ADDRESS",
+    "organization": "ORGANIZATION",
+    "passport number": "ID_NUMBER",
+    "driver's license number": "LICENSE_NUMBER",
+    "registration number": "ID_NUMBER",
+    "license plate number": "VEHICLE_IDENTIFIER",
+    "vehicle registration number": "VEHICLE_IDENTIFIER",
+    "serial number": "ID_NUMBER",
+    "username": "ONLINE_IDENTIFIER",
+    "social media handle": "ONLINE_IDENTIFIER",
+    "digital signature": "ONLINE_IDENTIFIER",
+    "health insurance id number": "HEALTH_PLAN_NUMBER",
+    "health insurance number": "HEALTH_PLAN_NUMBER",
+    "national health insurance number": "HEALTH_PLAN_NUMBER",
+    "insurance number": "HEALTH_PLAN_NUMBER",
+    "medical condition": "MEDICAL_INFO",
+    "medication": "MEDICAL_INFO",
+    "blood type": "MEDICAL_INFO",
+    "visa number": "ID_NUMBER",
+    "flight number": "ID_NUMBER",
+    "reservation number": "ID_NUMBER",
+    "transaction number": "ID_NUMBER",
+    "birth certificate number": "ID_NUMBER",
+    "train ticket number": "ID_NUMBER",
+    "passport expiration date": "DATE_TIME",
+    "insurance company": "ORGANIZATION",
+    "cpf": "ID_NUMBER",
+    "cnpj": "ID_NUMBER",
+}
+
+_URCHADE_GLINER_THRESHOLDS_BY_TYPE = {
+    "person": 0.15,
+    "email address": 0.3,
+    "phone number": 0.3,
+    "mobile phone number": 0.3,
+    "landline phone number": 0.3,
+    "fax number": 0.3,
+    "address": 0.2,
+    "postal code": 0.3,
+    "social security number": 0.4,
+    "national id number": 0.35,
+    "identity card number": 0.35,
+    "identity document number": 0.35,
+    "tax identification number": 0.35,
+    "date of birth": 0.25,
+    "credit card number": 0.4,
+    "credit card expiration date": 0.35,
+    "cvv": 0.4,
+    "cvc": 0.4,
+    "bank account number": 0.35,
+    "iban": 0.35,
+    "ip address": 0.3,
+    "organization": 0.3,
+    "passport number": 0.35,
+    "driver's license number": 0.35,
+    "registration number": 0.35,
+    "license plate number": 0.35,
+    "vehicle registration number": 0.35,
+    "serial number": 0.35,
+    "username": 0.3,
+    "social media handle": 0.3,
+    "digital signature": 0.35,
+    "health insurance id number": 0.35,
+    "health insurance number": 0.35,
+    "national health insurance number": 0.35,
+    "insurance number": 0.35,
+    "medical condition": 0.3,
+    "medication": 0.3,
+    "blood type": 0.35,
+    "visa number": 0.35,
+    "flight number": 0.35,
+    "reservation number": 0.35,
+    "transaction number": 0.35,
+    "birth certificate number": 0.35,
+    "train ticket number": 0.35,
+    "passport expiration date": 0.35,
+    "insurance company": 0.3,
+    "cpf": 0.35,
+    "cnpj": 0.35,
+}
+
+# ---------------------------------------------------------------------------
+# Preset registry: bundles model -> (labels, label_map, thresholds)
+# ---------------------------------------------------------------------------
+GLINER_MODEL_PRESETS = {
+    "nvidia/gliner-PII": {
+        "labels": DEFAULT_GLINER_LABELS,
+        "label_map": GLINER_LABEL_MAP,
+        "thresholds": DEFAULT_GLINER_THRESHOLDS_BY_TYPE,
+    },
+    "urchade/gliner_multi_pii-v1": {
+        "labels": _URCHADE_GLINER_LABELS,
+        "label_map": _URCHADE_GLINER_LABEL_MAP,
+        "thresholds": _URCHADE_GLINER_THRESHOLDS_BY_TYPE,
+    },
+}
+
+
+def get_gliner_preset(model_name: str) -> dict:
+    """Return the preset (labels, label_map, thresholds) for a GLiNER model.
+
+    Falls back to the nvidia defaults for unknown model names so that existing
+    custom-model workflows keep working.
+    """
+    return GLINER_MODEL_PRESETS.get(
+        model_name, GLINER_MODEL_PRESETS[DEFAULT_GLINER_MODEL]
+    )
 
 # Confidence thresholds
 HIGH_CONFIDENCE_THRESHOLD = 0.7
@@ -421,6 +721,8 @@ class RedactionConfig:
     presidio_model_size: Optional[str] = None
     presidio_pattern_only: bool = False
     ai_model_type: str = "foundation"
+    ai_max_chars: Optional[int] = DEFAULT_AI_MAX_CHARS
+    ai_overlap_chars: int = DEFAULT_AI_OVERLAP_CHARS
     # Alignment
     alignment_mode: str = "union"
     fuzzy_threshold: int = 50
@@ -433,6 +735,9 @@ class RedactionConfig:
     confirm_validation_output: bool = False
     max_rows: Optional[int] = 10000
     entity_filter: Any = field(default=None, repr=False)
+    # Language / translation
+    language: str = "en"
+    translate_to: Optional[str] = None
 
     def __post_init__(self):
         if self.score_threshold < MIN_SCORE_THRESHOLD:
@@ -455,6 +760,16 @@ class RedactionConfig:
             _logger.warning(
                 "gliner_threshold is at governance floor (%s). This should be exceptional.",
                 MIN_GLINER_THRESHOLD,
+            )
+        if self.language not in PROMPT_SKELETON_BY_LANGUAGE:
+            raise ValueError(
+                f"language='{self.language}' is not supported. "
+                f"Choose from: {list(PROMPT_SKELETON_BY_LANGUAGE.keys())}"
+            )
+        if self.translate_to and self.translate_to == self.language:
+            raise ValueError(
+                f"translate_to='{self.translate_to}' is the same as language='{self.language}'. "
+                "Translation requires different source and target languages."
             )
 
 

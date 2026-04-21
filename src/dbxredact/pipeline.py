@@ -5,7 +5,7 @@ import logging
 import math
 import time
 import uuid
-from typing import Optional, Literal
+from typing import Dict, List, Optional, Literal, Union
 import pandas as pd
 from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession
@@ -20,12 +20,22 @@ from pyspark.sql.types import (
     DoubleType,
 )
 
-from .detection import run_detection
+from .detection import run_detection, run_ai_query_detection
 from .alignment import align_entities_udf
 from .redaction import create_redaction_udf, create_redaction_audit_udf, RedactionStrategy
-from .metadata import get_columns_by_tag
-from .config import DEFAULT_GLINER_MODEL, DEFAULT_GLINER_THRESHOLD, DEFAULT_GLINER_MAX_WORDS, DEFAULT_AI_REASONING_EFFORT, RedactionConfig
+from .masking import apply_structured_masking, MaskingStrategy
+from .metadata import get_columns_by_tag, discover_pii_columns
+from .config import (
+    DEFAULT_GLINER_MODEL,
+    DEFAULT_GLINER_THRESHOLD,
+    DEFAULT_GLINER_MAX_WORDS,
+    DEFAULT_AI_REASONING_EFFORT,
+    DEFAULT_AI_OVERLAP_CHARS,
+    REVIEW_PROMPT_SKELETON,
+    RedactionConfig,
+)
 from .entity_filter import EntityFilter, apply_safe_filter, apply_block_filter
+from .translation import translate_column
 
 logger = logging.getLogger(__name__)
 
@@ -308,12 +318,17 @@ def _select_output_columns(
     """Select columns based on output strategy.
 
     Production mode now always includes ``_detection_status`` and
-    ``_entity_count`` alongside the redacted text.
+    ``_entity_count`` alongside the redacted text.  When translation
+    columns are present, they are included automatically.
     """
     redacted_col_name = f"{text_column}_redacted"
 
     if output_strategy == "production":
-        wanted = [doc_id_column, redacted_col_name, "_detection_status", "_entity_count"]
+        wanted = [
+            doc_id_column, redacted_col_name, "_detection_status", "_entity_count",
+            f"{text_column}_translated", f"{text_column}_reviewed",
+            "review_entities", "review_entity_count",
+        ]
         return df.select(*[c for c in wanted if c in df.columns])
     else:  # validation
         return df
@@ -331,6 +346,76 @@ def _get_entities_column(df: DataFrame, use_aligned: bool) -> str:
         raise ValueError("No entity results found in detection output")
 
 
+def _apply_translation_and_review(
+    spark: SparkSession,
+    df: DataFrame,
+    text_column: str,
+    doc_id_column: str,
+    language: str,
+    translate_to: str,
+    redaction_strategy: RedactionStrategy,
+    endpoint: str,
+    num_cores: int,
+    reasoning_effort: str,
+    ai_model_type: str,
+) -> DataFrame:
+    """Translate redacted text and run an English review detection pass.
+
+    Adds columns: {text_column}_translated, {text_column}_reviewed,
+    review_entities, review_entity_count.
+    """
+    redacted_col = f"{text_column}_redacted"
+    translated_col = f"{text_column}_translated"
+    reviewed_col = f"{text_column}_reviewed"
+
+    t0 = time.time()
+    logger.info("5. Translating %s -> %s ...", language, translate_to)
+    df = translate_column(
+        spark, df,
+        text_column=redacted_col,
+        source_lang=language,
+        target_lang=translate_to,
+        endpoint=endpoint or "databricks-gpt-oss-120b",
+        num_cores=num_cores,
+        reasoning_effort=reasoning_effort,
+        ai_model_type=ai_model_type,
+    )
+    logger.info("Translation done [%.1fs]", time.time() - t0)
+
+    t1 = time.time()
+    logger.info("6. Running English review detection on translated text ...")
+    df = run_ai_query_detection(
+        spark, df,
+        doc_id_column=doc_id_column,
+        text_column=translated_col,
+        endpoint=endpoint or "databricks-gpt-oss-120b",
+        num_cores=num_cores,
+        prompt_skeleton=REVIEW_PROMPT_SKELETON,
+        reasoning_effort=reasoning_effort,
+        ai_model_type=ai_model_type,
+        _repartition=False,
+    )
+
+    # The review detection reuses the "ai_results_struct" column name.
+    # Rename to avoid collision with the original detection pass.
+    df = df.withColumnRenamed("ai_results_struct", "review_entities")
+    if "response" in df.columns:
+        df = df.drop("response")
+    if "raw_response" in df.columns:
+        df = df.drop("raw_response")
+
+    review_audit_udf = create_redaction_audit_udf(strategy=redaction_strategy)
+    df = (
+        df
+        .withColumn("_review_audit", review_audit_udf(col(translated_col), col("review_entities")))
+        .withColumn(reviewed_col, col("_review_audit.redacted_text"))
+        .withColumn("review_entity_count", col("_review_audit.entity_count"))
+        .drop("_review_audit")
+    )
+    logger.info("Review detection + redaction done [%.1fs]", time.time() - t1)
+    return df
+
+
 def run_detection_pipeline(
     spark: SparkSession,
     source_df: DataFrame,
@@ -344,6 +429,8 @@ def run_detection_pipeline(
     gliner_model: str = DEFAULT_GLINER_MODEL,
     gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
     gliner_max_words: int = None,
+    ai_max_chars: Optional[int] = None,
+    ai_overlap_chars: int = DEFAULT_AI_OVERLAP_CHARS,
     num_cores: int = 10,
     align_results: bool = True,
     fail_on_presidio_error: bool = True,
@@ -368,6 +455,7 @@ def run_detection_pipeline(
             "use_gliner": use_gliner, "endpoint": endpoint,
             "score_threshold": score_threshold, "gliner_model": gliner_model,
             "gliner_threshold": gliner_threshold, "gliner_max_words": gliner_max_words,
+            "ai_max_chars": ai_max_chars, "ai_overlap_chars": ai_overlap_chars,
             "num_cores": num_cores, "fail_on_presidio_error": fail_on_presidio_error,
             "reasoning_effort": reasoning_effort, "presidio_model_size": presidio_model_size,
             "presidio_pattern_only": presidio_pattern_only, "ai_model_type": ai_model_type,
@@ -375,13 +463,15 @@ def run_detection_pipeline(
             "entity_filter": entity_filter,
         })
         (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
-         gliner_model, gliner_threshold, gliner_max_words, num_cores,
+         gliner_model, gliner_threshold, gliner_max_words, ai_max_chars,
+         ai_overlap_chars, num_cores,
          fail_on_presidio_error, reasoning_effort, presidio_model_size,
          presidio_pattern_only, ai_model_type, alignment_mode, fuzzy_threshold,
          entity_filter) = (
             _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
             _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
-            _v["gliner_threshold"], _v["gliner_max_words"], _v["num_cores"],
+            _v["gliner_threshold"], _v["gliner_max_words"], _v["ai_max_chars"],
+            _v["ai_overlap_chars"], _v["num_cores"],
             _v["fail_on_presidio_error"], _v["reasoning_effort"],
             _v["presidio_model_size"], _v["presidio_pattern_only"],
             _v["ai_model_type"], _v["alignment_mode"], _v["fuzzy_threshold"],
@@ -406,6 +496,8 @@ def run_detection_pipeline(
         gliner_model=gliner_model,
         gliner_threshold=gliner_threshold,
         gliner_max_words=gliner_max_words,
+        ai_max_chars=ai_max_chars,
+        ai_overlap_chars=ai_overlap_chars,
         num_cores=num_cores,
         fail_on_presidio_error=fail_on_presidio_error,
         reasoning_effort=reasoning_effort,
@@ -484,6 +576,8 @@ def run_redaction_pipeline(
     gliner_model: str = DEFAULT_GLINER_MODEL,
     gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
     gliner_max_words: int = None,
+    ai_max_chars: Optional[int] = None,
+    ai_overlap_chars: int = DEFAULT_AI_OVERLAP_CHARS,
     num_cores: int = 10,
     use_aligned: bool = True,
     fail_on_presidio_error: bool = True,
@@ -551,6 +645,7 @@ def run_redaction_pipeline(
             "use_gliner": use_gliner, "endpoint": endpoint,
             "score_threshold": score_threshold, "gliner_model": gliner_model,
             "gliner_threshold": gliner_threshold, "gliner_max_words": gliner_max_words,
+            "ai_max_chars": ai_max_chars, "ai_overlap_chars": ai_overlap_chars,
             "num_cores": num_cores, "fail_on_presidio_error": fail_on_presidio_error,
             "reasoning_effort": reasoning_effort, "presidio_model_size": presidio_model_size,
             "presidio_pattern_only": presidio_pattern_only, "ai_model_type": ai_model_type,
@@ -562,7 +657,8 @@ def run_redaction_pipeline(
             "max_rows": max_rows, "entity_filter": entity_filter,
         })
         (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
-         gliner_model, gliner_threshold, gliner_max_words, num_cores,
+         gliner_model, gliner_threshold, gliner_max_words, ai_max_chars,
+         ai_overlap_chars, num_cores,
          fail_on_presidio_error, reasoning_effort, presidio_model_size,
          presidio_pattern_only, ai_model_type, alignment_mode, fuzzy_threshold,
          allow_consensus_redaction, redaction_strategy, output_strategy,
@@ -570,7 +666,8 @@ def run_redaction_pipeline(
          max_rows, entity_filter) = (
             _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
             _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
-            _v["gliner_threshold"], _v["gliner_max_words"], _v["num_cores"],
+            _v["gliner_threshold"], _v["gliner_max_words"], _v["ai_max_chars"],
+            _v["ai_overlap_chars"], _v["num_cores"],
             _v["fail_on_presidio_error"], _v["reasoning_effort"],
             _v["presidio_model_size"], _v["presidio_pattern_only"],
             _v["ai_model_type"], _v["alignment_mode"], _v["fuzzy_threshold"],
@@ -642,6 +739,8 @@ def run_redaction_pipeline(
         gliner_model=gliner_model,
         gliner_threshold=gliner_threshold,
         gliner_max_words=gliner_max_words,
+        ai_max_chars=ai_max_chars,
+        ai_overlap_chars=ai_overlap_chars,
         num_cores=num_cores,
         align_results=True,
         fail_on_presidio_error=fail_on_presidio_error,
@@ -667,6 +766,20 @@ def run_redaction_pipeline(
     result_df = _apply_redaction(
         detection_df, text_column, entities_column, redaction_strategy
     )
+
+    # Translation + review pass (when translate_to is set)
+    _language = config.language if config else "en"
+    _translate_to = config.translate_to if config else None
+    if _translate_to:
+        result_df = result_df.cache()
+        result_df.count()
+        result_df = _apply_translation_and_review(
+            spark, result_df, text_column, doc_id_column,
+            language=_language, translate_to=_translate_to,
+            redaction_strategy=redaction_strategy,
+            endpoint=endpoint, num_cores=num_cores,
+            reasoning_effort=reasoning_effort, ai_model_type=ai_model_type,
+        )
 
     if output_mode == "in_place":
         logger.info("4. Updating %s.%s in-place...", source_table, text_column)
@@ -698,6 +811,8 @@ def run_redaction_pipeline(
     t_write_done = time.time()
     logger.info("Redaction + write: %.1fs | Total pipeline: %.1fs", t_write_done - t_redact_start, t_write_done - t_pipeline_start)
 
+    if output_mode != "in_place" and output_strategy == "production":
+        return output_df
     return result_df
 
 
@@ -744,6 +859,272 @@ def _ensure_checkpoint_volume_exists(spark: SparkSession, checkpoint_path: str) 
             ) from e
         # Re-raise other errors
         raise
+
+
+# ---------------------------------------------------------------------------
+# Shared streaming helpers (used by both run_redaction_pipeline_streaming and
+# run_ingestion_redaction_pipeline)
+# ---------------------------------------------------------------------------
+
+
+def _apply_streaming_detection_chain(
+    stream_df: DataFrame,
+    doc_id_column: str,
+    text_column: str,
+    *,
+    use_presidio: bool,
+    use_ai_query: bool,
+    use_gliner: bool,
+    score_threshold: float,
+    presidio_model_size: Optional[str],
+    presidio_pattern_only: bool,
+    endpoint: Optional[str],
+    num_cores: int,
+    reasoning_effort: str,
+    ai_model_type: str,
+    gliner_model: str,
+    gliner_threshold: float,
+    gliner_max_words: Optional[int],
+    use_aligned: bool,
+    alignment_mode: str,
+) -> tuple:
+    """Run detector chain and alignment, return (df, entities_column)."""
+    if use_presidio:
+        from .presidio import make_presidio_batch_udf
+        presidio_udf = make_presidio_batch_udf(
+            score_threshold=score_threshold, model_size=presidio_model_size,
+            pattern_only=presidio_pattern_only,
+        )
+        stream_df = stream_df.withColumn(
+            "presidio_results_struct", presidio_udf(col(doc_id_column), col(text_column))
+        )
+
+    if use_ai_query:
+        from .detection import run_ai_query_detection
+        stream_df = run_ai_query_detection(
+            spark=stream_df.sparkSession,
+            df=stream_df,
+            doc_id_column=doc_id_column,
+            text_column=text_column,
+            endpoint=endpoint or "databricks-gpt-oss-120b",
+            num_cores=num_cores,
+            reasoning_effort=reasoning_effort,
+            ai_model_type=ai_model_type,
+            _repartition=False,
+        )
+        if "response" in stream_df.columns:
+            stream_df = stream_df.withColumn(
+                "_ai_detection_failed",
+                when(col("response.errorMessage").isNotNull(), lit(True)).otherwise(lit(False)),
+            )
+
+    if use_gliner:
+        from .gliner_detector import run_gliner_detection
+        gliner_kwargs = dict(
+            df=stream_df,
+            doc_id_column=doc_id_column,
+            text_column=text_column,
+            model_name=gliner_model,
+            num_cores=num_cores,
+            threshold=gliner_threshold,
+            _repartition=False,
+        )
+        if gliner_max_words is not None:
+            gliner_kwargs["max_words"] = gliner_max_words
+        stream_df = run_gliner_detection(**gliner_kwargs)
+
+    methods_used = sum([use_presidio, use_ai_query, use_gliner])
+    if methods_used >= 1:
+        stream_df = _apply_alignment(
+            stream_df, doc_id_column, use_presidio, use_ai_query, use_gliner,
+            alignment_mode=alignment_mode,
+        )
+
+    if use_aligned and methods_used >= 1:
+        entities_column = "aligned_entities"
+    elif use_presidio:
+        entities_column = "presidio_results_struct"
+    elif use_ai_query:
+        entities_column = "ai_results_struct"
+    elif use_gliner:
+        entities_column = "gliner_results_struct"
+    else:
+        raise ValueError("At least one detection method must be enabled")
+
+    return stream_df, entities_column
+
+
+def _apply_streaming_entity_filter(
+    stream_df: DataFrame,
+    entities_column: str,
+    text_column: str,
+    entity_filter,
+) -> DataFrame:
+    """Apply safe/block list filtering to the entities column."""
+    from pyspark.sql.functions import pandas_udf as _pandas_udf
+
+    _ef_struct = ArrayType(StructType([
+        StructField("entity", StringType()),
+        StructField("entity_type", StringType()),
+        StructField("start", IntegerType()),
+        StructField("end", IntegerType()),
+        StructField("score", DoubleType()),
+        StructField("source", StringType()),
+    ]))
+    ef = entity_filter
+    _has_block = bool(ef._block_set or ef._block_re)
+    _has_safe = bool(ef._safe_set or ef._safe_re)
+
+    @_pandas_udf(_ef_struct)
+    def _stream_entity_filter(entities_col: pd.Series, text_col: pd.Series) -> pd.Series:
+        out = []
+        for entities, text in zip(entities_col, text_col):
+            if entities is not None and len(entities) > 0:
+                ents = [e.asDict() if hasattr(e, 'asDict') else dict(e) for e in entities]
+            else:
+                ents = []
+            if _has_safe:
+                ents = apply_safe_filter(ents, ef)
+            if _has_block and text:
+                ents.extend(apply_block_filter(text, ef))
+            out.append(ents)
+        return pd.Series(out)
+
+    stream_df = stream_df.withColumn(
+        entities_column, _stream_entity_filter(col(entities_column), col(text_column))
+    )
+    logger.info("Entity filter applied in streaming pipeline")
+    return stream_df
+
+
+def _make_write_batch(
+    doc_id_column: str,
+    target_table: str,
+    text_column: str,
+    is_in_place: bool,
+    batch_stats: list,
+):
+    """Create a foreachBatch write function for streaming MERGE INTO."""
+    _stream_logger = logging.getLogger("dbxredact.streaming")
+
+    def _write_batch(batch_df, batch_id):
+        batch_df = batch_df.dropDuplicates([doc_id_column])
+        batch_df = batch_df.persist(StorageLevel.MEMORY_AND_DISK)
+        try:
+            view_name = f"_dbxredact_batch_{batch_id}"
+            batch_df.createOrReplaceTempView(view_name)
+            if is_in_place:
+                _rcol = f"{text_column}_redacted"
+                batch_df.sparkSession.sql(f"""
+                    MERGE INTO {target_table} t
+                    USING {view_name} s
+                    ON t.`{doc_id_column}` = s.`{doc_id_column}`
+                    WHEN MATCHED THEN UPDATE SET t.`{text_column}` = s.`{_rcol}`
+                """)
+            else:
+                _tgt_cols = set(batch_df.sparkSession.table(target_table).columns)
+                _upd_cols = [c for c in batch_df.columns if c in _tgt_cols and c != doc_id_column]
+                _ins_cols = [c for c in batch_df.columns if c in _tgt_cols]
+                _update_set = ", ".join(f"t.`{c}` = s.`{c}`" for c in _upd_cols)
+                _insert_cols = ", ".join(f"`{c}`" for c in _ins_cols)
+                _insert_vals = ", ".join(f"s.`{c}`" for c in _ins_cols)
+                batch_df.sparkSession.sql(f"""
+                    MERGE INTO {target_table} t
+                    USING {view_name} s
+                    ON t.`{doc_id_column}` = s.`{doc_id_column}`
+                    WHEN MATCHED THEN UPDATE SET {_update_set}
+                    WHEN NOT MATCHED THEN INSERT ({_insert_cols}) VALUES ({_insert_vals})
+                """)
+
+            no_entities = 0
+            errors = 0
+            total = 0
+            try:
+                if "_detection_status" in batch_df.columns:
+                    status_rows = batch_df.groupBy("_detection_status").count().collect()
+                    status_counts = {r["_detection_status"]: r["count"] for r in status_rows}
+                    total = sum(status_counts.values())
+                    no_entities = status_counts.get("no_entities", 0)
+                    errors = status_counts.get("detection_error", 0)
+                else:
+                    total = batch_df.count()
+            except Exception as _stats_err:
+                _stream_logger.warning(
+                    "Batch %d: stats collection failed (non-fatal): %s", batch_id, _stats_err
+                )
+
+            if total > 0:
+                batch_stats.append({
+                    "batch_id": batch_id, "total": total,
+                    "no_entities": no_entities, "errors": errors,
+                })
+            if no_entities + errors > 0:
+                _stream_logger.warning(
+                    "Batch %d: %d/%d docs with no entities, %d detection errors",
+                    batch_id, no_entities, total, errors,
+                )
+        finally:
+            batch_df.unpersist()
+
+    return _write_batch
+
+
+def _run_streaming_query(
+    spark: SparkSession,
+    stream_df: DataFrame,
+    checkpoint_path: str,
+    num_cores: int,
+    write_batch_fn,
+    batch_stats: list,
+    *,
+    trigger_once: bool = True,
+    processing_time: Optional[str] = None,
+) -> StreamingQuery:
+    """Start the streaming query, manage Spark conf, block or return immediately."""
+    _stream_logger = logging.getLogger("dbxredact.streaming")
+
+    _prior_shuffle_parts = spark.conf.get("spark.sql.shuffle.partitions", "200")
+    _streaming_shuffle_parts = max(num_cores, min(int(_prior_shuffle_parts), num_cores * 4))
+    spark.conf.set("spark.sql.shuffle.partitions", str(_streaming_shuffle_parts))
+    _prior_auto_merge = spark.conf.get("spark.databricks.delta.schema.autoMerge.enabled", "false")
+    spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
+    try:
+        writer = (
+            stream_df
+            .writeStream
+            .option("checkpointLocation", checkpoint_path)
+            .option("mergeSchema", "true")
+            .foreachBatch(write_batch_fn)
+        )
+        if processing_time:
+            writer = writer.trigger(processingTime=processing_time)
+        else:
+            writer = writer.trigger(availableNow=True)
+        query = writer.start()
+
+        if not processing_time:
+            query.awaitTermination()
+            _log_streaming_summary(batch_stats)
+    finally:
+        if not processing_time:
+            spark.conf.set("spark.sql.shuffle.partitions", _prior_shuffle_parts)
+            spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", _prior_auto_merge)
+
+    return query
+
+
+def _log_streaming_summary(batch_stats: list):
+    """Log aggregate stats after streaming completes."""
+    _stream_logger = logging.getLogger("dbxredact.streaming")
+    if not batch_stats:
+        return
+    total_docs = sum(s["total"] for s in batch_stats)
+    total_no_ent = sum(s["no_entities"] for s in batch_stats)
+    total_errs = sum(s["errors"] for s in batch_stats)
+    _stream_logger.info(
+        "Streaming complete: %d batches, %d docs, %d no-entity, %d errors",
+        len(batch_stats), total_docs, total_no_ent, total_errs,
+    )
 
 
 def run_redaction_pipeline_streaming(
@@ -911,113 +1292,68 @@ def run_redaction_pipeline_streaming(
     reader = reader.option("maxFilesPerTrigger", _mfpt)
     stream_df = reader.table(source_table)
 
-    if use_presidio:
-        from .presidio import make_presidio_batch_udf
-        presidio_udf = make_presidio_batch_udf(
-            score_threshold=score_threshold, model_size=presidio_model_size,
-            pattern_only=presidio_pattern_only,
-        )
-        stream_df = stream_df.withColumn(
-            "presidio_results_struct", presidio_udf(col(doc_id_column), col(text_column))
+    stream_df, entities_column = _apply_streaming_detection_chain(
+        stream_df, doc_id_column, text_column,
+        use_presidio=use_presidio, use_ai_query=use_ai_query, use_gliner=use_gliner,
+        score_threshold=score_threshold, presidio_model_size=presidio_model_size,
+        presidio_pattern_only=presidio_pattern_only, endpoint=endpoint,
+        num_cores=num_cores, reasoning_effort=reasoning_effort,
+        ai_model_type=ai_model_type, gliner_model=gliner_model,
+        gliner_threshold=gliner_threshold, gliner_max_words=gliner_max_words,
+        use_aligned=use_aligned, alignment_mode=alignment_mode,
+    )
+
+    # Entity filter (block/safe lists)
+    if entity_filter is not None:
+        stream_df = _apply_streaming_entity_filter(
+            stream_df, entities_column, text_column, entity_filter
         )
 
-    if use_ai_query:
-        from .detection import run_ai_query_detection
-        from pyspark.sql.functions import lit, when
-        stream_df = run_ai_query_detection(
-            spark=spark,
-            df=stream_df,
-            doc_id_column=doc_id_column,
-            text_column=text_column,
-            endpoint=endpoint or "databricks-gpt-oss-120b",
+    # Apply redaction
+    stream_df = _apply_redaction(stream_df, text_column, entities_column, redaction_strategy)
+
+    # Translation + review pass (when translate_to is set)
+    _s_language = config.language if config else "en"
+    _s_translate_to = config.translate_to if config else None
+    if _s_translate_to:
+        _s_endpoint = endpoint or "databricks-gpt-oss-120b"
+        redacted_col = f"{text_column}_redacted"
+        translated_col = f"{text_column}_translated"
+        reviewed_col = f"{text_column}_reviewed"
+
+        stream_df = translate_column(
+            spark, stream_df,
+            text_column=redacted_col,
+            source_lang=_s_language,
+            target_lang=_s_translate_to,
+            endpoint=_s_endpoint,
             num_cores=num_cores,
+            reasoning_effort=reasoning_effort,
+            ai_model_type=ai_model_type,
+        )
+        stream_df = run_ai_query_detection(
+            spark, stream_df,
+            doc_id_column=doc_id_column,
+            text_column=translated_col,
+            endpoint=_s_endpoint,
+            num_cores=num_cores,
+            prompt_skeleton=REVIEW_PROMPT_SKELETON,
             reasoning_effort=reasoning_effort,
             ai_model_type=ai_model_type,
             _repartition=False,
         )
-        # Flag rows where AI endpoint returned an error instead of results.
-        # The 'response' column has .result and .errorMessage from ai_query(failOnError=>false).
-        if "response" in stream_df.columns:
-            stream_df = stream_df.withColumn(
-                "_ai_detection_failed",
-                when(col("response.errorMessage").isNotNull(), lit(True)).otherwise(lit(False)),
-            )
-
-    if use_gliner:
-        from .gliner_detector import run_gliner_detection
-        gliner_kwargs = dict(
-            df=stream_df,
-            doc_id_column=doc_id_column,
-            text_column=text_column,
-            model_name=gliner_model,
-            num_cores=num_cores,
-            threshold=gliner_threshold,
-            _repartition=False,
+        stream_df = stream_df.withColumnRenamed("ai_results_struct", "review_entities")
+        for _drop_col in ("response", "raw_response"):
+            if _drop_col in stream_df.columns:
+                stream_df = stream_df.drop(_drop_col)
+        _review_audit_udf = create_redaction_audit_udf(strategy=redaction_strategy)
+        stream_df = (
+            stream_df
+            .withColumn("_review_audit", _review_audit_udf(col(translated_col), col("review_entities")))
+            .withColumn(reviewed_col, col("_review_audit.redacted_text"))
+            .withColumn("review_entity_count", col("_review_audit.entity_count"))
+            .drop("_review_audit")
         )
-        if gliner_max_words is not None:
-            gliner_kwargs["max_words"] = gliner_max_words
-        stream_df = run_gliner_detection(**gliner_kwargs)
-
-    # Apply alignment
-    methods_used = sum([use_presidio, use_ai_query, use_gliner])
-    if methods_used >= 1:
-        stream_df = _apply_alignment(
-            stream_df, doc_id_column, use_presidio, use_ai_query, use_gliner,
-            alignment_mode=alignment_mode,
-        )
-
-    # Determine entities column
-    if use_aligned and methods_used >= 1:
-        entities_column = "aligned_entities"
-    elif use_presidio:
-        entities_column = "presidio_results_struct"
-    elif use_ai_query:
-        entities_column = "ai_results_struct"
-    elif use_gliner:
-        entities_column = "gliner_results_struct"
-    else:
-        raise ValueError("At least one detection method must be enabled")
-
-    # Apply entity filter (block/safe lists) if provided
-    if entity_filter is not None:
-        from .entity_filter import apply_safe_filter, apply_block_filter
-        from pyspark.sql.functions import pandas_udf as _pandas_udf
-        from pyspark.sql.types import ArrayType, StructType, StructField, StringType, IntegerType, DoubleType
-
-        _ef_struct = ArrayType(StructType([
-            StructField("entity", StringType()),
-            StructField("entity_type", StringType()),
-            StructField("start", IntegerType()),
-            StructField("end", IntegerType()),
-            StructField("score", DoubleType()),
-            StructField("source", StringType()),
-        ]))
-        ef = entity_filter
-        _has_block = bool(ef._block_set or ef._block_re)
-        _has_safe = bool(ef._safe_set or ef._safe_re)
-
-        @_pandas_udf(_ef_struct)
-        def _stream_entity_filter(entities_col: pd.Series, text_col: pd.Series) -> pd.Series:
-            out = []
-            for entities, text in zip(entities_col, text_col):
-                if entities is not None and len(entities) > 0:
-                    ents = [e.asDict() if hasattr(e, 'asDict') else dict(e) for e in entities]
-                else:
-                    ents = []
-                if _has_safe:
-                    ents = apply_safe_filter(ents, ef)
-                if _has_block and text:
-                    ents.extend(apply_block_filter(text, ef))
-                out.append(ents)
-            return pd.Series(out)
-
-        stream_df = stream_df.withColumn(
-            entities_column, _stream_entity_filter(col(entities_column), col(text_column))
-        )
-        logger.info("Entity filter applied in streaming pipeline")
-
-    # Apply redaction
-    stream_df = _apply_redaction(stream_df, text_column, entities_column, redaction_strategy)
 
     # Select output columns (skip for in-place -- we only need doc_id + redacted col)
     if _is_in_place:
@@ -1030,127 +1366,14 @@ def run_redaction_pipeline_streaming(
     if not _is_in_place and not spark.catalog.tableExists(output_table):
         stream_df.limit(0).write.format("delta").option("mergeSchema", "true").saveAsTable(output_table)
 
-    # Use foreachBatch with MERGE INTO to handle deduplication and updates.
-    _doc_id_col = doc_id_column
-    _merge_target = _target_table
-    _text_col = text_column
     _batch_stats: list = []
-    _stream_logger = logging.getLogger("dbxredact.streaming")
+    write_batch_fn = _make_write_batch(
+        doc_id_column, _target_table, text_column, _is_in_place, _batch_stats
+    )
 
-    def _write_batch(batch_df, batch_id):
-        # Deduplicate by doc_id before MERGE: Delta requires each target row to be
-        # matched by at most one source row.  Source tables may contain duplicate
-        # doc_ids (e.g. ground-truth benchmark tables with repeated rows).
-        batch_df = batch_df.dropDuplicates([_doc_id_col])
-        batch_df = batch_df.persist(StorageLevel.MEMORY_AND_DISK)
-        try:
-            # Critical write first — stats are non-critical logging. Previously the
-            # groupBy().count().collect() ran before the MERGE, meaning an OOM during
-            # stats collection would abort the batch before any data was written.
-            view_name = f"_dbxredact_batch_{batch_id}"
-            batch_df.createOrReplaceTempView(view_name)
-            if _is_in_place:
-                _rcol = f"{_text_col}_redacted"
-                batch_df.sparkSession.sql(f"""
-                    MERGE INTO {_merge_target} t
-                    USING {view_name} s
-                    ON t.`{_doc_id_col}` = s.`{_doc_id_col}`
-                    WHEN MATCHED THEN UPDATE SET t.`{_text_col}` = s.`{_rcol}`
-                """)
-            else:
-                # Build explicit column lists from the intersection of source and
-                # target schemas.  Either direction of mismatch causes
-                # DELTA_MERGE_UNRESOLVED_EXPRESSION:
-                #   • target has cols the source doesn't (prior run with a different
-                #     output_strategy that kept raw text / intermediate columns)
-                #   • source has cols the target doesn't (new pipeline output cols
-                #     like _detection_status added after the table was first created)
-                _tgt_cols = set(batch_df.sparkSession.table(_merge_target).columns)
-                _upd_cols = [c for c in batch_df.columns if c in _tgt_cols and c != _doc_id_col]
-                _ins_cols = [c for c in batch_df.columns if c in _tgt_cols]
-                _update_set = ", ".join(f"t.`{c}` = s.`{c}`" for c in _upd_cols)
-                _insert_cols = ", ".join(f"`{c}`" for c in _ins_cols)
-                _insert_vals = ", ".join(f"s.`{c}`" for c in _ins_cols)
-                batch_df.sparkSession.sql(f"""
-                    MERGE INTO {_merge_target} t
-                    USING {view_name} s
-                    ON t.`{_doc_id_col}` = s.`{_doc_id_col}`
-                    WHEN MATCHED THEN UPDATE SET {_update_set}
-                    WHEN NOT MATCHED THEN INSERT ({_insert_cols}) VALUES ({_insert_vals})
-                """)
-
-            # Collect stats for logging after the write. Failures here must not
-            # abort the batch since the data is already committed.
-            no_entities = 0
-            errors = 0
-            total = 0
-            try:
-                if "_detection_status" in batch_df.columns:
-                    status_rows = batch_df.groupBy("_detection_status").count().collect()
-                    status_counts = {r["_detection_status"]: r["count"] for r in status_rows}
-                    total = sum(status_counts.values())
-                    no_entities = status_counts.get("no_entities", 0)
-                    errors = status_counts.get("detection_error", 0)
-                else:
-                    total = batch_df.count()
-            except Exception as _stats_err:
-                _stream_logger.warning(
-                    "Batch %d: stats collection failed (non-fatal): %s", batch_id, _stats_err
-                )
-
-            if total > 0:
-                _batch_stats.append({
-                    "batch_id": batch_id, "total": total,
-                    "no_entities": no_entities, "errors": errors,
-                })
-            if no_entities + errors > 0:
-                _stream_logger.warning(
-                    "Batch %d: %d/%d docs with no entities, %d detection errors",
-                    batch_id, no_entities, total, errors,
-                )
-        finally:
-            batch_df.unpersist()
-
-    def _log_streaming_summary():
-        if not _batch_stats:
-            return
-        total_docs = sum(s["total"] for s in _batch_stats)
-        total_no_ent = sum(s["no_entities"] for s in _batch_stats)
-        total_errs = sum(s["errors"] for s in _batch_stats)
-        _stream_logger.info(
-            "Streaming complete: %d batches, %d docs, %d no-entity, %d errors",
-            len(_batch_stats), total_docs, total_no_ent, total_errs,
-        )
-
-    # Reduce shuffle partitions to cluster size for the duration of this query.
-    # The default (200) creates hundreds of empty shuffle tasks per micro-batch
-    # when processing small-to-medium batches, adding significant overhead to
-    # every MERGE INTO and groupBy operation.  We cap at 200 so large target
-    # tables in the MERGE still get adequate parallelism.  AQE (enabled by
-    # default on DBR 10+) will further coalesce partitions at runtime.
-    _prior_shuffle_parts = spark.conf.get("spark.sql.shuffle.partitions", "200")
-    _streaming_shuffle_parts = max(num_cores, min(int(_prior_shuffle_parts), num_cores * 4))
-    spark.conf.set("spark.sql.shuffle.partitions", str(_streaming_shuffle_parts))
-    _prior_auto_merge = spark.conf.get("spark.databricks.delta.schema.autoMerge.enabled", "false")
-    spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
-    try:
-        query = (
-            stream_df
-            .writeStream
-            .option("checkpointLocation", checkpoint_path)
-            .option("mergeSchema", "true")
-            .trigger(availableNow=True)
-            .foreachBatch(_write_batch)
-            .start()
-        )
-
-        query.awaitTermination()
-        _log_streaming_summary()
-    finally:
-        spark.conf.set("spark.sql.shuffle.partitions", _prior_shuffle_parts)
-        spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", _prior_auto_merge)
-
-    return query
+    return _run_streaming_query(
+        spark, stream_df, checkpoint_path, num_cores, write_batch_fn, _batch_stats
+    )
 
 
 def run_redaction_pipeline_by_tag(
@@ -1169,6 +1392,8 @@ def run_redaction_pipeline_by_tag(
     gliner_model: str = DEFAULT_GLINER_MODEL,
     gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
     gliner_max_words: int = None,
+    ai_max_chars: Optional[int] = None,
+    ai_overlap_chars: int = DEFAULT_AI_OVERLAP_CHARS,
     num_cores: int = 10,
     output_strategy: OutputStrategy = "production",
     max_rows: Optional[int] = 10000,
@@ -1197,6 +1422,7 @@ def run_redaction_pipeline_by_tag(
             "use_gliner": use_gliner, "endpoint": endpoint,
             "score_threshold": score_threshold, "gliner_model": gliner_model,
             "gliner_threshold": gliner_threshold, "gliner_max_words": gliner_max_words,
+            "ai_max_chars": ai_max_chars, "ai_overlap_chars": ai_overlap_chars,
             "num_cores": num_cores, "reasoning_effort": reasoning_effort,
             "presidio_model_size": presidio_model_size, "ai_model_type": ai_model_type,
             "alignment_mode": alignment_mode, "fuzzy_threshold": fuzzy_threshold,
@@ -1208,7 +1434,8 @@ def run_redaction_pipeline_by_tag(
             "entity_filter": entity_filter,
         })
         (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
-         gliner_model, gliner_threshold, gliner_max_words, num_cores,
+         gliner_model, gliner_threshold, gliner_max_words, ai_max_chars,
+         ai_overlap_chars, num_cores,
          reasoning_effort, presidio_model_size, ai_model_type,
          alignment_mode, fuzzy_threshold, presidio_pattern_only,
          redaction_strategy, output_strategy, output_mode,
@@ -1216,7 +1443,8 @@ def run_redaction_pipeline_by_tag(
          confirm_validation_output, entity_filter) = (
             _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
             _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
-            _v["gliner_threshold"], _v["gliner_max_words"], _v["num_cores"],
+            _v["gliner_threshold"], _v["gliner_max_words"], _v["ai_max_chars"],
+            _v["ai_overlap_chars"], _v["num_cores"],
             _v["reasoning_effort"], _v["presidio_model_size"],
             _v["ai_model_type"], _v["alignment_mode"], _v["fuzzy_threshold"],
             _v["presidio_pattern_only"], _v["redaction_strategy"],
@@ -1260,6 +1488,8 @@ def run_redaction_pipeline_by_tag(
             gliner_model=gliner_model,
             gliner_threshold=gliner_threshold,
             gliner_max_words=gliner_max_words,
+            ai_max_chars=ai_max_chars,
+            ai_overlap_chars=ai_overlap_chars,
             num_cores=num_cores,
             output_strategy=output_strategy,
             max_rows=max_rows,
@@ -1277,3 +1507,546 @@ def run_redaction_pipeline_by_tag(
         )
 
     return result_df
+
+
+def run_table_redaction(
+    spark: SparkSession,
+    source_table: str,
+    output_table: Optional[str] = None,
+    masking_strategy: MaskingStrategy = "mask",
+    encryption_key: Optional[str] = None,
+    doc_id_column: str = "doc_id",
+    use_presidio: bool = True,
+    use_ai_query: bool = True,
+    use_gliner: bool = False,
+    redaction_strategy: RedactionStrategy = "generic",
+    endpoint: Optional[str] = None,
+    score_threshold: float = 0.5,
+    gliner_model: str = DEFAULT_GLINER_MODEL,
+    gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
+    gliner_max_words: int = None,
+    ai_max_chars: Optional[int] = None,
+    ai_overlap_chars: int = DEFAULT_AI_OVERLAP_CHARS,
+    num_cores: int = 10,
+    output_strategy: OutputStrategy = "production",
+    max_rows: Optional[int] = 10000,
+    reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
+    presidio_model_size: str = None,
+    ai_model_type: str = "foundation",
+    alignment_mode: AlignmentMode = "union",
+    fuzzy_threshold: int = 50,
+    presidio_pattern_only: bool = False,
+    classification_tag: str = "data_classification",
+    classification_value: str = "protected",
+    type_tag: str = "pii_type",
+    text_columns: Optional[list] = None,
+    structured_columns: Optional[dict] = None,
+    entity_filter: Optional[EntityFilter] = None,
+    config: Optional[RedactionConfig] = None,
+) -> DataFrame:
+    """Unified table-level redaction: NER for text columns, rule-based masking
+    for structured PII columns, all in a single read/write pass.
+
+    Uses ``discover_pii_columns()`` to auto-classify columns via UC tags unless
+    *text_columns* and *structured_columns* are provided explicitly.
+
+    Args:
+        source_table: Fully qualified table name (catalog.schema.table).
+        output_table: If set, writes the result to this table.
+        masking_strategy: Strategy for structured columns ("mask"/"hash"/"encrypt").
+        encryption_key: Required when masking_strategy is "encrypt".
+        text_columns: Override auto-discovered text columns for NER.
+        structured_columns: Override auto-discovered structured column map.
+        (remaining args forwarded to run_detection_pipeline / _apply_redaction)
+
+    Returns:
+        DataFrame with all PII columns redacted/masked.
+    """
+    if config is not None:
+        _v = _apply_config(config, {
+            "use_presidio": use_presidio, "use_ai_query": use_ai_query,
+            "use_gliner": use_gliner, "endpoint": endpoint,
+            "score_threshold": score_threshold, "gliner_model": gliner_model,
+            "gliner_threshold": gliner_threshold, "gliner_max_words": gliner_max_words,
+            "ai_max_chars": ai_max_chars, "ai_overlap_chars": ai_overlap_chars,
+            "num_cores": num_cores, "reasoning_effort": reasoning_effort,
+            "presidio_model_size": presidio_model_size,
+            "presidio_pattern_only": presidio_pattern_only,
+            "ai_model_type": ai_model_type, "alignment_mode": alignment_mode,
+            "fuzzy_threshold": fuzzy_threshold, "redaction_strategy": redaction_strategy,
+            "output_strategy": output_strategy, "max_rows": max_rows,
+            "entity_filter": entity_filter,
+        })
+        (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
+         gliner_model, gliner_threshold, gliner_max_words, ai_max_chars,
+         ai_overlap_chars, num_cores,
+         reasoning_effort, presidio_model_size, presidio_pattern_only,
+         ai_model_type, alignment_mode, fuzzy_threshold, redaction_strategy,
+         output_strategy, max_rows, entity_filter) = (
+            _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
+            _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
+            _v["gliner_threshold"], _v["gliner_max_words"], _v["ai_max_chars"],
+            _v["ai_overlap_chars"], _v["num_cores"],
+            _v["reasoning_effort"], _v["presidio_model_size"],
+            _v["presidio_pattern_only"], _v["ai_model_type"],
+            _v["alignment_mode"], _v["fuzzy_threshold"],
+            _v["redaction_strategy"], _v["output_strategy"],
+            _v["max_rows"], _v["entity_filter"],
+        )
+
+    t_start = time.time()
+
+    if text_columns is None or structured_columns is None:
+        discovery = discover_pii_columns(
+            spark, source_table,
+            classification_tag=classification_tag,
+            classification_value=classification_value,
+            type_tag=type_tag,
+        )
+        if text_columns is None:
+            text_columns = discovery["text_columns"]
+        if structured_columns is None:
+            structured_columns = discovery["structured_columns"]
+        for w in discovery.get("warnings", []):
+            logger.warning(w)
+
+    if not text_columns and not structured_columns:
+        raise ValueError(
+            f"No PII columns found in {source_table}. "
+            "Tag columns or pass text_columns/structured_columns explicitly."
+        )
+
+    logger.info(
+        "run_table_redaction: %d text column(s), %d structured column(s)",
+        len(text_columns), len(structured_columns),
+    )
+
+    source_df = spark.table(source_table)
+    if max_rows:
+        source_df = source_df.orderBy(doc_id_column).limit(max_rows)
+    source_df.persist(StorageLevel.MEMORY_AND_DISK)
+
+    _DETECTION_INTERMEDIATES = [
+        "presidio_results_struct", "ai_results_struct",
+        "gliner_results_struct", "aligned_entities",
+        "_entity_count", "_detection_status",
+        "_ai_detection_failed",
+    ]
+
+    result_df = source_df
+    prev_cache = None
+    multi_col = len(text_columns) > 1
+
+    for i, text_col in enumerate(text_columns):
+        logger.info("NER redaction on text column %d/%d: %s", i + 1, len(text_columns), text_col)
+        detection_df = run_detection_pipeline(
+            spark=spark,
+            source_df=result_df,
+            doc_id_column=doc_id_column,
+            text_column=text_col,
+            use_presidio=use_presidio,
+            use_ai_query=use_ai_query,
+            use_gliner=use_gliner,
+            endpoint=endpoint,
+            score_threshold=score_threshold,
+            gliner_model=gliner_model,
+            gliner_threshold=gliner_threshold,
+            gliner_max_words=gliner_max_words,
+            ai_max_chars=ai_max_chars,
+            ai_overlap_chars=ai_overlap_chars,
+            num_cores=num_cores,
+            reasoning_effort=reasoning_effort,
+            presidio_model_size=presidio_model_size,
+            presidio_pattern_only=presidio_pattern_only,
+            ai_model_type=ai_model_type,
+            alignment_mode=alignment_mode,
+            fuzzy_threshold=fuzzy_threshold,
+            entity_filter=entity_filter,
+        )
+        entities_column = _get_entities_column(detection_df, use_aligned=True)
+        result_df = _apply_redaction(
+            detection_df, text_col, entities_column, redaction_strategy
+        )
+
+        cols_to_drop = [c for c in _DETECTION_INTERMEDIATES if c in result_df.columns]
+        if cols_to_drop:
+            result_df = result_df.drop(*cols_to_drop)
+
+        if multi_col:
+            result_df = result_df.localCheckpoint(eager=True)
+            if prev_cache is not None:
+                prev_cache.unpersist()
+            prev_cache = result_df
+
+    if structured_columns:
+        logger.info("Structured masking on %d column(s)", len(structured_columns))
+        result_df = apply_structured_masking(
+            result_df,
+            structured_columns,
+            strategy=masking_strategy,
+            encryption_key=encryption_key,
+        )
+
+    if output_table:
+        result_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(output_table)
+        logger.info("Output written to %s", output_table)
+    else:
+        logger.warning(
+            "No output_table provided -- results will not be persisted to any table. "
+            "The returned DataFrame must be written by the caller."
+        )
+
+    source_df.unpersist()
+    logger.info("run_table_redaction complete in %.1fs", time.time() - t_start)
+    return result_df
+
+
+# ---------------------------------------------------------------------------
+# Auto Loader ingestion pipeline
+# ---------------------------------------------------------------------------
+
+_FIELD_BOUNDARY_SENTINEL = "\n\n---FIELD_BOUNDARY---\n\n"
+
+_AUTOLOADER_FORMAT_DEFAULTS: Dict[str, Dict[str, str]] = {
+    "json": {"multiLine": "true"},
+    "csv": {"header": "true", "inferSchema": "true"},
+    "parquet": {},
+    "text": {"wholetext": "true"},
+    "avro": {},
+}
+
+MultiColumnStrategy = Literal["concat", "sequential"]
+
+
+def _build_autoloader_options(
+    file_format: str,
+    source_path: str,
+    *,
+    schema_location: Optional[str] = None,
+    extra_options: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """Merge format defaults, user overrides, and required cloudFiles options."""
+    if file_format not in _AUTOLOADER_FORMAT_DEFAULTS:
+        raise ValueError(
+            f"Unsupported format '{file_format}'. "
+            f"Supported: {list(_AUTOLOADER_FORMAT_DEFAULTS.keys())}"
+        )
+    opts: Dict[str, str] = {
+        "cloudFiles.format": file_format,
+        "cloudFiles.schemaLocation": schema_location or f"{source_path}/_schema",
+    }
+    opts.update(_AUTOLOADER_FORMAT_DEFAULTS[file_format])
+    if extra_options:
+        opts.update(extra_options)
+    return opts
+
+
+def _concat_text_columns(
+    df: DataFrame,
+    text_columns: List[str],
+    sentinel: str = _FIELD_BOUNDARY_SENTINEL,
+) -> DataFrame:
+    """Concatenate multiple text columns into `_combined_text` with sentinel boundaries.
+
+    Also adds `_field_lengths` column (array of original string lengths) for
+    downstream offset splitting.
+    """
+    from pyspark.sql.functions import concat_ws, length as spark_length, array as spark_array
+
+    combined_expr = concat_ws(
+        sentinel,
+        *[col(c) for c in text_columns],
+    )
+    length_exprs = spark_array(*[spark_length(col(c)).cast("int") for c in text_columns])
+
+    return (
+        df
+        .withColumn("_combined_text", combined_expr)
+        .withColumn("_field_lengths", length_exprs)
+    )
+
+
+def _split_and_redact_columns(
+    text_columns: List[str],
+    redaction_strategy: RedactionStrategy,
+    sentinel: str = _FIELD_BOUNDARY_SENTINEL,
+):
+    """Return a pandas UDF that splits redacted combined text back into per-column values."""
+    from pyspark.sql.functions import pandas_udf as _pandas_udf
+    from pyspark.sql.types import MapType
+
+    n_fields = len(text_columns)
+
+    @_pandas_udf(MapType(StringType(), StringType()))
+    def _split_redact_udf(
+        redacted_text_col: pd.Series,
+        field_lengths_col: pd.Series,
+    ) -> pd.Series:
+        results = []
+        for redacted_text, field_lengths in zip(redacted_text_col, field_lengths_col):
+            if redacted_text is None:
+                results.append({c: None for c in text_columns})
+                continue
+            parts = redacted_text.split(sentinel)
+            if len(parts) < n_fields:
+                parts.extend([""] * (n_fields - len(parts)))
+            mapping = {text_columns[i]: parts[i] for i in range(n_fields)}
+            results.append(mapping)
+        return pd.Series(results)
+
+    return _split_redact_udf
+
+
+def run_ingestion_redaction_pipeline(
+    spark: SparkSession,
+    source_path: str,
+    file_format: str,
+    output_table: str,
+    text_columns: List[str],
+    *,
+    structured_columns: Optional[Dict[str, str]] = None,
+    masking_strategy: MaskingStrategy = "mask",
+    encryption_key: Optional[str] = None,
+    multi_column_strategy: MultiColumnStrategy = "concat",
+    doc_id_column: str = "doc_id",
+    checkpoint_path: Optional[str] = None,
+    schema_location: Optional[str] = None,
+    autoloader_options: Optional[Dict[str, str]] = None,
+    max_files_per_trigger: Optional[int] = 50,
+    use_presidio: bool = True,
+    use_ai_query: bool = True,
+    use_gliner: bool = False,
+    redaction_strategy: RedactionStrategy = "generic",
+    endpoint: Optional[str] = None,
+    score_threshold: float = 0.5,
+    gliner_model: str = DEFAULT_GLINER_MODEL,
+    gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
+    gliner_max_words: Optional[int] = None,
+    num_cores: int = 10,
+    use_aligned: bool = True,
+    fail_on_presidio_error: bool = True,
+    reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
+    presidio_model_size: Optional[str] = None,
+    presidio_pattern_only: bool = False,
+    ai_model_type: str = "foundation",
+    alignment_mode: AlignmentMode = "union",
+    entity_filter=None,
+    allow_consensus_redaction: bool = False,
+    include_source_metadata: bool = True,
+    trigger_processing_time: Optional[str] = None,
+    config: Optional[RedactionConfig] = None,
+) -> StreamingQuery:
+    """Ingest files from a UC Volume via Auto Loader and redact PII inline.
+
+    Raw PII never lands in a persistent table -- detection and redaction happen
+    within the streaming micro-batch before the MERGE INTO writes to ``output_table``.
+
+    Args:
+        spark: Active SparkSession.
+        source_path: Path to UC Volume directory (e.g. /Volumes/catalog/schema/volume/raw/).
+        file_format: One of 'json', 'csv', 'parquet', 'text', 'avro'.
+        output_table: Fully qualified Delta table for redacted output.
+        text_columns: Columns to run NER-based PII detection + redaction on.
+        structured_columns: Mapping of column name to PII type for structured masking
+            (e.g. ``{"patient_ssn": "ssn", "phone": "phone"}``).
+        masking_strategy: Strategy for structured masking ('mask', 'hash', 'encrypt').
+        encryption_key: Key for 'encrypt' masking strategy.
+        multi_column_strategy: 'concat' (default) concatenates text columns for a single
+            detection pass; 'sequential' processes each column independently.
+        doc_id_column: Name for the generated document ID column.
+        checkpoint_path: Streaming checkpoint path; defaults to {source_path}/_checkpoint.
+        schema_location: Auto Loader schema evolution location; defaults to {source_path}/_schema.
+        autoloader_options: Additional cloudFiles options (override format defaults).
+        max_files_per_trigger: Files per micro-batch (Auto Loader throttle).
+        trigger_processing_time: If set (e.g. '30 seconds'), uses processingTime trigger
+            and returns immediately. If None, uses availableNow and blocks until done.
+        include_source_metadata: If True, adds _source_file column from Auto Loader metadata.
+
+    Returns:
+        The StreamingQuery handle.
+    """
+    if config is not None:
+        _v = _apply_config(config, {
+            "use_presidio": use_presidio, "use_ai_query": use_ai_query,
+            "use_gliner": use_gliner, "endpoint": endpoint,
+            "score_threshold": score_threshold, "gliner_model": gliner_model,
+            "gliner_threshold": gliner_threshold, "gliner_max_words": gliner_max_words,
+            "num_cores": num_cores, "fail_on_presidio_error": fail_on_presidio_error,
+            "reasoning_effort": reasoning_effort, "presidio_model_size": presidio_model_size,
+            "presidio_pattern_only": presidio_pattern_only, "ai_model_type": ai_model_type,
+            "alignment_mode": alignment_mode,
+            "allow_consensus_redaction": allow_consensus_redaction,
+            "redaction_strategy": redaction_strategy,
+            "entity_filter": entity_filter,
+        })
+        (use_presidio, use_ai_query, use_gliner, endpoint, score_threshold,
+         gliner_model, gliner_threshold, gliner_max_words, num_cores,
+         fail_on_presidio_error, reasoning_effort, presidio_model_size,
+         presidio_pattern_only, ai_model_type, alignment_mode,
+         allow_consensus_redaction, redaction_strategy,
+         entity_filter) = (
+            _v["use_presidio"], _v["use_ai_query"], _v["use_gliner"],
+            _v["endpoint"], _v["score_threshold"], _v["gliner_model"],
+            _v["gliner_threshold"], _v["gliner_max_words"], _v["num_cores"],
+            _v["fail_on_presidio_error"], _v["reasoning_effort"],
+            _v["presidio_model_size"], _v["presidio_pattern_only"],
+            _v["ai_model_type"], _v["alignment_mode"],
+            _v["allow_consensus_redaction"], _v["redaction_strategy"],
+            _v["entity_filter"],
+        )
+
+    # Validation
+    if not source_path:
+        raise ValueError("source_path is required.")
+    if not output_table:
+        raise ValueError("output_table is required.")
+    if not text_columns:
+        raise ValueError("text_columns must contain at least one column name.")
+
+    _check_consensus_safety(alignment_mode, allow_consensus_redaction)
+
+    if not checkpoint_path:
+        checkpoint_path = f"{source_path}/_checkpoint"
+
+    # Pre-check Presidio
+    if use_presidio and not presidio_pattern_only:
+        from .detection import check_presidio_available
+        is_available, error_msg = check_presidio_available()
+        if not is_available:
+            if fail_on_presidio_error:
+                raise Exception(f"Presidio unavailable: {error_msg}")
+            logger.warning(f"Presidio detection skipped - {error_msg}")
+            use_presidio = False
+
+    logger.info("Starting ingestion redaction pipeline")
+    logger.info(f"  Source path: {source_path} (format={file_format})")
+    logger.info(f"  Output: {output_table}")
+    logger.info(f"  Text columns: {text_columns}")
+    if structured_columns:
+        logger.info(f"  Structured columns: {structured_columns}")
+    logger.info(f"  Multi-column strategy: {multi_column_strategy}")
+
+    # Build Auto Loader reader
+    al_options = _build_autoloader_options(
+        file_format, source_path,
+        schema_location=schema_location,
+        extra_options=autoloader_options,
+    )
+    if max_files_per_trigger is not None:
+        al_options["cloudFiles.maxFilesPerTrigger"] = str(max_files_per_trigger)
+
+    reader = spark.readStream.format("cloudFiles")
+    for k, v in al_options.items():
+        reader = reader.option(k, v)
+    stream_df = reader.load(source_path)
+
+    # For text format, rename 'value' to the declared text column if there's exactly one
+    if file_format == "text" and len(text_columns) == 1 and "value" in stream_df.columns:
+        stream_df = stream_df.withColumnRenamed("value", text_columns[0])
+
+    # Generate deterministic doc_id from file path + row position
+    from pyspark.sql.functions import sha2, concat, monotonically_increasing_id
+    stream_df = stream_df.withColumn(
+        doc_id_column,
+        sha2(concat(col("_metadata.file_path"), lit("::"), monotonically_increasing_id().cast("string")), 256)
+    )
+
+    # Optionally keep source metadata
+    if include_source_metadata:
+        stream_df = stream_df.withColumn("_source_file", col("_metadata.file_path"))
+
+    # --- Multi-column PII detection + redaction ---
+    if multi_column_strategy == "concat" and len(text_columns) > 1:
+        # Concatenate text columns, run detection on combined, then split back
+        stream_df = _concat_text_columns(stream_df, text_columns)
+        _detection_col = "_combined_text"
+    elif multi_column_strategy == "sequential" or len(text_columns) == 1:
+        _detection_col = text_columns[0]
+    else:
+        _detection_col = "_combined_text"
+        stream_df = _concat_text_columns(stream_df, text_columns)
+
+    stream_df, entities_column = _apply_streaming_detection_chain(
+        stream_df, doc_id_column, _detection_col,
+        use_presidio=use_presidio, use_ai_query=use_ai_query, use_gliner=use_gliner,
+        score_threshold=score_threshold, presidio_model_size=presidio_model_size,
+        presidio_pattern_only=presidio_pattern_only, endpoint=endpoint,
+        num_cores=num_cores, reasoning_effort=reasoning_effort,
+        ai_model_type=ai_model_type, gliner_model=gliner_model,
+        gliner_threshold=gliner_threshold, gliner_max_words=gliner_max_words,
+        use_aligned=use_aligned, alignment_mode=alignment_mode,
+    )
+
+    if entity_filter is not None:
+        stream_df = _apply_streaming_entity_filter(
+            stream_df, entities_column, _detection_col, entity_filter
+        )
+
+    # Apply redaction
+    stream_df = _apply_redaction(stream_df, _detection_col, entities_column, redaction_strategy)
+    _redacted_col = f"{_detection_col}_redacted"
+
+    # If concat strategy was used, split the redacted combined text back into columns
+    if _detection_col == "_combined_text" and len(text_columns) > 1:
+        split_udf = _split_and_redact_columns(text_columns, redaction_strategy)
+        stream_df = stream_df.withColumn(
+            "_split_map", split_udf(col(_redacted_col), col("_field_lengths"))
+        )
+        for tc in text_columns:
+            stream_df = stream_df.withColumn(tc, col("_split_map").getItem(tc))
+        stream_df = stream_df.drop("_combined_text", "_field_lengths", _redacted_col, "_split_map")
+    elif len(text_columns) == 1:
+        # Single column: rename redacted back to original
+        stream_df = stream_df.withColumn(text_columns[0], col(_redacted_col)).drop(_redacted_col)
+    else:
+        # Sequential: process each additional column after the first
+        stream_df = stream_df.withColumn(text_columns[0], col(_redacted_col)).drop(_redacted_col)
+        for tc in text_columns[1:]:
+            stream_df, _ent_col = _apply_streaming_detection_chain(
+                stream_df, doc_id_column, tc,
+                use_presidio=use_presidio, use_ai_query=use_ai_query, use_gliner=use_gliner,
+                score_threshold=score_threshold, presidio_model_size=presidio_model_size,
+                presidio_pattern_only=presidio_pattern_only, endpoint=endpoint,
+                num_cores=num_cores, reasoning_effort=reasoning_effort,
+                ai_model_type=ai_model_type, gliner_model=gliner_model,
+                gliner_threshold=gliner_threshold, gliner_max_words=gliner_max_words,
+                use_aligned=use_aligned, alignment_mode=alignment_mode,
+            )
+            if entity_filter is not None:
+                stream_df = _apply_streaming_entity_filter(
+                    stream_df, _ent_col, tc, entity_filter
+                )
+            stream_df = _apply_redaction(stream_df, tc, _ent_col, redaction_strategy)
+            _rc = f"{tc}_redacted"
+            stream_df = stream_df.withColumn(tc, col(_rc)).drop(_rc)
+
+    # Apply structured masking
+    if structured_columns:
+        stream_df = apply_structured_masking(
+            stream_df, structured_columns,
+            strategy=masking_strategy, encryption_key=encryption_key,
+        )
+
+    # Drop intermediate detection columns for clean output
+    _drop_cols = [
+        c for c in stream_df.columns
+        if c.endswith("_results_struct") or c in (
+            "aligned_entities", "response", "_ai_detection_failed",
+            "_detection_status", "_metadata",
+        )
+    ]
+    stream_df = stream_df.drop(*_drop_cols)
+
+    # Ensure output table exists
+    if not spark.catalog.tableExists(output_table):
+        stream_df.limit(0).write.format("delta").option("mergeSchema", "true").saveAsTable(output_table)
+
+    _batch_stats: list = []
+    write_batch_fn = _make_write_batch(
+        doc_id_column, output_table, text_columns[0], False, _batch_stats
+    )
+
+    return _run_streaming_query(
+        spark, stream_df, checkpoint_path, num_cores, write_batch_fn, _batch_stats,
+        processing_time=trigger_processing_time,
+    )

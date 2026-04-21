@@ -18,7 +18,7 @@ include:
 artifacts:
   default:
     type: whl
-    build: poetry build
+    build: uv build
     path: .
     files:
       - source: dist/dbxredact-${var.package_version}-py3-none-any.whl

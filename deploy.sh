@@ -2,7 +2,22 @@
 # Deploy dbxredact to Databricks
 # Usage: ./deploy.sh [dev|prod] [--validate-only] [--yes|-y]
 
-set -e
+set -euo pipefail
+
+# Bridge pip index config to UV_INDEX_URL for internal PyPI proxies
+if [ -z "${UV_INDEX_URL:-}" ]; then
+    _pip_idx=$(pip3 config get global.index-url 2>/dev/null || true)
+    [ -n "$_pip_idx" ] && export UV_INDEX_URL="$_pip_idx"
+fi
+
+cleanup() {
+    local code=$?
+    if [ $code -ne 0 ]; then
+        echo ""
+        echo "ERROR: deploy.sh failed (exit $code). Check the output above."
+    fi
+}
+trap cleanup EXIT
 
 ENV="${1:-dev}"
 VALIDATE_ONLY=""
@@ -58,17 +73,17 @@ source "${ENV_FILE}"
 set +a
 
 # Validate required variables
-if [ -z "${DATABRICKS_HOST}" ]; then
+if [ -z "${DATABRICKS_HOST:-}" ]; then
     echo "Error: DATABRICKS_HOST not set in ${ENV_FILE}"
     exit 1
 fi
 
-if [ -z "${CATALOG}" ]; then
+if [ -z "${CATALOG:-}" ]; then
     echo "Error: CATALOG not set in ${ENV_FILE}"
     exit 1
 fi
 
-if [ -z "${SCHEMA}" ]; then
+if [ -z "${SCHEMA:-}" ]; then
     echo "Error: SCHEMA not set in ${ENV_FILE}"
     exit 1
 fi
@@ -76,7 +91,7 @@ fi
 # App deployment flag (default: true)
 DEPLOY_APP="${DEPLOY_APP:-true}"
 
-if [ -z "${WAREHOUSE_ID}" ] && [ "${DEPLOY_APP}" != "false" ]; then
+if [ -z "${WAREHOUSE_ID:-}" ] && [ "${DEPLOY_APP}" != "false" ]; then
     echo "Error: WAREHOUSE_ID not set in ${ENV_FILE} (required when DEPLOY_APP=true)"
     exit 1
 fi
@@ -110,7 +125,11 @@ if confirm "Generate databricks.yml from template for target '${TARGET}' on ${DA
         -e "s|__PACKAGE_VERSION__|${PACKAGE_VERSION}|g" \
         databricks.yml.template > databricks.yml
     if [ "${DEPLOY_APP}" = "false" ]; then
-        sed -i.bak '/resources\/app\.yml/d' databricks.yml && rm -f databricks.yml.bak
+        if [[ "$OSTYPE" == darwin* ]]; then
+            sed -i '' '/resources\/app\.yml/d' databricks.yml
+        else
+            sed -i '/resources\/app\.yml/d' databricks.yml
+        fi
         echo "Generated databricks.yml (app excluded)"
     else
         echo "Generated databricks.yml"
@@ -119,9 +138,19 @@ fi
 
 # Build wheel
 WHEEL_PATH="dist/${WHEEL_FILE}"
-if confirm "Build wheel with poetry (version ${PACKAGE_VERSION})"; then
-    poetry build
+if confirm "Build wheel with uv (version ${PACKAGE_VERSION})"; then
+    uv build
     echo "Built wheel: ${WHEEL_PATH}"
+fi
+
+# Build frontend (dist/ is deployed with the app, not built at startup)
+if [ "${DEPLOY_APP}" != "false" ]; then
+    if [ -d "apps/dbxredact-app/dist" ] && [ -f "apps/dbxredact-app/dist/index.html" ]; then
+        echo "Frontend dist/ already exists -- skipping build (delete dist/ to force rebuild)"
+    elif confirm "Build frontend (apps/dbxredact-app)"; then
+        (cd apps/dbxredact-app && npm install --no-audit --no-fund && npm run build)
+        echo "Built frontend: apps/dbxredact-app/dist/"
+    fi
 fi
 
 # Upload wheel to volume

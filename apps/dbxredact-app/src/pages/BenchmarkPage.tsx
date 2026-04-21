@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { useGet, apiPost } from "../hooks/useApi";
 import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
 import DataTable, { type Column } from "../components/DataTable";
+import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
 import type { Config, RunStatus, JobHistoryItem } from "../types";
-
-const TERMINAL_STATES = ["TERMINATED", "SKIPPED", "INTERNAL_ERROR"];
+import { TERMINAL_STATES } from "../constants";
 
 export default function BenchmarkPage() {
   const [sourceTable, setSourceTable] = useState<TableRef>(emptyTableRef);
@@ -14,11 +15,10 @@ export default function BenchmarkPage() {
   const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const failCountRef = useRef(0);
   const { toast } = useToast();
   const { data: configs, loading: loadingConfigs, error: configsError } = useGet<Config[]>("/config/");
-  const { data: history, refetch: refetchHistory, error: historyError } = useGet<JobHistoryItem[]>("/benchmark/history");
+  const { data: history, loading: loadingHistory, refetch: refetchHistory, error: historyError } = useGet<JobHistoryItem[]>("/benchmark/history");
 
   const displayError = error || configsError || historyError || "";
 
@@ -30,42 +30,48 @@ export default function BenchmarkPage() {
     if (configs?.length && !configId) setConfigId(configs[0].config_id);
   }, [configs]);
 
+  const pollCountRef = useRef(0);
+
   useEffect(() => {
-    if (runStatus && runStatus.state && !TERMINAL_STATES.includes(runStatus.state)) {
-      failCountRef.current = 0;
-      pollRef.current = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/benchmark/status/${runStatus.run_id}`);
-          if (res.ok) {
-            failCountRef.current = 0;
-            const updated: RunStatus = await res.json();
-            setRunStatus(updated);
-            if (updated.state && TERMINAL_STATES.includes(updated.state)) {
-              clearInterval(pollRef.current!);
-              pollRef.current = null;
-              refetchHistory();
-            }
-          } else {
-            failCountRef.current++;
-            if (failCountRef.current >= 5) {
-              clearInterval(pollRef.current!);
-              pollRef.current = null;
-              setRunStatus((prev) => prev ? { ...prev, state: "TERMINATED", result_state: "UNKNOWN" } : prev);
-              refetchHistory();
-            }
+    if (!runStatus?.state || TERMINAL_STATES.includes(runStatus.state)) return;
+    failCountRef.current = 0;
+    pollCountRef.current = 0;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    async function poll() {
+      try {
+        const res = await fetch(`/api/benchmark/status/${runStatus!.run_id}`);
+        if (res.ok) {
+          failCountRef.current = 0;
+          const updated: RunStatus = await res.json();
+          setRunStatus(updated);
+          if (updated.state && TERMINAL_STATES.includes(updated.state)) {
+            refetchHistory();
+            return;
           }
-        } catch {
+        } else {
           failCountRef.current++;
           if (failCountRef.current >= 5) {
-            clearInterval(pollRef.current!);
-            pollRef.current = null;
             setRunStatus((prev) => prev ? { ...prev, state: "TERMINATED", result_state: "UNKNOWN" } : prev);
             refetchHistory();
+            return;
           }
         }
-      }, 5000);
+      } catch {
+        failCountRef.current++;
+        if (failCountRef.current >= 5) {
+          setRunStatus((prev) => prev ? { ...prev, state: "TERMINATED", result_state: "UNKNOWN" } : prev);
+          refetchHistory();
+          return;
+        }
+      }
+      pollCountRef.current++;
+      const interval = Math.min(3000 * Math.pow(1.5, Math.min(pollCountRef.current, 10)), 30000);
+      timeoutId = setTimeout(poll, interval);
     }
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    timeoutId = setTimeout(poll, 3000);
+    return () => { if (timeoutId) clearTimeout(timeoutId); };
   }, [runStatus?.run_id, runStatus?.state]);
 
   const qualified = toQualified(sourceTable);
@@ -102,7 +108,7 @@ export default function BenchmarkPage() {
       }`}>{h.status}</span>
     )},
     { key: "started_at", header: "Started", render: (h) => <span className="text-gray-500 dark:text-gray-400">{h.started_at}</span> },
-    { key: "run_page_url", header: "", render: (h) =>
+    { key: "run_page_url", header: "", sortable: false, searchable: false, render: (h) =>
       h.run_page_url ? (
         <a href={h.run_page_url as string} target="_blank" rel="noreferrer"
           className="text-blue-600 dark:text-blue-400 underline text-xs">View</a>
@@ -125,7 +131,7 @@ export default function BenchmarkPage() {
         <div>
           <label className="block text-sm font-medium mb-1">Configuration</label>
           {loadingConfigs ? (
-            <p className="text-xs text-gray-400">Loading configs...</p>
+            <SkeletonRows rows={2} />
           ) : !configs?.length ? (
             <p className="text-xs text-gray-400">No configs found. Create one on the Config page first.</p>
           ) : (
@@ -168,12 +174,32 @@ export default function BenchmarkPage() {
             <span>Run #{runStatus.run_id} -- <b>{runStatus.state}</b></span>
             {runStatus.result_state && <span className="opacity-70">({runStatus.result_state})</span>}
           </div>
-          {runStatus.run_page_url && (
-            <a href={runStatus.run_page_url} target="_blank" rel="noreferrer"
-              className="text-blue-600 dark:text-blue-400 underline text-xs mt-1 inline-block">
-              View in Databricks
-            </a>
-          )}
+          <div className="flex items-center gap-3 mt-1">
+            {runStatus.run_page_url && (
+              <a href={runStatus.run_page_url} target="_blank" rel="noreferrer"
+                className="text-blue-600 dark:text-blue-400 underline text-xs">
+                View in Databricks
+              </a>
+            )}
+            {!isActive && (runStatus.result_state === "SUCCESS" || runStatus.state === "TERMINATED") && (
+              <Link to="/metrics" className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium">
+                View Metrics
+              </Link>
+            )}
+            {isActive && (
+              <button className="text-xs text-red-600 dark:text-red-400 underline"
+                onClick={async () => {
+                  try {
+                    await apiPost(`/benchmark/cancel/${runStatus.run_id}`, {});
+                    setRunStatus((prev) => prev ? { ...prev, state: "CANCELLED", result_state: "CANCELLED" } : prev);
+                    toast("Benchmark cancelled");
+                    refetchHistory();
+                  } catch (e: unknown) {
+                    setError(e instanceof Error ? e.message : "Failed to cancel");
+                  }
+                }}>Cancel</button>
+            )}
+          </div>
         </div>
       )}
 
@@ -181,6 +207,7 @@ export default function BenchmarkPage() {
         Recent Benchmark Runs
         <button type="button" onClick={() => refetchHistory()} className="btn-secondary text-sm">Refresh</button>
       </h3>
+      {loadingHistory && <SkeletonRows rows={3} className="mb-4" />}
       <DataTable<JobHistoryItem & Record<string, unknown>>
         data={(history ?? []) as (JobHistoryItem & Record<string, unknown>)[]}
         rowKey={(h) => String(h.run_id)}

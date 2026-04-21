@@ -21,10 +21,16 @@ from .config import (
     ENTITY_TEXT_IGNORE_PATTERNS,
     should_ignore_entity,
     GLINER_LABEL_MAP,
+    GLINER_MODEL_PRESETS,
+    get_gliner_preset,
     DEFAULT_GLINER_THRESHOLD,
     JUDGE_PROMPT_SKELETON,
     NEXT_ACTION_PROMPT_SKELETON,
     PROMPT_VERSION,
+    PHI_PROMPT_SKELETON_ES,
+    TRANSLATION_PROMPT_SKELETON,
+    REVIEW_PROMPT_SKELETON,
+    PROMPT_SKELETON_BY_LANGUAGE,
     RedactionConfig,
     _entity_schema,
     MIN_SCORE_THRESHOLD,
@@ -38,6 +44,8 @@ from .utils import (
     calculate_string_overlap,
     build_offset_map,
 )
+
+from .translation import translate_column
 
 from .analyzer import SpacyModelNotFoundError
 
@@ -86,10 +94,17 @@ from .redaction import (
     RedactionStrategy,
 )
 
+from .masking import (
+    apply_structured_masking,
+    MaskingStrategy,
+    MASKING_RULES,
+)
+
 from .metadata import (
     get_columns_by_tag,
     get_protected_columns,
     get_table_metadata,
+    discover_pii_columns,
 )
 
 from .active_learning import (
@@ -115,9 +130,12 @@ from .pipeline import (
     run_redaction_pipeline,
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
+    run_table_redaction,
+    run_ingestion_redaction_pipeline,
     OutputStrategy,
     OutputMode,
     AlignmentMode,
+    MultiColumnStrategy,
 )
 
 from .judge import (
@@ -135,14 +153,22 @@ __all__ = [
     "ENTITY_TEXT_IGNORE_PATTERNS",
     "should_ignore_entity",
     "GLINER_LABEL_MAP",
+    "GLINER_MODEL_PRESETS",
+    "get_gliner_preset",
     "DEFAULT_GLINER_THRESHOLD",
     "JUDGE_PROMPT_SKELETON",
     "NEXT_ACTION_PROMPT_SKELETON",
     "PROMPT_VERSION",
+    "PHI_PROMPT_SKELETON_ES",
+    "TRANSLATION_PROMPT_SKELETON",
+    "REVIEW_PROMPT_SKELETON",
+    "PROMPT_SKELETON_BY_LANGUAGE",
     "RedactionConfig",
     "_entity_schema",
     "MIN_SCORE_THRESHOLD",
     "MIN_GLINER_THRESHOLD",
+    # Translation
+    "translate_column",
     # Utils
     "is_fuzzy_match",
     "is_overlap",
@@ -183,10 +209,15 @@ __all__ = [
     "create_redaction_audit_udf",
     "create_redacted_table",
     "RedactionStrategy",
+    # Masking
+    "apply_structured_masking",
+    "MaskingStrategy",
+    "MASKING_RULES",
     # Metadata
     "get_columns_by_tag",
     "get_protected_columns",
     "get_table_metadata",
+    "discover_pii_columns",
     # Active Learning
     "compute_document_uncertainty",
     "build_review_queue",
@@ -207,9 +238,12 @@ __all__ = [
     "run_redaction_pipeline",
     "run_redaction_pipeline_streaming",
     "run_redaction_pipeline_by_tag",
+    "run_table_redaction",
+    "run_ingestion_redaction_pipeline",
     "OutputStrategy",
     "OutputMode",
     "AlignmentMode",
+    "MultiColumnStrategy",
     # Judge
     "run_judge_evaluation",
     "compute_judge_summary",

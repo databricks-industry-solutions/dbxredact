@@ -22,6 +22,8 @@ class ConfigCreate(BaseModel):
     gliner_max_words: Optional[int] = 256
     presidio_model_size: Optional[str] = "trf"
     presidio_pattern_only: Optional[bool] = False
+    language: str = "en"
+    translate_to: Optional[str] = "none"
     extra_params: Optional[Dict[str, Any]] = None
 
 
@@ -41,6 +43,7 @@ class ConfigResponse(ConfigCreate):
 class PipelineRunRequest(BaseModel):
     config_id: str
     source_table: str
+    redaction_scope: Literal["single_column", "full_table"] = "single_column"
     text_column: str = "text"
     doc_id_column: str = "doc_id"
     output_table: Optional[str] = None
@@ -49,6 +52,10 @@ class PipelineRunRequest(BaseModel):
     cluster_profile: str = "cpu_small"
     refresh_approach: str = "full"
     output_mode: Literal["separate", "in_place"] = "separate"
+    text_columns: Optional[List[str]] = None
+    structured_columns: Optional[Dict[str, str]] = None
+    masking_strategy: Optional[str] = "mask"
+    output_strategy: Literal["production", "validation"] = "production"
 
 
 class RunStatusResponse(BaseModel):

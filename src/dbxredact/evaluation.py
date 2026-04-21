@@ -214,6 +214,15 @@ def _calculate_metrics_inner(
         else 0.0
     )
 
+    grand_total = tp + fp + tn + fn
+    if grand_total > 0 and tn / grand_total > 0.99:
+        logger.warning(
+            "TN is %.1f%% of total counts -- accuracy/specificity/NPV are inflated "
+            "by character-level counting and should not be used for detection quality "
+            "assessment. Use precision/recall/F1 instead.",
+            100.0 * tn / grand_total,
+        )
+
     return {
         "true_positives": tp,
         "false_positives": fp,
@@ -251,16 +260,24 @@ def format_contingency_table(metrics: Dict[str, Any]) -> pd.DataFrame:
 
 
 def format_metrics_summary(metrics: Dict[str, Any]) -> pd.DataFrame:
-    """Format key metrics as a summary DataFrame."""
+    """Format key metrics as a summary DataFrame.
+
+    Accuracy, Specificity, and NPV are labelled "(char-level)" because they
+    are computed from character-level true-negative counts and are typically
+    inflated to ~1.0 regardless of detection quality.
+    """
     summary_data = {
-        "Metric": ["Accuracy", "Precision", "Recall", "Specificity", "NPV", "F1 Score"],
+        "Metric": [
+            "Precision", "Recall", "F1 Score",
+            "Accuracy (char-level)", "Specificity (char-level)", "NPV (char-level)",
+        ],
         "Value": [
-            metrics["accuracy"],
             metrics["precision"],
             metrics["recall"],
+            metrics["f1_score"],
+            metrics["accuracy"],
             metrics["specificity"],
             metrics["npv"],
-            metrics["f1_score"],
         ],
     }
 
@@ -297,6 +314,8 @@ def metrics_to_long_format(
         "false_negatives",
     ]
 
+    _CHAR_LEVEL_METRICS = {"accuracy", "specificity", "npv", "true_negatives"}
+
     rows = []
     timestamp = datetime.datetime.now()
 
@@ -307,6 +326,7 @@ def metrics_to_long_format(
                 "method_name": method_name,
                 "metric_name": metric_name,
                 "metric_value": float(metrics[metric_name]),
+                "metric_basis": "character" if metric_name in _CHAR_LEVEL_METRICS else "entity",
                 "timestamp": timestamp,
             }
             if run_metadata:

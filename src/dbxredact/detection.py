@@ -4,19 +4,21 @@ import logging
 import time
 from typing import Optional
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import col, expr
+from pyspark.sql.functions import col, collect_list, expr, max as spark_max, monotonically_increasing_id
 
 from .presidio import make_presidio_batch_udf
-from .ai_detector import make_prompt, format_entity_response_object_udf, _get_format_entity_udf
+from .ai_detector import make_prompt, _get_format_entity_udf
 from .analyzer import SpacyModelNotFoundError
 from .config import (
     LABEL_ENUMS,
     PHI_PROMPT_SKELETON,
+    PROMPT_SKELETON_BY_LANGUAGE,
     DEFAULT_PRESIDIO_SCORE_THRESHOLD,
     DEFAULT_GLINER_MODEL,
     DEFAULT_GLINER_THRESHOLD,
     DEFAULT_GLINER_MAX_WORDS,
     DEFAULT_AI_REASONING_EFFORT,
+    DEFAULT_AI_OVERLAP_CHARS,
     RedactionConfig,
 )
 
@@ -189,6 +191,115 @@ def run_ai_query_detection(
     return result_df
 
 
+def _run_ai_chunked(
+    spark: SparkSession,
+    df: DataFrame,
+    doc_id_column: str,
+    text_column: str,
+    endpoint: str,
+    num_cores: int,
+    reasoning_effort: str,
+    ai_model_type: str,
+    ai_max_chars: int,
+    ai_overlap_chars: int,
+    prompt_skeleton: str = PHI_PROMPT_SKELETON,
+    labels: str = LABEL_ENUMS,
+) -> DataFrame:
+    """Run AI detection with text chunking for long documents.
+
+    Splits text exceeding ai_max_chars into overlapping chunks, runs ai_query
+    per chunk, offset-corrects entity positions, and re-aggregates per row.
+    Batch-only -- not streaming-safe (uses groupBy).
+    """
+    from .ai_detector import (
+        _get_format_entity_udf,
+        _get_merge_chunks_udf,
+        _get_offset_correct_udf,
+    )
+
+    step = ai_max_chars - ai_overlap_chars
+
+    original_df = df.withColumn("_row_id", monotonically_increasing_id())
+    original_df = original_df.cache()
+    original_df.count()
+
+    chunk_sql = f"""
+      explode(transform(
+        sequence(0, greatest(coalesce(length(CAST({text_column} AS STRING)), 1) - 1, 0), {step}),
+        x -> named_struct(
+          'chunk_text', substring(CAST({text_column} AS STRING), x + 1, {ai_max_chars}),
+          'char_offset', x
+        )
+      ))
+    """
+    chunk_df = original_df.select("_row_id", expr(chunk_sql).alias("_chunk"))
+
+    prompt = make_prompt(prompt_skeleton, labels=labels)
+    prompt_parts = prompt.split("{med_text}")
+    prompt_prefix = prompt_parts[0].replace("'", "''")
+    prompt_suffix = prompt_parts[1].replace("'", "''") if len(prompt_parts) > 1 else ""
+    prompt_concat = f"concat('{prompt_prefix}', CAST(_chunk.chunk_text AS STRING), '{prompt_suffix}')"
+
+    if ai_model_type == "external":
+        ai_query_expr = f"ai_query('{endpoint}', {prompt_concat}, failOnError => false)"
+    else:
+        ai_query_expr = f"""
+            ai_query(
+                '{endpoint}',
+                {prompt_concat},
+                failOnError => false,
+                returnType => 'STRUCT<result: ARRAY<STRUCT<entity: STRING, entity_type: STRING>>>',
+                modelParameters => named_struct('reasoning_effort', '{reasoning_effort}')
+            )
+        """
+
+    entity_udf = _get_format_entity_udf()
+
+    if ai_model_type == "external":
+        chunk_df = (
+            chunk_df
+            .withColumn("_raw_response", expr(ai_query_expr))
+            .withColumn("_chunk_entities", entity_udf(col("_raw_response"), col("_chunk.chunk_text")))
+        )
+        has_error = col("_raw_response").isNull()
+    else:
+        chunk_df = (
+            chunk_df
+            .withColumn("_response", expr(ai_query_expr))
+            .withColumn("_chunk_entities", entity_udf(col("_response.result"), col("_chunk.chunk_text")))
+        )
+        has_error = col("_response.errorMessage").isNotNull()
+
+    offset_correct_udf = _get_offset_correct_udf()
+    chunk_df = chunk_df.withColumn(
+        "_chunk_entities",
+        offset_correct_udf(col("_chunk_entities"), col("_chunk.char_offset")),
+    )
+
+    chunk_df = chunk_df.withColumn("_chunk_failed", has_error)
+
+    merge_udf = _get_merge_chunks_udf()
+    agg_df = (
+        chunk_df
+        .groupBy("_row_id")
+        .agg(
+            collect_list("_chunk_entities").alias("_collected_entities"),
+            spark_max("_chunk_failed").alias("_ai_detection_failed"),
+        )
+        .withColumn("ai_results_struct", merge_udf(col("_collected_entities")))
+        .drop("_collected_entities")
+    )
+
+    result_df = (
+        original_df
+        .join(agg_df, on="_row_id", how="left")
+        .drop("_row_id")
+    )
+
+    original_df.unpersist()
+    return result_df
+
+
 def run_gliner_detection(
     df: DataFrame,
     doc_id_column: str,
@@ -251,6 +362,8 @@ def run_detection(
     presidio_model_size: str = None,
     presidio_pattern_only: bool = False,
     ai_model_type: str = "foundation",
+    ai_max_chars: Optional[int] = None,
+    ai_overlap_chars: int = DEFAULT_AI_OVERLAP_CHARS,
     row_count: Optional[int] = None,
     config: Optional[RedactionConfig] = None,
 ) -> DataFrame:
@@ -260,6 +373,7 @@ def run_detection(
     Repartitions once up-front so individual detectors skip their own
     count()/repartition, avoiding redundant Spark actions on the lazy DAG.
     """
+    language = "en"
     if config is not None:
         from dataclasses import fields as dc_fields
         _cfg_map = {f.name: getattr(config, f.name) for f in dc_fields(config)}
@@ -277,6 +391,21 @@ def run_detection(
         presidio_model_size = _cfg_map.get("presidio_model_size", presidio_model_size)
         presidio_pattern_only = _cfg_map.get("presidio_pattern_only", presidio_pattern_only)
         ai_model_type = _cfg_map.get("ai_model_type", ai_model_type)
+        ai_max_chars = _cfg_map.get("ai_max_chars", ai_max_chars)
+        ai_overlap_chars = _cfg_map.get("ai_overlap_chars", ai_overlap_chars)
+        language = _cfg_map.get("language", "en")
+
+    # Non-English: force AI_QUERY only
+    if language != "en":
+        if use_presidio:
+            logger.warning("Presidio disabled for language='%s' (English-only). Using AI_QUERY.", language)
+            use_presidio = False
+        if use_gliner:
+            logger.warning("GLiNER disabled for language='%s' (English-only). Using AI_QUERY.", language)
+            use_gliner = False
+        use_ai_query = True
+
+    prompt_skeleton = PROMPT_SKELETON_BY_LANGUAGE.get(language, PHI_PROMPT_SKELETON)
 
     # Repartition once; all detectors will use _repartition=False
     n_parts = _smart_partitions(df, num_cores, row_count=row_count)
@@ -315,17 +444,33 @@ def run_detection(
             endpoint = "databricks-gpt-oss-120b"
 
         t_ai = time.time()
-        result_df = run_ai_query_detection(
-            spark,
-            result_df,
-            doc_id_column=doc_id_column,
-            text_column=text_column,
-            endpoint=endpoint,
-            num_cores=num_cores,
-            reasoning_effort=reasoning_effort,
-            ai_model_type=ai_model_type,
-            _repartition=False,
-        )
+        if ai_max_chars is not None:
+            result_df = _run_ai_chunked(
+                spark,
+                result_df,
+                doc_id_column,
+                text_column,
+                endpoint,
+                num_cores,
+                reasoning_effort,
+                ai_model_type,
+                ai_max_chars,
+                ai_overlap_chars,
+                prompt_skeleton=prompt_skeleton,
+            )
+        else:
+            result_df = run_ai_query_detection(
+                spark,
+                result_df,
+                doc_id_column=doc_id_column,
+                text_column=text_column,
+                endpoint=endpoint,
+                num_cores=num_cores,
+                prompt_skeleton=prompt_skeleton,
+                reasoning_effort=reasoning_effort,
+                ai_model_type=ai_model_type,
+                _repartition=False,
+            )
         result_df = result_df.cache()
         result_df.count()
         _prior_caches.append(result_df)

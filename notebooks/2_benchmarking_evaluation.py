@@ -206,14 +206,14 @@ if "aligned" in available_methods:
 
 # COMMAND ----------
 
-text_dict = (
+from pyspark.sql.functions import sum as spark_sum, length
+
+all_tokens = (
     ground_truth_df.select("doc_id", "text")
     .distinct()
-    .toPandas()
-    .to_dict(orient="list")
-)
-corpus = "\n".join(text_dict["text"])
-all_tokens = len(corpus)
+    .select(spark_sum(length(col("text"))))
+    .first()[0]
+) or 0
 
 print(f"Total tokens in corpus: {all_tokens:,}")
 
@@ -295,7 +295,6 @@ for mode in MATCH_MODES:
                 "Precision": metrics["precision"],
                 "Recall": metrics["recall"],
                 "F1 Score": metrics["f1_score"],
-                "Accuracy": metrics["accuracy"],
             }
         )
 

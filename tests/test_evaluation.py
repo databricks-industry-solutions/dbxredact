@@ -104,6 +104,16 @@ class TestCalculateMetrics:
         assert m["precision"] == 0.5
         assert m["recall"] == 0.5
 
+    def test_tn_dominance_warning(self, spark, _eval_schema):
+        """When total_tokens is huge, a warning about inflated char-level metrics is logged."""
+        from unittest.mock import patch
+        rows = [_make_eval_row("d1", 0, 5, "John", "d1", 0, 5, "John")]
+        df = spark.createDataFrame(rows)
+        with patch("dbxredact.evaluation.logger") as mock_logger:
+            calculate_metrics(df, total_tokens=1_000_000, **_eval_schema)
+            mock_logger.warning.assert_called_once()
+            assert "inflated" in mock_logger.warning.call_args[0][0]
+
 
 # ---------------------------------------------------------------------------
 # Helper to build GT / detection DataFrames for diagnose_strict_failures
@@ -247,3 +257,25 @@ class TestValidateMetricName:
     def test_rejects_empty(self):
         with pytest.raises(ValueError):
             _validate_metric_name("")
+
+
+class TestMetricsToLongFormat:
+
+    def test_metric_basis_field(self):
+        from dbxredact.evaluation import metrics_to_long_format
+        metrics = {
+            "accuracy": 0.99, "precision": 0.8, "recall": 0.7,
+            "specificity": 0.99, "npv": 0.99, "f1_score": 0.74,
+            "true_positives": 5, "false_positives": 1,
+            "true_negatives": 9999, "false_negatives": 2,
+        }
+        df = metrics_to_long_format(metrics, "ds", "method")
+        basis_map = dict(zip(df["metric_name"], df["metric_basis"]))
+        assert basis_map["precision"] == "entity"
+        assert basis_map["recall"] == "entity"
+        assert basis_map["f1_score"] == "entity"
+        assert basis_map["accuracy"] == "character"
+        assert basis_map["specificity"] == "character"
+        assert basis_map["npv"] == "character"
+        assert basis_map["true_negatives"] == "character"
+        assert basis_map["true_positives"] == "entity"

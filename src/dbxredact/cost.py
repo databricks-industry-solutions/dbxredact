@@ -1,8 +1,12 @@
 """AI Query cost estimation utilities."""
 
 import logging
+import math
+from typing import Optional
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import col, count as spark_count, length, sum as spark_sum
+
+from .config import DEFAULT_AI_OVERLAP_CHARS
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +39,8 @@ def estimate_ai_query_cost(
     endpoint: str,
     prompt_overhead_chars: int = PROMPT_OVERHEAD_CHARS,
     output_ratio: float = ESTIMATED_OUTPUT_RATIO,
+    ai_max_chars: Optional[int] = None,
+    ai_overlap_chars: int = DEFAULT_AI_OVERLAP_CHARS,
 ) -> dict:
     """Estimate the cost of running AI Query detection on a DataFrame.
 
@@ -55,7 +61,14 @@ def estimate_ai_query_cost(
 
     total_chars = stats["total_chars"] or 0
     row_count = stats["row_count"]
-    input_chars = total_chars + (row_count * prompt_overhead_chars)
+    if ai_max_chars and row_count and total_chars:
+        step = ai_max_chars - ai_overlap_chars
+        avg_chars = total_chars / row_count
+        avg_chunks = max(1, math.ceil(avg_chars / step)) if avg_chars > ai_max_chars else 1
+        overlap_extra = max(0, avg_chunks - 1) * ai_overlap_chars * row_count
+        input_chars = (total_chars + overlap_extra) + (row_count * avg_chunks * prompt_overhead_chars)
+    else:
+        input_chars = total_chars + (row_count * prompt_overhead_chars)
     input_tokens = int(input_chars * TOKENS_PER_CHAR)
     output_tokens = int(input_tokens * output_ratio)
 

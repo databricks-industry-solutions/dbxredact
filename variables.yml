@@ -1,37 +1,19 @@
 variables:
-  workspace_host:
-    description: "Databricks workspace host URL"
-    default: ""
-  deploying_user:
-    description: "User deploying the bundle"
-    default: ""
+  # --- Used by databricks.yml.template ---
   current_user:
     description: "Current user for production run_as"
     default: ""
   current_working_directory:
     description: "Root path for production deployment"
     default: ""
+
+  # --- Used by resources/jobs.yml and resources/app.yml ---
   catalog:
     description: "Unity Catalog name"
     default: ""
   schema:
     description: "Schema name"
     default: "redaction"
-  wheel_volume:
-    description: "Volume path for wheel uploads"
-    default: "/Volumes/${var.catalog}/${var.schema}/wheels"
-  checkpoints_volume:
-    description: "Volume path for checkpoint uploads"
-    default: "/Volumes/${var.catalog}/${var.schema}/checkpoints/{output_table}"
-  refresh_approach:
-    description: "ETL approach - full or incremental, incremental will use a streaming approach."
-    default: "full"
-  redaction_strategy:
-    description: Should redacted text be replaced with a generic placeholder or an entity type placeholder?
-    default: "typed"
-  output_strategy:
-    description: Should the redacted entities be included in the output table as a column (validation), or should only the primary key and redacted text be included (production)?
-    default: "production"
   max_rows:
     description: "Maximum rows to process in the redaction pipeline. Set to 0 for unlimited."
     default: "1000"
@@ -41,18 +23,18 @@ variables:
   reasoning_effort:
     description: "AI Query reasoning effort level: low, medium, or high"
     default: "low"
+  gliner_model:
+    description: "GLiNER model: nvidia/gliner-PII (best accuracy, CC-BY-NC) or urchade/gliner_multi_pii-v1 (Apache 2.0)"
+    default: "nvidia/gliner-PII"
   gliner_max_words:
     description: "GLiNER chunk size in words (256=fine-grained/high recall, 512=faster)"
     default: "256"
-  cluster_logs_volume:
-    description: "Volume path for cluster log delivery"
-    default: "/Volumes/${var.catalog}/${var.schema}/cluster_logs"
-  presidio_pattern_only:
-    description: "When true, Presidio uses only pattern recognizers (no spaCy). Default for fast profile."
-    default: "true"
-  alignment_mode:
-    description: "Entity alignment mode: 'union' (recall-optimized, any detector) or 'consensus' (precision-optimized, majority agreement)"
-    default: "union"
+  language:
+    description: "Source text language: en (English), es (Spanish). Non-English uses AI_QUERY only."
+    default: "en"
+  translate_to:
+    description: "Translate redacted text to this language after redaction. 'none' to skip. Adds 3x AI_QUERY cost."
+    default: "none"
   benchmark_dataset:
     description: "Base table name for benchmark data (source, ground truth, and intermediate tables are derived from this)"
     default: "jsl_benchmark"
