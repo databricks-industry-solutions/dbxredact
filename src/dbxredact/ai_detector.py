@@ -196,3 +196,89 @@ def _get_format_entity_udf():
     if _format_entity_udf is None:
         _format_entity_udf = pandas_udf(format_entity_response_object_udf, _entity_schema())
     return _format_entity_udf
+
+
+def _offset_entities(entities: list, char_offset: int) -> list:
+    """Shift entity start/end positions by char_offset."""
+    if not entities or char_offset == 0:
+        return entities
+    return [
+        {**e, "start": e["start"] + char_offset, "end": e["end"] + char_offset}
+        for e in entities
+    ]
+
+
+def _deduplicate_chunk_entities(entities: list) -> list:
+    """Merge entities from overlapping chunk regions.
+
+    For exact (start, end, entity_type) duplicates, keep one.
+    For same-type entities whose spans overlap, keep the longer span.
+    """
+    if not entities:
+        return []
+    sorted_ents = sorted(entities, key=lambda e: (e.get("start", 0), -(e.get("end", 0) - e.get("start", 0))))
+    result = []
+    for ent in sorted_ents:
+        merged = False
+        for i, existing in enumerate(result):
+            if (ent.get("entity_type") == existing.get("entity_type")
+                    and ent.get("start", 0) < existing.get("end", 0)
+                    and ent.get("end", 0) > existing.get("start", 0)):
+                if (ent.get("end", 0) - ent.get("start", 0)) > (existing.get("end", 0) - existing.get("start", 0)):
+                    result[i] = ent
+                merged = True
+                break
+        if not merged:
+            result.append(ent)
+    return result
+
+
+_offset_correct_udf = None
+
+
+def _get_offset_correct_udf():
+    """Lazily create pandas_udf that offset-corrects entity positions."""
+    global _offset_correct_udf
+    if _offset_correct_udf is None:
+        schema = _entity_schema()
+
+        @pandas_udf(schema)
+        def offset_correct_udf(entities_col: pd.Series, offsets: pd.Series) -> pd.Series:
+            results = []
+            for entities, offset in zip(entities_col, offsets):
+                ent_list = []
+                if entities is not None:
+                    for e in entities:
+                        ent_list.append(e.asDict() if hasattr(e, "asDict") else dict(e))
+                off = int(offset) if offset is not None and pd.notna(offset) else 0
+                results.append(_offset_entities(ent_list, off))
+            return pd.Series(results)
+
+        _offset_correct_udf = offset_correct_udf
+    return _offset_correct_udf
+
+
+_merge_chunks_udf = None
+
+
+def _get_merge_chunks_udf():
+    """Lazily create pandas_udf that flattens + deduplicates collected chunk entity lists."""
+    global _merge_chunks_udf
+    if _merge_chunks_udf is None:
+        schema = _entity_schema()
+
+        @pandas_udf(schema)
+        def merge_chunks_udf(collected: pd.Series) -> pd.Series:
+            results = []
+            for entity_lists in collected:
+                flat = []
+                if entity_lists is not None:
+                    for chunk_entities in entity_lists:
+                        if chunk_entities is not None:
+                            for e in chunk_entities:
+                                flat.append(e.asDict() if hasattr(e, "asDict") else dict(e))
+                results.append(_deduplicate_chunk_entities(flat))
+            return pd.Series(results)
+
+        _merge_chunks_udf = merge_chunks_udf
+    return _merge_chunks_udf
