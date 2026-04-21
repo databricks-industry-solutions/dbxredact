@@ -283,6 +283,8 @@ DEFAULT_OVERLAP_TOLERANCE = 0
 # AI entities get a default confidence of 0.8 since the LLM does not provide a per-entity score
 DEFAULT_AI_CONFIDENCE_SCORE = 0.8
 DEFAULT_AI_REASONING_EFFORT = "low"  # Valid: "low", "medium", "high"
+DEFAULT_AI_MAX_CHARS = 300_000
+DEFAULT_AI_OVERLAP_CHARS = 1_000
 
 # ---------------------------------------------------------------------------
 # GLiNER defaults  (nvidia/gliner-PII)
@@ -719,6 +721,8 @@ class RedactionConfig:
     presidio_model_size: Optional[str] = None
     presidio_pattern_only: bool = False
     ai_model_type: str = "foundation"
+    ai_max_chars: Optional[int] = DEFAULT_AI_MAX_CHARS
+    ai_overlap_chars: int = DEFAULT_AI_OVERLAP_CHARS
     # Alignment
     alignment_mode: str = "union"
     fuzzy_threshold: int = 50
