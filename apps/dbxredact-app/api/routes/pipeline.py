@@ -76,6 +76,8 @@ async def run_pipeline(body: PipelineRunRequest):
         "allow_consensus_redaction": "true" if config.get("alignment_mode", "union") == "consensus" else "false",
         "audit_table": f"{CATALOG}.{SCHEMA}.redact_audit_log",
         "output_strategy": body.output_strategy,
+        "language": config.get("language", "en"),
+        "translate_to": config.get("translate_to", "none"),
     }
 
     if is_full_table:

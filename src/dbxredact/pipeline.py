@@ -20,13 +20,17 @@ from pyspark.sql.types import (
     DoubleType,
 )
 
-from .detection import run_detection
+from .detection import run_detection, run_ai_query_detection
 from .alignment import align_entities_udf
 from .redaction import create_redaction_udf, create_redaction_audit_udf, RedactionStrategy
 from .masking import apply_structured_masking, MaskingStrategy
 from .metadata import get_columns_by_tag, discover_pii_columns
-from .config import DEFAULT_GLINER_MODEL, DEFAULT_GLINER_THRESHOLD, DEFAULT_GLINER_MAX_WORDS, DEFAULT_AI_REASONING_EFFORT, RedactionConfig
+from .config import (
+    DEFAULT_GLINER_MODEL, DEFAULT_GLINER_THRESHOLD, DEFAULT_GLINER_MAX_WORDS,
+    DEFAULT_AI_REASONING_EFFORT, REVIEW_PROMPT_SKELETON, RedactionConfig,
+)
 from .entity_filter import EntityFilter, apply_safe_filter, apply_block_filter
+from .translation import translate_column
 
 logger = logging.getLogger(__name__)
 
@@ -309,12 +313,17 @@ def _select_output_columns(
     """Select columns based on output strategy.
 
     Production mode now always includes ``_detection_status`` and
-    ``_entity_count`` alongside the redacted text.
+    ``_entity_count`` alongside the redacted text.  When translation
+    columns are present, they are included automatically.
     """
     redacted_col_name = f"{text_column}_redacted"
 
     if output_strategy == "production":
-        wanted = [doc_id_column, redacted_col_name, "_detection_status", "_entity_count"]
+        wanted = [
+            doc_id_column, redacted_col_name, "_detection_status", "_entity_count",
+            f"{text_column}_translated", f"{text_column}_reviewed",
+            "review_entities", "review_entity_count",
+        ]
         return df.select(*[c for c in wanted if c in df.columns])
     else:  # validation
         return df
@@ -330,6 +339,76 @@ def _get_entities_column(df: DataFrame, use_aligned: bool) -> str:
         return "ai_results_struct"
     else:
         raise ValueError("No entity results found in detection output")
+
+
+def _apply_translation_and_review(
+    spark: SparkSession,
+    df: DataFrame,
+    text_column: str,
+    doc_id_column: str,
+    language: str,
+    translate_to: str,
+    redaction_strategy: RedactionStrategy,
+    endpoint: str,
+    num_cores: int,
+    reasoning_effort: str,
+    ai_model_type: str,
+) -> DataFrame:
+    """Translate redacted text and run an English review detection pass.
+
+    Adds columns: {text_column}_translated, {text_column}_reviewed,
+    review_entities, review_entity_count.
+    """
+    redacted_col = f"{text_column}_redacted"
+    translated_col = f"{text_column}_translated"
+    reviewed_col = f"{text_column}_reviewed"
+
+    t0 = time.time()
+    logger.info("5. Translating %s -> %s ...", language, translate_to)
+    df = translate_column(
+        spark, df,
+        text_column=redacted_col,
+        source_lang=language,
+        target_lang=translate_to,
+        endpoint=endpoint or "databricks-gpt-oss-120b",
+        num_cores=num_cores,
+        reasoning_effort=reasoning_effort,
+        ai_model_type=ai_model_type,
+    )
+    logger.info("Translation done [%.1fs]", time.time() - t0)
+
+    t1 = time.time()
+    logger.info("6. Running English review detection on translated text ...")
+    df = run_ai_query_detection(
+        spark, df,
+        doc_id_column=doc_id_column,
+        text_column=translated_col,
+        endpoint=endpoint or "databricks-gpt-oss-120b",
+        num_cores=num_cores,
+        prompt_skeleton=REVIEW_PROMPT_SKELETON,
+        reasoning_effort=reasoning_effort,
+        ai_model_type=ai_model_type,
+        _repartition=False,
+    )
+
+    # The review detection reuses the "ai_results_struct" column name.
+    # Rename to avoid collision with the original detection pass.
+    df = df.withColumnRenamed("ai_results_struct", "review_entities")
+    if "response" in df.columns:
+        df = df.drop("response")
+    if "raw_response" in df.columns:
+        df = df.drop("raw_response")
+
+    review_audit_udf = create_redaction_audit_udf(strategy=redaction_strategy)
+    df = (
+        df
+        .withColumn("_review_audit", review_audit_udf(col(translated_col), col("review_entities")))
+        .withColumn(reviewed_col, col("_review_audit.redacted_text"))
+        .withColumn("review_entity_count", col("_review_audit.entity_count"))
+        .drop("_review_audit")
+    )
+    logger.info("Review detection + redaction done [%.1fs]", time.time() - t1)
+    return df
 
 
 def run_detection_pipeline(
@@ -669,6 +748,20 @@ def run_redaction_pipeline(
         detection_df, text_column, entities_column, redaction_strategy
     )
 
+    # Translation + review pass (when translate_to is set)
+    _language = config.language if config else "en"
+    _translate_to = config.translate_to if config else None
+    if _translate_to:
+        result_df = result_df.cache()
+        result_df.count()
+        result_df = _apply_translation_and_review(
+            spark, result_df, text_column, doc_id_column,
+            language=_language, translate_to=_translate_to,
+            redaction_strategy=redaction_strategy,
+            endpoint=endpoint, num_cores=num_cores,
+            reasoning_effort=reasoning_effort, ai_model_type=ai_model_type,
+        )
+
     if output_mode == "in_place":
         logger.info("4. Updating %s.%s in-place...", source_table, text_column)
         _write_in_place(spark, result_df, source_table, doc_id_column, text_column)
@@ -926,7 +1019,10 @@ def run_redaction_pipeline_streaming(
 
     if use_ai_query:
         from .detection import run_ai_query_detection
+        from .config import PROMPT_SKELETON_BY_LANGUAGE, PHI_PROMPT_SKELETON as _default_skel
         from pyspark.sql.functions import lit, when
+        _stream_lang = config.language if config else "en"
+        _stream_prompt = PROMPT_SKELETON_BY_LANGUAGE.get(_stream_lang, _default_skel)
         stream_df = run_ai_query_detection(
             spark=spark,
             df=stream_df,
@@ -934,6 +1030,7 @@ def run_redaction_pipeline_streaming(
             text_column=text_column,
             endpoint=endpoint or "databricks-gpt-oss-120b",
             num_cores=num_cores,
+            prompt_skeleton=_stream_prompt,
             reasoning_effort=reasoning_effort,
             ai_model_type=ai_model_type,
             _repartition=False,
@@ -1021,6 +1118,49 @@ def run_redaction_pipeline_streaming(
 
     # Apply redaction
     stream_df = _apply_redaction(stream_df, text_column, entities_column, redaction_strategy)
+
+    # Translation + review pass (when translate_to is set)
+    _s_language = config.language if config else "en"
+    _s_translate_to = config.translate_to if config else None
+    if _s_translate_to:
+        _s_endpoint = endpoint or "databricks-gpt-oss-120b"
+        redacted_col = f"{text_column}_redacted"
+        translated_col = f"{text_column}_translated"
+        reviewed_col = f"{text_column}_reviewed"
+
+        stream_df = translate_column(
+            spark, stream_df,
+            text_column=redacted_col,
+            source_lang=_s_language,
+            target_lang=_s_translate_to,
+            endpoint=_s_endpoint,
+            num_cores=num_cores,
+            reasoning_effort=reasoning_effort,
+            ai_model_type=ai_model_type,
+        )
+        stream_df = run_ai_query_detection(
+            spark, stream_df,
+            doc_id_column=doc_id_column,
+            text_column=translated_col,
+            endpoint=_s_endpoint,
+            num_cores=num_cores,
+            prompt_skeleton=REVIEW_PROMPT_SKELETON,
+            reasoning_effort=reasoning_effort,
+            ai_model_type=ai_model_type,
+            _repartition=False,
+        )
+        stream_df = stream_df.withColumnRenamed("ai_results_struct", "review_entities")
+        for _drop_col in ("response", "raw_response"):
+            if _drop_col in stream_df.columns:
+                stream_df = stream_df.drop(_drop_col)
+        _review_audit_udf = create_redaction_audit_udf(strategy=redaction_strategy)
+        stream_df = (
+            stream_df
+            .withColumn("_review_audit", _review_audit_udf(col(translated_col), col("review_entities")))
+            .withColumn(reviewed_col, col("_review_audit.redacted_text"))
+            .withColumn("review_entity_count", col("_review_audit.entity_count"))
+            .drop("_review_audit")
+        )
 
     # Select output columns (skip for in-place -- we only need doc_id + redacted col)
     if _is_in_place:

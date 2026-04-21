@@ -159,6 +159,121 @@ MedicalText: "SSN 123-45-6789. DOB: 24/07/1974. Phone: 608-555-7714. MRN: 040826
 response: [{{"entity": "123-45-6789", "entity_type": "US_SSN"}}, {{"entity": "24/07/1974", "entity_type": "DATE_TIME"}}, {{"entity": "608-555-7714", "entity_type": "PHONE_NUMBER"}}, {{"entity": "0408267", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{"entity": "15/03/25", "entity_type": "DATE_TIME"}}]
 """
 
+# ---------------------------------------------------------------------------
+# Spanish prompt for AI-based PHI detection
+# ---------------------------------------------------------------------------
+PHI_PROMPT_SKELETON_ES = """
+Eres un experto en la detección de Información de Salud Protegida (PHI) e Información de Identificación Personal (PII). Identificarás todas las entidades PHI/PII en un texto.
+
+La PHI que califica incluye:
+1. Nombres de personas;
+2. Todas las subdivisiones geográficas menores que un Estado, incluyendo dirección, ciudad, municipio, código postal y sus geocódigos equivalentes;
+3. Todos los elementos de fechas (excepto el año) directamente relacionados con un individuo, incluyendo fecha de nacimiento, fecha de ingreso, fecha de alta, fecha de fallecimiento; y todas las edades mayores de 89 años;
+4. Números de teléfono;
+5. Números de fax;
+6. Direcciones de correo electrónico;
+7. Números de seguridad social o equivalentes nacionales (CURP, RFC, DNI, NIE, RUT, etc.);
+8. Números de expediente médico;
+9. Números de beneficiario de plan de salud;
+10. Números de cuenta;
+11. Números de certificado/licencia;
+12. Identificadores de vehículos y números de serie, incluyendo placas;
+13. Identificadores y números de serie de dispositivos;
+14. URLs;
+15. Direcciones IP;
+16. Identificadores biométricos;
+17. Imágenes fotográficas de rostro completo;
+18. Cualquier otro número, característica o código de identificación único.
+
+Entidades adicionales a contar como PII:
+1. Nombres de hospitales e instalaciones de salud, incluyendo abreviaturas.
+
+Presta especial atención a:
+- Números de expediente médico (MRN): códigos numéricos de 5-10 dígitos
+- Números de certificado/licencia
+- Nombres de hospitales/instalaciones: nombres completos Y abreviaturas
+
+Cuando el texto sea financiero o comercial, también presta atención a:
+- Nombres de organizaciones/empresas
+- Números de cuenta financiera
+- IDs de referencia/caso
+- RFC/RUT/EIN/NIT u otros identificadores fiscales
+
+Identificarás toda la PHI/PII utilizando las siguientes etiquetas:
+
+{label_enums}
+
+Responde con una lista de diccionarios como [{{"entity": "María García López", "entity_type": "PERSON"}}, {{"entity": "123-45-6789", "entity_type": "US_SSN"}}]
+
+IMPORTANTE: Devuelve cada entidad EXACTAMENTE como aparece en el texto original. Copia el texto carácter por carácter -- no normalices espacios, corrijas ortografía ni reformules. Si el texto contiene "Juan\nPérez", devuelve "Juan\nPérez", no "Juan Pérez".
+
+Lista cada entidad única solo UNA VEZ. No repitas una entidad aunque aparezca múltiples veces en el texto.
+
+El texto está listado aquí:
+<TextoMedico>
+{{med_text}}
+<TextoMedico/>
+
+EJEMPLOS:
+TextoMedico: "Expediente: 222345 -- Atendí a la paciente María García López hoy a las 11:30 en el Hospital General de Springfield, quien presenta dolor de garganta y temperatura de 39.4°C"
+respuesta: [{{"entity": "María García López", "entity_type": "PERSON"}}, {{"entity": "222345", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{"entity": "Hospital General de Springfield", "entity_type": "HOSPITAL_NAME"}}]
+
+TextoMedico: "CURP: GARL850101HDFRRL09. Teléfono: 55-1234-5678. Correo: maria@ejemplo.com. Fecha de nacimiento: 01/01/1985."
+respuesta: [{{"entity": "GARL850101HDFRRL09", "entity_type": "ID_NUMBER"}}, {{"entity": "55-1234-5678", "entity_type": "PHONE_NUMBER"}}, {{"entity": "maria@ejemplo.com", "entity_type": "EMAIL_ADDRESS"}}, {{"entity": "01/01/1985", "entity_type": "BIRTH_DATE"}}]
+
+TextoMedico: "RE: Transferencia WIRE-2024-081590 -- Transferencia de $50,000 desde cuenta 8820-5567-1243 en Banco Nacional. Contacto: Luis Hernández, RFC LUH850101AB3."
+respuesta: [{{"entity": "WIRE-2024-081590", "entity_type": "ID_NUMBER"}}, {{"entity": "8820-5567-1243", "entity_type": "ID_NUMBER"}}, {{"entity": "Banco Nacional", "entity_type": "ORGANIZATION"}}, {{"entity": "Luis Hernández", "entity_type": "PERSON"}}, {{"entity": "LUH850101AB3", "entity_type": "ID_NUMBER"}}]
+
+TextoMedico: "NSS 123-45-6789. Fecha nac.: 24/07/1974. Tel: 608-555-7714. Expediente: 0408267. Cita programada: 15/03/25."
+respuesta: [{{"entity": "123-45-6789", "entity_type": "US_SSN"}}, {{"entity": "24/07/1974", "entity_type": "DATE_TIME"}}, {{"entity": "608-555-7714", "entity_type": "PHONE_NUMBER"}}, {{"entity": "0408267", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{"entity": "15/03/25", "entity_type": "DATE_TIME"}}]
+"""
+
+# Map language codes to their prompt skeletons
+PROMPT_SKELETON_BY_LANGUAGE = {
+    "en": PHI_PROMPT_SKELETON,
+    "es": PHI_PROMPT_SKELETON_ES,
+}
+
+# ---------------------------------------------------------------------------
+# Translation prompt -- translates redacted text while preserving markers
+# ---------------------------------------------------------------------------
+TRANSLATION_PROMPT_SKELETON = """You are a professional translator. Translate the following text from {source_lang} to {target_lang}.
+
+CRITICAL RULES:
+1. Preserve ALL redaction markers exactly as they appear. These are tokens like [REDACTED], [PERSON], [PHONE_NUMBER], [EMAIL_ADDRESS], [LOCATION], [DATE_TIME], [US_SSN], [MEDICAL_RECORD_NUMBER], [HOSPITAL_NAME], [ORGANIZATION], [ID_NUMBER], [BIRTH_DATE], [APPOINTMENT_DATE_TIME], [DRIVER_LICENSE], [VIN], [IP], [NRP], [UK_NHS], [AU_ACN], [AU_MEDICARE], [AU_TFN] or any text in square brackets that looks like a redaction placeholder.
+2. Do NOT translate, modify, or remove any text inside square brackets.
+3. Translate all other text naturally and fluently.
+4. Maintain the original formatting, paragraph breaks, and structure.
+
+Text to translate:
+{{text}}
+"""
+
+# ---------------------------------------------------------------------------
+# Review prompt -- English detection that ignores existing redaction markers
+# ---------------------------------------------------------------------------
+REVIEW_PROMPT_SKELETON = """You are an expert in Protected Health Information (PHI) and Personally Identifiable Information (PII) detection. You are performing a REVIEW pass on text that has already been partially redacted and translated.
+
+The text contains redaction markers in square brackets like [REDACTED], [PERSON], [PHONE_NUMBER], etc. These are ALREADY HANDLED -- ignore them completely.
+
+Your job: find any REMAINING PHI/PII that was MISSED in the initial redaction pass. Only report entities that are actual unredacted text, NOT the bracket markers themselves.
+
+You will identify remaining PHI/PII with the following enums as the "label":
+
+{label_enums}
+
+Respond with a list of dictionaries such as [{{"entity": "Alice Anderson", "entity_type": "PERSON"}}]
+
+IMPORTANT: Return each entity EXACTLY as it appears in the text. Copy the text character-for-character.
+List each unique entity only ONCE.
+If NO remaining PHI/PII is found, return an empty list: []
+
+The text is listed here:
+<ReviewText>
+{{med_text}}
+<ReviewText/>
+"""
+
 # Default thresholds
 DEFAULT_PRESIDIO_SCORE_THRESHOLD = 0.7
 DEFAULT_FUZZY_MATCH_THRESHOLD = 50
@@ -616,6 +731,9 @@ class RedactionConfig:
     confirm_validation_output: bool = False
     max_rows: Optional[int] = 10000
     entity_filter: Any = field(default=None, repr=False)
+    # Language / translation
+    language: str = "en"
+    translate_to: Optional[str] = None
 
     def __post_init__(self):
         if self.score_threshold < MIN_SCORE_THRESHOLD:
@@ -638,6 +756,16 @@ class RedactionConfig:
             _logger.warning(
                 "gliner_threshold is at governance floor (%s). This should be exceptional.",
                 MIN_GLINER_THRESHOLD,
+            )
+        if self.language not in PROMPT_SKELETON_BY_LANGUAGE:
+            raise ValueError(
+                f"language='{self.language}' is not supported. "
+                f"Choose from: {list(PROMPT_SKELETON_BY_LANGUAGE.keys())}"
+            )
+        if self.translate_to and self.translate_to == self.language:
+            raise ValueError(
+                f"translate_to='{self.translate_to}' is the same as language='{self.language}'. "
+                "Translation requires different source and target languages."
             )
 
 

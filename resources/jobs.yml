@@ -178,6 +178,8 @@ resources:
               block_list_table: ""
               audit_table: ""
               num_cores: "8"
+              language: ${var.language}
+              translate_to: ${var.translate_to}
           new_cluster:
             spark_version: "17.3.x-scala2.13"
             kind: CLASSIC_PREVIEW

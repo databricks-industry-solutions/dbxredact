@@ -42,6 +42,8 @@ const DEFAULTS = {
   gliner_max_words: 256,
   presidio_model_size: "trf",
   presidio_pattern_only: true,
+  language: "en",
+  translate_to: "none",
   extra_params: null as Record<string, unknown> | null,
 };
 
@@ -129,6 +131,8 @@ export default function ConfigPage() {
       gliner_max_words: c.gliner_max_words || 256,
       presidio_model_size: c.presidio_model_size || "trf",
       presidio_pattern_only: c.presidio_pattern_only ?? true,
+      language: c.language || "en",
+      translate_to: c.translate_to || "none",
       extra_params: c.extra_params || null,
     });
     setShowAdvanced(true);
@@ -165,6 +169,7 @@ export default function ConfigPage() {
       <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">{c.redaction_strategy}</span>
     )},
     { key: "alignment_mode", header: "Mode" },
+    { key: "language", header: "Lang", render: (c) => (c.language || "en").toUpperCase(), sortable: false, searchable: false },
     { key: "_actions", header: "", sortable: false, searchable: false, render: (c) => (
       <span className="space-x-2">
         <button className="text-blue-500 dark:text-blue-400 hover:text-blue-700 text-xs font-medium transition-colors" onClick={() => startEdit(c)}>Edit</button>
@@ -250,6 +255,32 @@ export default function ConfigPage() {
             <option value="union">Union</option>
             <option value="consensus">Consensus</option>
           </select>
+        </div>
+
+        {/* Language & Translation */}
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Document Language</label>
+          <select className="input-field" value={form.language}
+            onChange={(e) => set("language", e.target.value)}>
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+          </select>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {form.language === "es" ? "Detection uses AI Query only; Presidio/GLiNER are English-only." : "All detectors available."}
+          </p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Translate After Redaction</label>
+          <select className="input-field" value={form.translate_to}
+            onChange={(e) => set("translate_to", e.target.value)}>
+            <option value="none">None</option>
+            {form.language !== "en" && <option value="en">English</option>}
+          </select>
+          {form.translate_to !== "none" && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+              Adds translation + review passes (3x AI Query cost).
+            </p>
+          )}
         </div>
 
         {/* Advanced settings */}

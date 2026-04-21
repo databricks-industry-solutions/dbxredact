@@ -255,6 +255,18 @@ dbutils.widgets.text(
     defaultValue="",
     label="33. Encryption Secret (scope/key, e.g. my-scope/aes-key)",
 )
+dbutils.widgets.dropdown(
+    name="language",
+    defaultValue="en",
+    choices=["en", "es"],
+    label="34. Source Language (es = Spanish, AI_QUERY only)",
+)
+dbutils.widgets.dropdown(
+    name="translate_to",
+    defaultValue="none",
+    choices=["none", "en"],
+    label="35. Translate To (none = no translation; 3x AI_QUERY cost when enabled)",
+)
 
 # COMMAND ----------
 
@@ -319,6 +331,9 @@ elif _encryption_secret_raw:
     encryption_key = _encryption_secret_raw
 else:
     encryption_key = None
+language = dbutils.widgets.get("language")
+_translate_to_raw = dbutils.widgets.get("translate_to")
+translate_to = None if _translate_to_raw == "none" else _translate_to_raw
 
 # Profile overrides (fast/deep force specific settings; custom uses widget values as-is)
 if detection_profile == "fast":
@@ -373,6 +388,8 @@ config = RedactionConfig(
     presidio_pattern_only=presidio_pattern_only,
     entity_filter=entity_filter,
     allow_consensus_redaction=allow_consensus_redaction,
+    language=language,
+    translate_to=translate_to,
 )
 
 if not any([use_presidio, use_ai_query, use_gliner]):

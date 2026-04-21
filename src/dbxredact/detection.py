@@ -12,6 +12,7 @@ from .analyzer import SpacyModelNotFoundError
 from .config import (
     LABEL_ENUMS,
     PHI_PROMPT_SKELETON,
+    PROMPT_SKELETON_BY_LANGUAGE,
     DEFAULT_PRESIDIO_SCORE_THRESHOLD,
     DEFAULT_GLINER_MODEL,
     DEFAULT_GLINER_THRESHOLD,
@@ -260,6 +261,7 @@ def run_detection(
     Repartitions once up-front so individual detectors skip their own
     count()/repartition, avoiding redundant Spark actions on the lazy DAG.
     """
+    language = "en"
     if config is not None:
         from dataclasses import fields as dc_fields
         _cfg_map = {f.name: getattr(config, f.name) for f in dc_fields(config)}
@@ -277,6 +279,19 @@ def run_detection(
         presidio_model_size = _cfg_map.get("presidio_model_size", presidio_model_size)
         presidio_pattern_only = _cfg_map.get("presidio_pattern_only", presidio_pattern_only)
         ai_model_type = _cfg_map.get("ai_model_type", ai_model_type)
+        language = _cfg_map.get("language", "en")
+
+    # Non-English: force AI_QUERY only
+    if language != "en":
+        if use_presidio:
+            logger.warning("Presidio disabled for language='%s' (English-only). Using AI_QUERY.", language)
+            use_presidio = False
+        if use_gliner:
+            logger.warning("GLiNER disabled for language='%s' (English-only). Using AI_QUERY.", language)
+            use_gliner = False
+        use_ai_query = True
+
+    prompt_skeleton = PROMPT_SKELETON_BY_LANGUAGE.get(language, PHI_PROMPT_SKELETON)
 
     # Repartition once; all detectors will use _repartition=False
     n_parts = _smart_partitions(df, num_cores, row_count=row_count)
@@ -322,6 +337,7 @@ def run_detection(
             text_column=text_column,
             endpoint=endpoint,
             num_cores=num_cores,
+            prompt_skeleton=prompt_skeleton,
             reasoning_effort=reasoning_effort,
             ai_model_type=ai_model_type,
             _repartition=False,

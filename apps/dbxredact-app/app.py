@@ -76,6 +76,7 @@ TABLE_DDLS = [
         gliner_model STRING, gliner_threshold DOUBLE, redaction_strategy STRING,
         alignment_mode STRING, reasoning_effort STRING, gliner_max_words INT,
         presidio_model_size STRING, presidio_pattern_only BOOLEAN,
+        language STRING DEFAULT 'en', translate_to STRING DEFAULT 'none',
         extra_params STRING, created_at TIMESTAMP, updated_at TIMESTAMP
     )""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_block_list (

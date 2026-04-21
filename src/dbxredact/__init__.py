@@ -27,6 +27,10 @@ from .config import (
     JUDGE_PROMPT_SKELETON,
     NEXT_ACTION_PROMPT_SKELETON,
     PROMPT_VERSION,
+    PHI_PROMPT_SKELETON_ES,
+    TRANSLATION_PROMPT_SKELETON,
+    REVIEW_PROMPT_SKELETON,
+    PROMPT_SKELETON_BY_LANGUAGE,
     RedactionConfig,
     _entity_schema,
     MIN_SCORE_THRESHOLD,
@@ -40,6 +44,8 @@ from .utils import (
     calculate_string_overlap,
     build_offset_map,
 )
+
+from .translation import translate_column
 
 from .analyzer import SpacyModelNotFoundError
 
@@ -151,10 +157,16 @@ __all__ = [
     "JUDGE_PROMPT_SKELETON",
     "NEXT_ACTION_PROMPT_SKELETON",
     "PROMPT_VERSION",
+    "PHI_PROMPT_SKELETON_ES",
+    "TRANSLATION_PROMPT_SKELETON",
+    "REVIEW_PROMPT_SKELETON",
+    "PROMPT_SKELETON_BY_LANGUAGE",
     "RedactionConfig",
     "_entity_schema",
     "MIN_SCORE_THRESHOLD",
     "MIN_GLINER_THRESHOLD",
+    # Translation
+    "translate_column",
     # Utils
     "is_fuzzy_match",
     "is_overlap",

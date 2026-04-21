@@ -37,6 +37,13 @@ CREATE TABLE IF NOT EXISTS {prefix}.redact_config (
     gliner_threshold DOUBLE DEFAULT 0.2,
     redaction_strategy STRING DEFAULT 'typed',
     alignment_mode STRING DEFAULT 'union',
+    detection_profile STRING DEFAULT 'fast',
+    reasoning_effort STRING DEFAULT 'low',
+    gliner_max_words INT DEFAULT 256,
+    presidio_model_size STRING DEFAULT 'trf',
+    presidio_pattern_only BOOLEAN DEFAULT false,
+    language STRING DEFAULT 'en',
+    translate_to STRING DEFAULT 'none',
     extra_params STRING,
     created_at TIMESTAMP,
     updated_at TIMESTAMP

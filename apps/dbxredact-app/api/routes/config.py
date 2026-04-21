@@ -53,6 +53,7 @@ async def create_config(body: ConfigCreate):
                 reasoning_effort=%(reasoning_effort)s, gliner_max_words=%(gliner_max_words)s,
                 presidio_model_size=%(presidio_model_size)s,
                 presidio_pattern_only=%(presidio_pattern_only)s,
+                language=%(language)s, translate_to=%(translate_to)s,
                 extra_params=%(extra_params)s, updated_at=current_timestamp()
             WHERE config_id = %(config_id)s""",
             {"config_id": config_id, **params},
@@ -64,12 +65,14 @@ async def create_config(body: ConfigCreate):
             (config_id, name, detection_profile, use_presidio, use_ai_query, use_gliner,
              endpoint, score_threshold, gliner_model, gliner_threshold, redaction_strategy,
              alignment_mode, reasoning_effort, gliner_max_words, presidio_model_size,
-             presidio_pattern_only, extra_params, created_at, updated_at)
+             presidio_pattern_only, language, translate_to, extra_params,
+             created_at, updated_at)
             VALUES (%(config_id)s, %(name)s, %(detection_profile)s, %(use_presidio)s,
                     %(use_ai_query)s, %(use_gliner)s, %(endpoint)s, %(score_threshold)s,
                     %(gliner_model)s, %(gliner_threshold)s, %(redaction_strategy)s,
                     %(alignment_mode)s, %(reasoning_effort)s, %(gliner_max_words)s,
-                    %(presidio_model_size)s, %(presidio_pattern_only)s, %(extra_params)s,
+                    %(presidio_model_size)s, %(presidio_pattern_only)s,
+                    %(language)s, %(translate_to)s, %(extra_params)s,
                     current_timestamp(), current_timestamp())""",
             {"config_id": config_id, **params},
         )
@@ -93,6 +96,7 @@ async def update_config(config_id: str, body: ConfigCreate):
             reasoning_effort=%(reasoning_effort)s, gliner_max_words=%(gliner_max_words)s,
             presidio_model_size=%(presidio_model_size)s,
             presidio_pattern_only=%(presidio_pattern_only)s,
+            language=%(language)s, translate_to=%(translate_to)s,
             extra_params=%(extra_params)s, updated_at=current_timestamp()
         WHERE config_id = %(config_id)s""",
         {"config_id": config_id, **params},

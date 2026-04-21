@@ -22,6 +22,8 @@ class ConfigCreate(BaseModel):
     gliner_max_words: Optional[int] = 256
     presidio_model_size: Optional[str] = "trf"
     presidio_pattern_only: Optional[bool] = False
+    language: str = "en"
+    translate_to: Optional[str] = "none"
     extra_params: Optional[Dict[str, Any]] = None
 
 
