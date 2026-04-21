@@ -131,9 +131,11 @@ from .pipeline import (
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
     run_table_redaction,
+    run_ingestion_redaction_pipeline,
     OutputStrategy,
     OutputMode,
     AlignmentMode,
+    MultiColumnStrategy,
 )
 
 from .judge import (
@@ -237,9 +239,11 @@ __all__ = [
     "run_redaction_pipeline_streaming",
     "run_redaction_pipeline_by_tag",
     "run_table_redaction",
+    "run_ingestion_redaction_pipeline",
     "OutputStrategy",
     "OutputMode",
     "AlignmentMode",
+    "MultiColumnStrategy",
     # Judge
     "run_judge_evaluation",
     "compute_judge_summary",
