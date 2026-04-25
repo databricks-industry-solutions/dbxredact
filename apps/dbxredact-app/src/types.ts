@@ -5,6 +5,7 @@ export interface Config {
   use_presidio: boolean;
   use_ai_query: boolean;
   use_gliner: boolean;
+  ner_backend?: "none" | "gliner" | "privacy_filter";
   endpoint: string;
   score_threshold: number;
   gliner_model: string;
@@ -15,6 +16,8 @@ export interface Config {
   gliner_max_words?: number;
   presidio_model_size?: string;
   presidio_pattern_only?: boolean;
+  language?: string;
+  translate_to?: string;
   extra_params?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;

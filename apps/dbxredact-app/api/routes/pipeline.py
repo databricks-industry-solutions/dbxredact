@@ -6,7 +6,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException
 from api.models.schemas import PipelineRunRequest, RunStatusResponse, JobHistoryItem
 from api.services.db import fetch_all, fetch_one, execute, _table, quote_table, validate_identifier, CATALOG, SCHEMA
-from api.services.jobs import trigger_pipeline_run, get_run_status, cancel_run
+from api.services.jobs import trigger_pipeline_run, get_run_status, cancel_run, rerun_with_original_params
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,12 +41,12 @@ async def run_pipeline(body: PipelineRunRequest):
                 f"Estimated cost ${est['estimated_cost_usd']:.4f} exceeds limit ${body.max_cost_usd:.4f}",
             )
 
-    is_full_table = body.redaction_scope == "full_table"
+    is_multi_column = body.redaction_scope in ("full_table", "tagged_columns")
 
-    if is_full_table and is_in_place:
-        raise HTTPException(400, "full_table scope cannot be combined with in_place output mode")
-    if is_full_table and body.refresh_approach == "incremental":
-        raise HTTPException(400, "full_table scope does not support incremental refresh")
+    if is_multi_column and is_in_place:
+        raise HTTPException(400, f"{body.redaction_scope} scope cannot be combined with in_place output mode")
+    if is_multi_column and body.refresh_approach == "incremental":
+        raise HTTPException(400, f"{body.redaction_scope} scope does not support incremental refresh")
 
     notebook_params = {
         "source_table": body.source_table,
@@ -57,6 +57,7 @@ async def run_pipeline(body: PipelineRunRequest):
         "use_presidio": str(config.get("use_presidio", True)).lower(),
         "use_ai_query": str(config.get("use_ai_query", True)).lower(),
         "use_gliner": str(config.get("use_gliner", False)).lower(),
+        "ner_backend": config.get("ner_backend", "gliner"),
         "endpoint": config.get("endpoint", ""),
         "score_threshold": str(config.get("score_threshold", 0.5)),
         "redaction_strategy": config.get("redaction_strategy", "typed"),
@@ -67,6 +68,8 @@ async def run_pipeline(body: PipelineRunRequest):
         "gliner_threshold": str(config.get("gliner_threshold", 0.2)),
         "presidio_model_size": config.get("presidio_model_size", "trf"),
         "presidio_pattern_only": str(config.get("presidio_pattern_only", False)).lower(),
+        "language": config.get("language") or "en",
+        "translate_to": config.get("translate_to") or "none",
         "max_rows": str(body.max_rows or 10000),
         "refresh_approach": body.refresh_approach,
         "safe_list_table": f"{CATALOG}.{SCHEMA}.redact_safe_list",
@@ -78,7 +81,16 @@ async def run_pipeline(body: PipelineRunRequest):
         "output_strategy": body.output_strategy,
     }
 
-    if is_full_table:
+    if body.redaction_scope == "full_table":
+        notebook_params["input_mode"] = "full_table"
+        notebook_params["masking_strategy"] = body.masking_strategy or "mask"
+        all_cols = await discover_all_columns(body.source_table)
+        extra = {
+            "text_columns": all_cols["text_columns"],
+            "structured_columns": {c: "unknown" for c in all_cols["non_text_columns"]},
+        }
+        notebook_params["extra_params"] = json.dumps(extra)
+    elif body.redaction_scope == "tagged_columns":
         notebook_params["input_mode"] = "full_table"
         notebook_params["masking_strategy"] = body.masking_strategy or "mask"
         extra = {}
@@ -182,6 +194,29 @@ async def cancel_pipeline(run_id: int):
         f"UPDATE {_table('redact_job_history')} SET status='CANCELLED', completed_at=current_timestamp() WHERE run_id = %(run_id)s",
         {"run_id": run_id},
     )
+
+
+@router.post("/retry/{run_id}", response_model=RunStatusResponse)
+async def retry_pipeline(run_id: int):
+    """Submit a new run using the same job + params as the original failed run."""
+    original = fetch_one(
+        f"SELECT config_id, source_table, output_table FROM {_table('redact_job_history')} WHERE run_id = %(run_id)s",
+        {"run_id": run_id},
+    )
+    result = rerun_with_original_params(run_id)
+    new_run_id = result["run_id"]
+
+    if original:
+        execute(
+            f"""INSERT INTO {_table('redact_job_history')}
+            (run_id, config_id, source_table, output_table, status, started_at, run_page_url, job_type)
+            VALUES (%(run_id)s, %(config_id)s, %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp(), %(url)s, 'pipeline')""",
+            {"run_id": new_run_id, "config_id": original.get("config_id"),
+             "source_table": original.get("source_table"), "output_table": original.get("output_table"),
+             "url": result.get("run_page_url")},
+        )
+
+    return result
 
 
 @router.get("/history", response_model=List[JobHistoryItem])
@@ -322,6 +357,41 @@ async def cost_estimate(
 
 
 _STRING_TYPES = {"string", "varchar", "char", "text"}
+
+
+@router.get("/discover-all-columns")
+async def discover_all_columns(table: str):
+    """Return all columns split into text (string-typed) and non-text, excluding doc_id candidates."""
+    qualified = quote_table(table)
+    parts = qualified.replace("`", "").split(".")
+    if len(parts) != 3:
+        raise HTTPException(400, "Table must be fully qualified: catalog.schema.table")
+    cat, sch, tbl = parts
+    for p in (cat, sch, tbl):
+        validate_identifier(p)
+
+    cols = fetch_all(
+        f"SELECT column_name, data_type FROM system.information_schema.columns "
+        f"WHERE table_catalog = '{cat}' AND table_schema = '{sch}' AND table_name = '{tbl}'"
+    )
+    text_columns = []
+    non_text_columns = []
+    doc_id_candidates = []
+    for r in cols:
+        name, dtype = r["column_name"], r["data_type"].lower()
+        if name.endswith("_id") or name == "doc_id":
+            doc_id_candidates.append(name)
+            continue
+        if dtype in _STRING_TYPES:
+            text_columns.append(name)
+        else:
+            non_text_columns.append(name)
+
+    return {
+        "text_columns": text_columns,
+        "non_text_columns": non_text_columns,
+        "doc_id_candidates": doc_id_candidates,
+    }
 
 
 @router.get("/discover-columns")

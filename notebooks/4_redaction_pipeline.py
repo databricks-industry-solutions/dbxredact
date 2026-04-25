@@ -28,14 +28,27 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl
-# MAGIC # For faster CPU inference at the cost of lower NER accuracy:
-# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
-# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_lg-3.8.0/es_core_news_lg-3.8.0-py3-none-any.whl
 # MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
 # MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.2.1-py3-none-any.whl
 # MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
-# MAGIC %restart_python
+
+# COMMAND ----------
+
+_needs_restart = False
+_presidio = dbutils.widgets.get("use_presidio") == "true"
+_presidio_ppo = dbutils.widgets.get("presidio_pattern_only") == "true"
+_ner = dbutils.widgets.get("ner_backend").strip()
+
+if _presidio and not _presidio_ppo:
+    %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl -q
+    _needs_restart = True
+
+if _ner == "privacy_filter":
+    %pip install git+https://github.com/openai/privacy-filter.git -q
+    _needs_restart = True
+
+if _needs_restart:
+    %restart_python
 
 # COMMAND ----------
 
@@ -108,10 +121,10 @@ dbutils.widgets.dropdown(
     label="6. Use AI Query Detection",
 )
 dbutils.widgets.dropdown(
-    name="use_gliner",
-    defaultValue="true",
-    choices=["true", "false"],
-    label="7. Use GLiNER Detection",
+    name="ner_backend",
+    defaultValue="gliner",
+    choices=["none", "gliner", "privacy_filter"],
+    label="7. NER Backend (local model)",
 )
 dbutils.widgets.dropdown(
     name="redaction_strategy",
@@ -245,15 +258,27 @@ dbutils.widgets.text(
     label="31. Extra Parameters (JSON, optional)",
 )
 dbutils.widgets.dropdown(
+    name="language",
+    defaultValue="en",
+    choices=["en", "es"],
+    label="33. Document Language",
+)
+dbutils.widgets.dropdown(
+    name="translate_to",
+    defaultValue="none",
+    choices=["none", "en"],
+    label="34. Translate After Redaction (target language)",
+)
+dbutils.widgets.dropdown(
     name="masking_strategy",
     defaultValue="mask",
     choices=["mask", "hash", "encrypt"],
-    label="32. Structured Masking Strategy (full_table mode)",
+    label="35. Structured Masking Strategy (full_table mode)",
 )
 dbutils.widgets.text(
     name="encryption_secret",
     defaultValue="",
-    label="33. Encryption Secret (scope/key, e.g. my-scope/aes-key)",
+    label="36. Encryption Secret (scope/key, e.g. my-scope/aes-key)",
 )
 
 # COMMAND ----------
@@ -273,7 +298,8 @@ tag_value = dbutils.widgets.get("tag_value")
 doc_id_column = dbutils.widgets.get("doc_id_column")
 use_presidio = dbutils.widgets.get("use_presidio") == "true"
 use_ai_query = dbutils.widgets.get("use_ai_query") == "true"
-use_gliner = dbutils.widgets.get("use_gliner") == "true"
+ner_backend = dbutils.widgets.get("ner_backend")
+use_gliner = ner_backend == "gliner"
 redaction_strategy = dbutils.widgets.get("redaction_strategy")
 endpoint = dbutils.widgets.get("endpoint")
 score_threshold = float(dbutils.widgets.get("score_threshold"))
@@ -309,6 +335,9 @@ audit_table = dbutils.widgets.get("audit_table").strip() or None
 _extra_params_raw = dbutils.widgets.get("extra_params").strip()
 extra_params = json.loads(_extra_params_raw) if _extra_params_raw else None
 masking_strategy = dbutils.widgets.get("masking_strategy")
+language = dbutils.widgets.get("language")
+_translate_to_raw = dbutils.widgets.get("translate_to")
+translate_to = None if _translate_to_raw == "none" else _translate_to_raw
 _encryption_secret_raw = dbutils.widgets.get("encryption_secret").strip()
 if _encryption_secret_raw and "/" in _encryption_secret_raw:
     _scope, _key_name = _encryption_secret_raw.split("/", 1)
@@ -320,16 +349,17 @@ elif _encryption_secret_raw:
 else:
     encryption_key = None
 
-# Profile overrides (fast/deep force specific settings; custom uses widget values as-is)
+# Profile overrides (don't touch presidio_pattern_only -- let widget/job param control it)
 if detection_profile == "fast":
     use_presidio, use_ai_query, use_gliner = True, True, True
+    ner_backend = "gliner"
     reasoning_effort, gliner_max_words = "low", 256
-    presidio_pattern_only = True
-    print("Profile: Fast Mode -- AI Query + GLiNER + Presidio (pattern-only), reasoning=low, max_words=256")
+    _ppo = "pattern-only" if presidio_pattern_only else "full NER"
+    print(f"Profile: Fast Mode -- AI Query + GLiNER + Presidio ({_ppo}), reasoning=low, max_words=256")
 elif detection_profile == "deep":
     use_presidio, use_ai_query, use_gliner = True, True, True
+    ner_backend = "gliner"
     reasoning_effort, gliner_max_words = "medium", 256
-    presidio_pattern_only = False
     print("Profile: Deep Search -- all detectors, reasoning=medium, max_words=256")
 
 entity_filter = None
@@ -355,6 +385,7 @@ config = RedactionConfig(
     use_presidio=use_presidio,
     use_ai_query=use_ai_query,
     use_gliner=use_gliner,
+    ner_backend=ner_backend,
     endpoint=endpoint if use_ai_query else None,
     score_threshold=score_threshold,
     gliner_model=gliner_model,
@@ -373,9 +404,11 @@ config = RedactionConfig(
     presidio_pattern_only=presidio_pattern_only,
     entity_filter=entity_filter,
     allow_consensus_redaction=allow_consensus_redaction,
+    language=language,
+    translate_to=translate_to,
 )
 
-if not any([use_presidio, use_ai_query, use_gliner]):
+if not any([use_presidio, use_ai_query, ner_backend != "none"]):
     raise ValueError("At least one detection method must be enabled.")
 if not 0.0 <= score_threshold <= 1.0:
     raise ValueError(f"Presidio score threshold must be in [0.0, 1.0], got {score_threshold}")
@@ -484,7 +517,7 @@ else:
     print(f"Text Column: {text_column}")
 print(f"Use Presidio: {use_presidio}")
 print(f"Use AI Query: {use_ai_query}")
-print(f"Use GLiNER: {use_gliner}")
+print(f"NER Backend: {ner_backend}")
 print(f"Reasoning Effort: {reasoning_effort}")
 print(f"GLiNER Max Words: {gliner_max_words}")
 print(f"Redaction Strategy: {redaction_strategy}")
@@ -679,8 +712,9 @@ if output_strategy == "validation" and input_mode != "full_table":
 # COMMAND ----------
 
 if output_strategy == "validation" and input_mode != "full_table":
-    if use_gliner and "gliner_results_struct" in result_df.columns:
-        print("=== GLiNER Detection Stats ===")
+    if ner_backend != "none" and "gliner_results_struct" in result_df.columns:
+        _ner_label = "GLiNER" if ner_backend == "gliner" else "Privacy Filter"
+        print(f"=== {_ner_label} Detection Stats ===")
         gliner_stats = result_df.selectExpr(
             "COUNT(*) as total_docs",
             "SUM(SIZE(gliner_results_struct)) as total_entities",

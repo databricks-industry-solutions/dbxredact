@@ -17,6 +17,8 @@ resources:
           default: "true"
         - name: use_gliner
           default: "true"
+        - name: ner_backend
+          default: "gliner"
         - name: score_threshold
           default: "0.5"
         - name: reasoning_effort
@@ -59,6 +61,7 @@ resources:
               use_presidio: "{{job.parameters.use_presidio}}"
               use_ai_query: "{{job.parameters.use_ai_query}}"
               use_gliner: "{{job.parameters.use_gliner}}"
+              ner_backend: "{{job.parameters.ner_backend}}"
               presidio_score_threshold: "{{job.parameters.score_threshold}}"
               reasoning_effort: "{{job.parameters.reasoning_effort}}"
               gliner_model: "{{job.parameters.gliner_model}}"
@@ -137,6 +140,30 @@ resources:
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
+    # -- Benchmark data loader -------------------------------------------------
+    load_pii_masking_300k:
+      name: "[${bundle.target}] dbxredact - Load pii-masking-300k"
+      tasks:
+        - task_key: load_data
+          new_cluster:
+            spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
+            node_type_id: ${var.cpu_node_type}
+            num_workers: 0
+            data_security_mode: SINGLE_USER
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: "local[*]"
+            custom_tags:
+              ResourceClass: SingleNode
+          notebook_task:
+            notebook_path: ../notebooks/0b_load_pii_masking_300k.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              table_prefix: "pii_masking_300k"
+
     # -- Pipeline jobs --------------------------------------------------------
     # The 6 pipeline variants share identical notebook + base_parameters.
     # YAML anchors eliminate the duplication; only cluster size & type differ.
@@ -158,6 +185,7 @@ resources:
               use_presidio: "true"
               use_ai_query: "true"
               use_gliner: "true"
+              ner_backend: "gliner"
               redaction_strategy: "typed"
               endpoint: "databricks-gpt-oss-120b"
               score_threshold: "0.5"
@@ -171,6 +199,8 @@ resources:
               gliner_threshold: "0.2"
               presidio_model_size: "trf"
               presidio_pattern_only: "false"
+              language: ${var.language}
+              translate_to: ${var.translate_to}
               output_mode: "separate"
               confirm_destructive: "false"
               allow_consensus_redaction: "false"

@@ -9,19 +9,19 @@ import type { Config } from "../types";
 
 const PROFILE_PRESETS: Record<string, Partial<typeof DEFAULTS>> = {
   fast: {
-    use_presidio: true, use_ai_query: true, use_gliner: true,
+    use_presidio: true, use_ai_query: true, use_gliner: true, ner_backend: "gliner",
     reasoning_effort: "low", gliner_max_words: 256, presidio_model_size: "lg",
     presidio_pattern_only: true,
   },
   deep: {
-    use_presidio: true, use_ai_query: true, use_gliner: true,
+    use_presidio: true, use_ai_query: true, use_gliner: true, ner_backend: "gliner",
     reasoning_effort: "medium", gliner_max_words: 256, presidio_model_size: "trf",
     presidio_pattern_only: false,
   },
 };
 
 const PROFILE_DESCRIPTIONS: Record<string, string> = {
-  fast: "Best for most workloads. Uses all three detection methods (AI Query, GLiNER, Presidio regex) with settings optimized for speed and high precision -- minimizes false positives so clean data stays clean. Recommended for routine redaction and large tables.",
+  fast: "Best for most workloads. Uses all three detection methods (AI Query, NER model, Presidio regex) with settings optimized for speed and high precision -- minimizes false positives so clean data stays clean. Recommended for routine redaction and large tables.",
   deep: "Maximum thoroughness for compliance-critical data. All detectors run with higher sensitivity to catch as much PII as possible, at the cost of more false positives and slower runtime. Use when missing PII is unacceptable (e.g. HIPAA, GDPR audits).",
   custom: "Configure detection methods and parameters manually.",
 };
@@ -32,6 +32,7 @@ const DEFAULTS = {
   use_presidio: true,
   use_ai_query: true,
   use_gliner: true,
+  ner_backend: "gliner" as "none" | "gliner" | "privacy_filter",
   endpoint: "databricks-gpt-oss-120b",
   score_threshold: 0.5,
   gliner_model: "nvidia/gliner-PII",
@@ -42,6 +43,8 @@ const DEFAULTS = {
   gliner_max_words: 256,
   presidio_model_size: "trf",
   presidio_pattern_only: true,
+  language: "en",
+  translate_to: "none",
   extra_params: null as Record<string, unknown> | null,
 };
 
@@ -119,6 +122,7 @@ export default function ConfigPage() {
       use_presidio: c.use_presidio,
       use_ai_query: c.use_ai_query,
       use_gliner: c.use_gliner,
+      ner_backend: c.ner_backend || (c.use_gliner ? "gliner" : "none"),
       endpoint: c.endpoint,
       score_threshold: c.score_threshold,
       gliner_model: c.gliner_model,
@@ -129,6 +133,8 @@ export default function ConfigPage() {
       gliner_max_words: c.gliner_max_words || 256,
       presidio_model_size: c.presidio_model_size || "trf",
       presidio_pattern_only: c.presidio_pattern_only ?? true,
+      language: c.language || "en",
+      translate_to: c.translate_to || "none",
       extra_params: c.extra_params || null,
     });
     setShowAdvanced(true);
@@ -160,7 +166,10 @@ export default function ConfigPage() {
     )},
     { key: "use_presidio", header: "Presidio", render: (c) => c.use_presidio ? "Y" : "-", sortable: false, searchable: false },
     { key: "use_ai_query", header: "AI", render: (c) => c.use_ai_query ? "Y" : "-", sortable: false, searchable: false },
-    { key: "use_gliner", header: "GLiNER", render: (c) => c.use_gliner ? "Y" : "-", sortable: false, searchable: false },
+    { key: "ner_backend", header: "NER", render: (c) => {
+      const nb = c.ner_backend || (c.use_gliner ? "gliner" : "none");
+      return nb === "none" ? "-" : nb === "gliner" ? "GLiNER" : "Privacy Filter";
+    }, sortable: false, searchable: false },
     { key: "redaction_strategy", header: "Strategy", render: (c) => (
       <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">{c.redaction_strategy}</span>
     )},
@@ -214,7 +223,6 @@ export default function ConfigPage() {
           {[
             { key: "use_presidio", label: "Presidio" },
             { key: "use_ai_query", label: "AI Query" },
-            { key: "use_gliner", label: "GLiNER" },
           ].map(({ key, label }) => (
             <label key={key} className={`flex items-center gap-2 text-sm ${isPreset ? "opacity-60" : "cursor-pointer"}`}>
               <input type="checkbox" className="rounded" checked={form[key as keyof typeof form] as boolean}
@@ -223,6 +231,16 @@ export default function ConfigPage() {
               {label}
             </label>
           ))}
+          <div className="flex items-center gap-2 text-sm">
+            <label className="font-medium">NER Backend:</label>
+            <select className="input-field py-0.5 px-2 text-sm w-auto" value={form.ner_backend}
+              disabled={isPreset}
+              onChange={(e) => { set("ner_backend", e.target.value); set("use_gliner", e.target.value === "gliner"); }}>
+              <option value="none">None</option>
+              <option value="gliner">GLiNER</option>
+              <option value="privacy_filter">Privacy Filter</option>
+            </select>
+          </div>
         </div>
 
         <div>
@@ -252,6 +270,39 @@ export default function ConfigPage() {
           </select>
         </div>
 
+        {/* Language settings */}
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Document Language</label>
+          <select className="input-field" value={form.language}
+            onChange={(e) => {
+              const lang = e.target.value;
+              set("language", lang);
+              if (form.translate_to === lang) set("translate_to", "none");
+            }}>
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+          </select>
+          {form.language === "es" && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+              Detection uses AI Query only; Presidio and NER models are English-only.
+            </p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Translate After Redaction</label>
+          <select className="input-field" value={form.translate_to}
+            disabled={form.language === "en"}
+            onChange={(e) => set("translate_to", e.target.value)}>
+            <option value="none">None</option>
+            <option value="en">English</option>
+          </select>
+          {form.translate_to !== "none" && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+              Adds translation + review pass (~3x AI Query cost)
+            </p>
+          )}
+        </div>
+
         {/* Advanced settings */}
         <div className="col-span-2 border-t pt-3 mt-1">
           <button type="button"
@@ -273,13 +324,6 @@ export default function ConfigPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5">GLiNER Max Words</label>
-              <input type="number" step={64} min={128} max={1024} className="input-field"
-                value={form.gliner_max_words}
-                disabled={isPreset}
-                onChange={(e) => set("gliner_max_words", parseInt(e.target.value))} />
-            </div>
-            <div>
               <label className="block text-sm font-medium mb-1.5">Presidio Model</label>
               <select className="input-field" value={form.presidio_model_size}
                 disabled={isPreset}
@@ -296,8 +340,9 @@ export default function ConfigPage() {
                 Presidio Pattern-Only (regex-only, no spaCy NER)
               </label>
             </div>
+            {form.ner_backend === "gliner" && (<>
             <div>
-              <label className="block text-sm font-medium mb-1.5">GLiNER Model</label>
+              <label className="block text-sm font-medium mb-1.5">NER Model</label>
               <select className="input-field" value={form.gliner_model}
                 disabled={isPreset}
                 onChange={(e) => set("gliner_model", e.target.value)}>
@@ -306,12 +351,20 @@ export default function ConfigPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5">GLiNER Threshold</label>
+              <label className="block text-sm font-medium mb-1.5">NER Confidence Threshold</label>
               <input type="number" step={0.05} min={0.05} max={1} className="input-field"
                 value={form.gliner_threshold}
                 disabled={isPreset}
                 onChange={(e) => set("gliner_threshold", parseFloat(e.target.value))} />
             </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">NER Max Words (chunk size)</label>
+              <input type="number" step={64} min={128} max={1024} className="input-field"
+                value={form.gliner_max_words}
+                disabled={isPreset}
+                onChange={(e) => set("gliner_max_words", parseInt(e.target.value))} />
+            </div>
+            </>)}
             <div className="col-span-2 border-t pt-3 mt-1">
               <details>
                 <summary className="text-sm text-blue-600 dark:text-blue-400 cursor-pointer select-none">

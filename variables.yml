@@ -29,6 +29,12 @@ variables:
   gliner_max_words:
     description: "GLiNER chunk size in words (256=fine-grained/high recall, 512=faster)"
     default: "256"
+  language:
+    description: "Document language for detection prompts: en or es"
+    default: "en"
+  translate_to:
+    description: "Target language for post-redaction translation (none to skip)"
+    default: "none"
   benchmark_dataset:
     description: "Base table name for benchmark data (source, ground truth, and intermediate tables are derived from this)"
     default: "jsl_benchmark"
