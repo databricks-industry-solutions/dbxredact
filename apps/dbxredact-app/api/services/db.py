@@ -103,6 +103,13 @@ def _prepare_params(
     for k, v in params.items():
         if v is None:
             sdk_params.append(StatementParameterListItem(name=k, value=None))
+        elif isinstance(v, bool):
+            sdk_params.append(StatementParameterListItem(name=k, value=str(v), type="BOOLEAN"))
+        elif isinstance(v, int):
+            int_type = "INT" if -(2**31) <= v <= 2**31 - 1 else "BIGINT"
+            sdk_params.append(StatementParameterListItem(name=k, value=str(v), type=int_type))
+        elif isinstance(v, float):
+            sdk_params.append(StatementParameterListItem(name=k, value=str(v), type="DECIMAL"))
         else:
             sdk_params.append(StatementParameterListItem(name=k, value=str(v)))
     statement = _PYFORMAT_RE.sub(lambda m: f":{m.group(1)}", sql)

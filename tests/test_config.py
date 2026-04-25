@@ -122,7 +122,8 @@ class TestRedactionConfig:
         cfg = RedactionConfig()
         assert cfg.use_presidio is True
         assert cfg.use_ai_query is True
-        assert cfg.use_gliner is False
+        assert cfg.ner_backend == "gliner"
+        assert cfg.use_gliner is True  # derived from ner_backend="gliner" in __post_init__
         assert cfg.endpoint is None
         assert cfg.score_threshold == DEFAULT_PRESIDIO_SCORE_THRESHOLD
         assert cfg.gliner_model == DEFAULT_GLINER_MODEL

@@ -147,7 +147,7 @@ export default function BenchmarkPage() {
                   <span>Alignment: <b>{selectedConfig.alignment_mode}</b></span>
                   <span>Presidio: <b>{selectedConfig.use_presidio ? "on" : "off"}</b></span>
                   <span>AI Query: <b>{selectedConfig.use_ai_query ? "on" : "off"}</b></span>
-                  <span>GliNER: <b>{selectedConfig.use_gliner ? "on" : "off"}</b></span>
+                  <span>NER: <b>{selectedConfig.ner_backend === "none" ? "off" : selectedConfig.ner_backend === "privacy_filter" ? "Privacy Filter" : "GLiNER"}</b></span>
                   <span>Threshold: <b>{selectedConfig.score_threshold}</b></span>
                 </div>
               )}

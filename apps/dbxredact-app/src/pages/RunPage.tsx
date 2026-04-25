@@ -42,7 +42,7 @@ export default function RunPage() {
   const [useGpu, setUseGpu] = useState(false);
   const [refreshApproach, setRefreshApproach] = useState<"full" | "incremental">("full");
   const [outputMode, setOutputMode] = useState<"separate" | "in_place">("separate");
-  const [redactionScope, setRedactionScope] = useState<"single_column" | "full_table">("single_column");
+  const [redactionScope, setRedactionScope] = useState<"single_column" | "tagged_columns" | "full_table">("single_column");
   const [selectedTextCols, setSelectedTextCols] = useState<string[]>([]);
   const [selectedStructCols, setSelectedStructCols] = useState<Record<string, string>>({});
   const [maskingStrategy, setMaskingStrategy] = useState<"mask" | "hash" | "encrypt">("mask");
@@ -63,10 +63,11 @@ export default function RunPage() {
     { enabled: hasTable, deps: [qualified] },
   );
 
-  const isFullTable = redactionScope === "full_table";
+  const isMultiColumn = redactionScope === "full_table" || redactionScope === "tagged_columns";
+  const isTaggedColumns = redactionScope === "tagged_columns";
   const { data: discovered, loading: loadingDiscovery } = useGet<DiscoverColumnsResponse>(
     `/pipeline/discover-columns?table=${encodeURIComponent(qualified)}`,
-    { enabled: hasTable && isFullTable, deps: [qualified, isFullTable] },
+    { enabled: hasTable && isTaggedColumns, deps: [qualified, isTaggedColumns] },
   );
 
   useEffect(() => {
@@ -92,9 +93,14 @@ export default function RunPage() {
 
   const selectedConfig = configs?.find((c) => c.config_id === configId);
   const usesAiQuery = selectedConfig?.use_ai_query ?? false;
-  const usesGliner = selectedConfig?.use_gliner ?? false;
+  const nerBackend = selectedConfig?.ner_backend || (selectedConfig?.use_gliner ? "gliner" : "none");
+  const usesLocalNer = nerBackend !== "none";
+
+  useEffect(() => {
+    if (usesLocalNer) setUseGpu(true);
+  }, [usesLocalNer]);
   const clusterProfile = `${useGpu ? "gpu" : "cpu"}_${clusterSize}`;
-  const showCostPanel = usesAiQuery || usesGliner;
+  const showCostPanel = usesAiQuery || usesLocalNer;
 
   const costParams = new URLSearchParams({
     table: qualified,
@@ -102,7 +108,7 @@ export default function RunPage() {
     endpoint: selectedConfig?.endpoint || "databricks-gpt-oss-120b",
     max_rows: String(maxRows),
     cluster_profile: clusterProfile,
-    use_gliner: String(usesGliner),
+    use_gliner: String(usesLocalNer),
     use_ai_query: String(usesAiQuery),
     detection_profile: selectedConfig?.detection_profile || "fast",
   }).toString();
@@ -111,7 +117,7 @@ export default function RunPage() {
     `/pipeline/cost-estimate?${costParams}`,
     {
       enabled: hasTable && showCostPanel && !!selectedConfig,
-      deps: [qualified, textCol, selectedConfig?.endpoint, maxRows, clusterProfile, usesGliner, usesAiQuery, selectedConfig?.detection_profile],
+      deps: [qualified, textCol, selectedConfig?.endpoint, maxRows, clusterProfile, usesLocalNer, usesAiQuery, selectedConfig?.detection_profile],
     },
   );
 
@@ -176,10 +182,12 @@ export default function RunPage() {
         output_strategy: outputStrategy,
         max_cost_usd: maxCostUsd ?? undefined,
       };
-      if (isFullTable) {
+      if (isMultiColumn) {
+        payload.masking_strategy = maskingStrategy;
+      }
+      if (isTaggedColumns) {
         payload.text_columns = selectedTextCols;
         payload.structured_columns = Object.keys(selectedStructCols).length ? selectedStructCols : undefined;
-        payload.masking_strategy = maskingStrategy;
       }
       const status = await apiPost<RunStatus>("/pipeline/run", payload);
       setRunStatus(status);
@@ -189,6 +197,17 @@ export default function RunPage() {
       setError(e instanceof Error ? e.message : "Failed to launch pipeline");
     }
     setRunning(false);
+  }
+
+  async function retryRun(runId: number) {
+    try {
+      const status = await apiPost<RunStatus>(`/pipeline/retry/${runId}`, {});
+      setRunStatus(status);
+      toast("Retrying pipeline run");
+      refetchHistory();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to retry run");
+    }
   }
 
   const columnOptions = tableInfo?.columns || [];
@@ -206,12 +225,18 @@ export default function RunPage() {
       }`}>{h.status}</span>
     )},
     { key: "started_at", header: "Started", render: (h) => <span className="text-gray-500 dark:text-gray-400">{h.started_at}</span> },
-    { key: "run_page_url", header: "", sortable: false, searchable: false, render: (h) =>
-      h.run_page_url ? (
-        <a href={h.run_page_url as string} target="_blank" rel="noreferrer"
-          className="text-blue-600 dark:text-blue-400 underline text-xs">View</a>
-      ) : null
-    },
+    { key: "run_page_url", header: "", sortable: false, searchable: false, render: (h) => (
+      <span className="flex items-center gap-2">
+        {h.run_page_url && (
+          <a href={h.run_page_url as string} target="_blank" rel="noreferrer"
+            className="text-blue-600 dark:text-blue-400 underline text-xs">View</a>
+        )}
+        {h.status !== "SUCCESS" && h.status !== "RUNNING" && (
+          <button className="text-amber-600 dark:text-amber-400 underline text-xs"
+            onClick={() => retryRun(h.run_id)}>Retry</button>
+        )}
+      </span>
+    )},
   ];
 
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -254,7 +279,11 @@ export default function RunPage() {
         <div>
           <label className="block text-sm font-medium mb-1.5">Redaction Scope</label>
           <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
-            {(["single_column", "full_table"] as const).map((scope) => (
+            {([
+              ["full_table", "Full Table"],
+              ["tagged_columns", "Tagged Columns"],
+              ["single_column", "Single Column"],
+            ] as const).map(([scope, label]) => (
               <button key={scope} type="button"
                 className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
                   redactionScope === scope
@@ -263,21 +292,23 @@ export default function RunPage() {
                 }`}
                 onClick={() => {
                   setRedactionScope(scope);
-                  if (scope === "full_table" && outputMode === "in_place") setOutputMode("separate");
+                  if (scope !== "single_column" && outputMode === "in_place") setOutputMode("separate");
                 }}>
-                {scope === "single_column" ? "Single Column" : "Full Table"}
+                {label}
               </button>
             ))}
           </div>
           <p className="text-xs text-gray-400 mt-1">
-            {isFullTable
-              ? "Detects PII across all tagged columns using NER and rule-based masking."
+            {redactionScope === "full_table"
+              ? "Runs NER detection on all string columns and rule-based masking on structured columns."
+              : redactionScope === "tagged_columns"
+              ? "Detects PII across columns tagged with data_classification=protected."
               : "Runs NER detection on a single text column."}
           </p>
         </div>
 
         {/* Column config -- single column mode */}
-        {!isFullTable && (
+        {redactionScope === "single_column" && (
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1.5">Text Column</label>
@@ -307,9 +338,42 @@ export default function RunPage() {
         )}
 
         {/* Column config -- full table mode */}
-        {isFullTable && hasTable && (
+        {redactionScope === "full_table" && hasTable && (
           <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-4">
-            {loadingDiscovery && <p className="text-sm text-gray-400 animate-pulse">Discovering columns...</p>}
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Discovers PII columns via Unity Catalog tags. Tagged string columns are processed with NER detection (Presidio/AI Query/NER model);
+              tagged structured columns are masked directly. Columns without PII tags are left untouched.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Masking Strategy</label>
+                <select className="input-field" value={maskingStrategy}
+                  onChange={(e) => setMaskingStrategy(e.target.value as "mask" | "hash" | "encrypt")}>
+                  <option value="mask">Mask (replace with label)</option>
+                  <option value="hash">Hash (SHA-256)</option>
+                  <option value="encrypt">Encrypt (AES)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Doc ID Column</label>
+                {columnOptions.length ? (
+                  <select className="input-field" value={docIdCol}
+                    onChange={(e) => setDocIdCol(e.target.value)}>
+                    {columnOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                ) : (
+                  <input className="input-field" value={docIdCol}
+                    onChange={(e) => setDocIdCol(e.target.value)} />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Column config -- tagged columns mode */}
+        {isTaggedColumns && hasTable && (
+          <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-4">
+            {loadingDiscovery && <p className="text-sm text-gray-400 animate-pulse">Discovering tagged columns...</p>}
             {discovered && !loadingDiscovery && (
               <>
                 {discovered.warnings.map((w, i) => (
@@ -481,26 +545,26 @@ export default function RunPage() {
                 peer-checked:bg-blue-600" />
             </label>
             <span className="text-sm font-medium">GPU cluster</span>
-            {usesGliner && !useGpu && (
-              <span className="text-xs text-amber-600 dark:text-amber-400">GPU recommended when GLiNER is enabled</span>
+            {usesLocalNer && !useGpu && (
+              <span className="text-xs text-amber-600 dark:text-amber-400">GPU recommended when NER model is enabled</span>
             )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1.5">Output Mode</label>
             <select className="input-field" value={outputMode}
               onChange={(e) => setOutputMode(e.target.value as "separate" | "in_place")}
-              disabled={isFullTable}>
+              disabled={isMultiColumn}>
               <option value="separate">Separate table</option>
-              <option value="in_place" disabled={isFullTable}>In-place (destructive)</option>
+              <option value="in_place" disabled={isMultiColumn}>In-place (destructive)</option>
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1.5">Refresh Mode</label>
             <select className="input-field" value={refreshApproach}
               onChange={(e) => setRefreshApproach(e.target.value as "full" | "incremental")}
-              disabled={isFullTable}>
+              disabled={isMultiColumn}>
               <option value="full">Full (overwrite)</option>
-              <option value="incremental" disabled={isFullTable}>Incremental (append)</option>
+              <option value="incremental" disabled={isMultiColumn}>Incremental (append)</option>
             </select>
           </div>
           <div>
@@ -510,8 +574,13 @@ export default function RunPage() {
               <option value="production">Minimal (redacted text only)</option>
               <option value="validation">Full (includes detection details for debugging)</option>
             </select>
+            {outputStrategy === "validation" && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                Validation output includes original entity text and detection spans. The output table will contain PII.
+              </p>
+            )}
           </div>
-          {outputMode === "in_place" && !isFullTable && (
+          {outputMode === "in_place" && !isMultiColumn && (
             <div className="col-span-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 p-3 text-sm text-amber-800 dark:text-amber-200">
               <strong>Destructive operation:</strong> The <code>{textCol}</code> column in the source table will be permanently overwritten with redacted text.
             </div>
@@ -566,6 +635,12 @@ export default function RunPage() {
                     setError(e instanceof Error ? e.message : "Failed to cancel");
                   }
                 }}>Cancel</button>
+            )}
+            {!isRunning && runStatus.result_state !== "SUCCESS" && (
+              <button className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors font-medium"
+                onClick={() => retryRun(runStatus.run_id)}>
+                Retry
+              </button>
             )}
           </div>
         </div>
