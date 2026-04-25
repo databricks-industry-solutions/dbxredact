@@ -12,6 +12,7 @@ class ConfigCreate(BaseModel):
     use_presidio: bool = True
     use_ai_query: bool = True
     use_gliner: bool = False
+    ner_backend: Literal["none", "gliner", "privacy_filter"] = "gliner"
     endpoint: str = "databricks-gpt-oss-120b"
     score_threshold: float = Field(0.5, ge=0.1, le=1.0)
     gliner_model: str = "nvidia/gliner-PII"
@@ -28,9 +29,36 @@ class ConfigCreate(BaseModel):
 
 
 class ConfigResponse(ConfigCreate):
+    model_config = {"from_attributes": True}
     config_id: str
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+    @field_validator("ner_backend", mode="before")
+    @classmethod
+    def coerce_ner_backend(cls, v):
+        return v if v else "gliner"
+
+    @field_validator("use_presidio", "use_ai_query", "use_gliner", "presidio_pattern_only", mode="before")
+    @classmethod
+    def coerce_bool(cls, v):
+        if isinstance(v, str):
+            return v.lower() in ("true", "1", "yes")
+        return bool(v) if v is not None else False
+
+    @field_validator("score_threshold", "gliner_threshold", mode="before")
+    @classmethod
+    def coerce_float(cls, v):
+        if v is None:
+            return 0.5
+        return float(v)
+
+    @field_validator("gliner_max_words", mode="before")
+    @classmethod
+    def coerce_optional_int(cls, v):
+        if v is None or v == "":
+            return None
+        return int(v)
 
     @field_validator("extra_params", mode="before")
     @classmethod
@@ -43,7 +71,7 @@ class ConfigResponse(ConfigCreate):
 class PipelineRunRequest(BaseModel):
     config_id: str
     source_table: str
-    redaction_scope: Literal["single_column", "full_table"] = "single_column"
+    redaction_scope: Literal["single_column", "tagged_columns", "full_table"] = "single_column"
     text_column: str = "text"
     doc_id_column: str = "doc_id"
     output_table: Optional[str] = None

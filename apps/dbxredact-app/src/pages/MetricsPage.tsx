@@ -12,6 +12,14 @@ import type {
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4"];
 
+const METHOD_LABELS: Record<string, string> = {
+  gliner: "NER Model",
+  presidio: "Presidio",
+  ai: "AI Query",
+  aligned: "Aligned (ensemble)",
+};
+const displayMethod = (m: string) => METHOD_LABELS[m] || m;
+
 type Tab = "detection" | "evaluation" | "judge";
 
 export default function MetricsPage() {
@@ -128,7 +136,7 @@ function DetectionView({ summary, byType, confDist, examples }: {
       <div className="grid grid-cols-3 gap-4 mb-6">
         {Object.entries(summary).map(([k, v]) => (
           <div key={k} className="stat-card">
-            <div className="stat-label">{k.replace(/_/g, " ")}</div>
+            <div className="stat-label">{k.replace(/gliner/gi, "NER").replace(/_/g, " ")}</div>
             <div className="stat-value">{typeof v === "number" ? Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 }) : String(v)}</div>
           </div>
         ))}
@@ -192,47 +200,48 @@ function EvaluationView({ rows }: { rows: EvalRow[] }) {
   const filtered = rows.filter(r => (r.match_mode || r.method_name.split("_").pop()) === activeMode);
 
   const stripSuffix = (name: string) => name.replace(/_strict$|_overlap$/, "");
-  const methods = [...new Set(filtered.map(r => stripSuffix(r.method_name)))];
+  const rawMethods = [...new Set(filtered.map(r => stripSuffix(r.method_name)))];
+  const methods = rawMethods.map(displayMethod);
   const coreMetrics = ["precision", "recall", "f1_score"];
+
+  const findRow = (raw: string, metric: string) =>
+    filtered.find(r => stripSuffix(r.method_name) === raw && r.metric_name === metric);
 
   const chartData = coreMetrics.map(m => {
     const point: Record<string, string | number> = { metric: m.replace("_", " ") };
-    methods.forEach(method => {
-      const row = filtered.find(r => stripSuffix(r.method_name) === method && r.metric_name === m);
-      point[method] = row ? Number(row.metric_value) : 0;
+    rawMethods.forEach((raw, i) => {
+      const row = findRow(raw, m);
+      point[methods[i]] = row ? Number(row.metric_value) : 0;
     });
     return point;
   });
 
-  const radarData = methods.map(method => {
-    const point: Record<string, string | number> = { method };
+  const radarData = rawMethods.map((raw, i) => {
+    const point: Record<string, string | number> = { method: methods[i] };
     coreMetrics.forEach(m => {
-      const row = filtered.find(r => stripSuffix(r.method_name) === method && r.metric_name === m);
+      const row = findRow(raw, m);
       point[m] = row ? Number(row.metric_value) : 0;
     });
     return point;
   });
 
-  const confusionRows = methods.map(method => {
-    const get = (m: string) => {
-      const r = filtered.find(row => stripSuffix(row.method_name) === method && row.metric_name === m);
-      return r ? Number(r.metric_value) : 0;
-    };
-    return { method, tp: get("true_positives"), fp: get("false_positives"), fn: get("false_negatives"), tn: get("true_negatives") };
+  const confusionRows = rawMethods.map((raw, i) => {
+    const get = (m: string) => { const r = findRow(raw, m); return r ? Number(r.metric_value) : 0; };
+    return { method: methods[i], tp: get("true_positives"), fp: get("false_positives"), fn: get("false_negatives"), tn: get("true_negatives") };
   });
 
-  const bestOf = (metric: string) => methods.reduce((best, m) => {
-    const row = filtered.find(r => stripSuffix(r.method_name) === m && r.metric_name === metric);
+  const bestOf = (metric: string) => rawMethods.reduce((best, raw, i) => {
+    const row = findRow(raw, metric);
     const val = row ? Number(row.metric_value) : 0;
-    return val > best.val ? { method: m, val } : best;
+    return val > best.val ? { method: methods[i], val } : best;
   }, { method: "", val: 0 });
 
   const bestF1 = bestOf("f1_score");
   const bestP = bestOf("precision");
   const bestR = bestOf("recall");
 
-  const avgP = methods.reduce((s, m) => { const r = filtered.find(x => stripSuffix(x.method_name) === m && x.metric_name === "precision"); return s + (r ? Number(r.metric_value) : 0); }, 0) / (methods.length || 1);
-  const avgR = methods.reduce((s, m) => { const r = filtered.find(x => stripSuffix(x.method_name) === m && x.metric_name === "recall"); return s + (r ? Number(r.metric_value) : 0); }, 0) / (methods.length || 1);
+  const avgP = rawMethods.reduce((s, raw) => { const r = findRow(raw, "precision"); return s + (r ? Number(r.metric_value) : 0); }, 0) / (methods.length || 1);
+  const avgR = rawMethods.reduce((s, raw) => { const r = findRow(raw, "recall"); return s + (r ? Number(r.metric_value) : 0); }, 0) / (methods.length || 1);
 
   return (
     <>
@@ -334,9 +343,9 @@ function JudgeView({ rows, judgeTable }: { rows: JudgeRow[]; judgeTable: string 
     PARTIAL: "bg-amber-500 text-white",
     FAIL: "bg-red-600 text-white",
   };
-  const methods = [...new Set(rows.map(r => r.method))];
-  const chartData = methods.map(method => {
-    const point: Record<string, string | number> = { method };
+  const rawJudgeMethods = [...new Set(rows.map(r => r.method))];
+  const chartData = rawJudgeMethods.map(method => {
+    const point: Record<string, string | number> = { method: displayMethod(method) };
     rows.filter(r => r.method === method).forEach(r => { point[r.grade] = Number(r.count); });
     return point;
   });

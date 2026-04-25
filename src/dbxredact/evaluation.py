@@ -38,8 +38,8 @@ def _match_condition(
         match_mode:
             "strict"  - Original full-containment with -1 tolerance.
                         det.start <= gt.begin AND det.end >= gt.end - 1
-            "overlap" - Standard interval overlap.
-                        det.start < gt.end AND det.end > gt.begin
+            "overlap" - Interval overlap (inclusive boundaries).
+                        det.start <= gt.end AND det.end >= gt.begin
     """
     gt_chunk = lower(col(f"{gt_prefix}.{chunk_column}"))
     det_entity = lower(col(f"{det_prefix}.{entity_column}"))
@@ -47,9 +47,12 @@ def _match_condition(
         col(f"{det_prefix}.{doc_id_column}") == col(f"{gt_prefix}.{doc_id_column}")
     ) & (contains(gt_chunk, det_entity) | contains(det_entity, gt_chunk))
     if match_mode == "overlap":
+        # Non-strict inequalities so overlap is always a superset of strict
+        # (strict has a -1 tolerance on gt.end that would otherwise create
+        #  cases where strict matches but overlap doesn't).
         position = (
-            col(f"{det_prefix}.{start_column}") < col(f"{gt_prefix}.{end_column}")
-        ) & (col(f"{det_prefix}.{end_column}") > col(f"{gt_prefix}.{begin_column}"))
+            col(f"{det_prefix}.{start_column}") <= col(f"{gt_prefix}.{end_column}")
+        ) & (col(f"{det_prefix}.{end_column}") >= col(f"{gt_prefix}.{begin_column}"))
     else:  # strict
         position = (
             col(f"{det_prefix}.{start_column}") <= col(f"{gt_prefix}.{begin_column}")
@@ -479,8 +482,8 @@ def analyze_errors(
         | contains(col(entity_column), col(chunk_column))
     )
     if match_mode == "overlap":
-        pos_cond = (col(start_column) < col("gt_end")) & (
-            col("det_end") > col(begin_column)
+        pos_cond = (col(start_column) <= col("gt_end")) & (
+            col("det_end") >= col(begin_column)
         )
     else:  # strict
         pos_cond = (col(start_column) <= col(begin_column)) & (

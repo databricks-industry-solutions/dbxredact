@@ -120,7 +120,7 @@ class TestNoDetectorRaises:
             )
 
     def test_all_disabled_via_config_raises(self):
-        cfg = RedactionConfig(use_presidio=False, use_ai_query=False, use_gliner=False)
+        cfg = RedactionConfig(use_presidio=False, use_ai_query=False, use_gliner=False, ner_backend="none")
         with pytest.raises(ValueError, match="At least one detection method"):
             run_redaction_pipeline(
                 spark=MagicMock(),

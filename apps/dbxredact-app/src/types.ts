@@ -5,6 +5,7 @@ export interface Config {
   use_presidio: boolean;
   use_ai_query: boolean;
   use_gliner: boolean;
+  ner_backend?: "none" | "gliner" | "privacy_filter";
   endpoint: string;
   score_threshold: number;
   gliner_model: string;

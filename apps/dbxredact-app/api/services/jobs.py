@@ -98,3 +98,22 @@ def get_run_status(run_id: int) -> Dict[str, Any]:
 def cancel_run(run_id: int) -> None:
     w = _get_client()
     w.jobs.cancel_run(run_id=run_id)
+
+
+def rerun_with_original_params(run_id: int) -> Dict[str, Any]:
+    """Submit a fresh run using the same job + notebook_params as the original run."""
+    w = _get_client()
+    original = w.jobs.get_run(run_id=run_id)
+    job_id = original.job_id
+
+    params: Dict[str, str] = {}
+    if original.tasks:
+        task = original.tasks[0]
+        if task.notebook_task and task.notebook_task.base_parameters:
+            params = dict(task.notebook_task.base_parameters)
+
+    if original.overriding_parameters and original.overriding_parameters.notebook_params:
+        params.update(original.overriding_parameters.notebook_params)
+
+    response = w.jobs.run_now(job_id=job_id, notebook_params=params)
+    return {"run_id": response.run_id, **get_run_status(response.run_id)}

@@ -1,0 +1,292 @@
+# Integration Tests Job Definition
+#
+# Kept in resources/tests/ (outside the resources/ glob used by the app bundle)
+# so it is NOT included in normal deploys. Deploy separately via a minimal
+# bundle that only includes this file, or run tasks interactively.
+#
+# DAG structure -- tests are grouped into parallel waves:
+#
+#   Wave A (fast, no LLM):       test_01, test_02           -- fast_cluster
+#   Wave B (Presidio only):      test_03..test_06           -- presidio_cluster
+#   Wave C (AI Query):           test_07..test_09           -- full_cluster
+#   Wave D (advanced features):  test_10..test_14           -- full_cluster
+#   Wave E (E2E):                test_e2e_cpu, test_e2e_gpu -- full_cluster / gpu_cluster
+#
+# test_01 gates Waves B/C/D/E. Wave D depends on test_03 (Presidio works).
+# Wave C is independent of Wave B.
+
+resources:
+  jobs:
+    integration_tests:
+      name: "dbxredact_integration_tests_${bundle.target}"
+
+      parameters:
+        - name: test_schema
+          default: "dbxredact_tests"
+        - name: endpoint
+          default: "databricks-gpt-oss-120b"
+
+      job_clusters:
+        # Wave A: fast tests, no LLM, no spaCy model needed
+        - job_cluster_key: fast_cluster
+          new_cluster:
+            spark_version: "17.3.x-scala2.13"
+            node_type_id: ${var.cpu_node_type}
+            num_workers: 0
+            spark_conf:
+              spark.master: "local[*]"
+              spark.databricks.cluster.profile: singleNode
+            custom_tags:
+              ResourceClass: SingleNode
+            data_security_mode: SINGLE_USER
+
+        # Wave B: Presidio detection (needs spaCy, no LLM endpoint)
+        - job_cluster_key: presidio_cluster
+          new_cluster:
+            spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
+            node_type_id: ${var.cpu_node_type}
+            num_workers: 0
+            spark_conf:
+              spark.master: "local[*]"
+              spark.databricks.cluster.profile: singleNode
+            custom_tags:
+              ResourceClass: SingleNode
+            data_security_mode: SINGLE_USER
+
+        # Wave C+D+E(cpu): AI Query + advanced features
+        - job_cluster_key: full_cluster
+          new_cluster:
+            spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
+            node_type_id: ${var.cpu_node_type}
+            num_workers: 2
+            data_security_mode: SINGLE_USER
+
+        # Wave E: GPU cluster for GLiNER
+        - job_cluster_key: gpu_cluster
+          new_cluster:
+            spark_version: "17.3.x-gpu-ml-scala2.13"
+            node_type_id: ${var.gpu_node_type}
+            num_workers: 1
+            spark_conf:
+              spark.task.resource.gpu.amount: "0.25"
+            data_security_mode: SINGLE_USER
+
+      tasks:
+        # ================================================================
+        # Wave A: Fast config / import tests (no LLM, < 1 min)
+        # ================================================================
+
+        - task_key: test_01_imports_and_config
+          max_retries: 1
+          job_cluster_key: fast_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_01_imports_and_config.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_02_non_string_column
+          max_retries: 1
+          depends_on:
+            - task_key: test_01_imports_and_config
+          job_cluster_key: fast_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_02_non_string_column.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        # ================================================================
+        # Wave B: Presidio-only detection and redaction
+        # ================================================================
+
+        - task_key: test_03_presidio_detection
+          max_retries: 1
+          depends_on:
+            - task_key: test_01_imports_and_config
+          job_cluster_key: presidio_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_03_presidio_detection.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_04_presidio_redaction_typed
+          max_retries: 1
+          depends_on:
+            - task_key: test_03_presidio_detection
+          job_cluster_key: presidio_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_04_presidio_redaction_typed.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_05_presidio_redaction_generic
+          max_retries: 1
+          depends_on:
+            - task_key: test_03_presidio_detection
+          job_cluster_key: presidio_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_05_presidio_redaction_generic.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_06_validation_output
+          max_retries: 1
+          depends_on:
+            - task_key: test_03_presidio_detection
+          job_cluster_key: presidio_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_06_validation_output.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        # ================================================================
+        # Wave C: AI Query detection + ensemble
+        # ================================================================
+
+        - task_key: test_07_ai_query_detection
+          max_retries: 1
+          depends_on:
+            - task_key: test_01_imports_and_config
+          job_cluster_key: full_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_07_ai_query_detection.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+              endpoint: "{{job.parameters.endpoint}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_08_ensemble_detection
+          max_retries: 1
+          depends_on:
+            - task_key: test_07_ai_query_detection
+          job_cluster_key: full_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_08_ensemble_detection.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+              endpoint: "{{job.parameters.endpoint}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_09_consensus_alignment
+          max_retries: 1
+          depends_on:
+            - task_key: test_08_ensemble_detection
+          job_cluster_key: full_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_09_consensus_alignment.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+              endpoint: "{{job.parameters.endpoint}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        # ================================================================
+        # Wave D: Advanced features (depend on Presidio working)
+        # ================================================================
+
+        - task_key: test_10_max_rows
+          max_retries: 1
+          depends_on:
+            - task_key: test_03_presidio_detection
+          job_cluster_key: presidio_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_10_max_rows.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_11_streaming_pipeline
+          max_retries: 1
+          depends_on:
+            - task_key: test_03_presidio_detection
+          job_cluster_key: presidio_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_11_streaming_pipeline.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_12_tag_mode
+          max_retries: 1
+          depends_on:
+            - task_key: test_03_presidio_detection
+          job_cluster_key: presidio_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_12_tag_mode.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_13_audit_table
+          max_retries: 1
+          depends_on:
+            - task_key: test_03_presidio_detection
+          job_cluster_key: presidio_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_13_audit_table.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_14_entity_filter
+          max_retries: 1
+          depends_on:
+            - task_key: test_03_presidio_detection
+          job_cluster_key: presidio_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_14_entity_filter.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        # ================================================================
+        # Wave E: End-to-end (independent clusters)
+        # ================================================================
+
+        - task_key: test_e2e_cpu
+          max_retries: 1
+          depends_on:
+            - task_key: test_01_imports_and_config
+          job_cluster_key: full_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_e2e_cpu.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+              endpoint: "{{job.parameters.endpoint}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_e2e_gpu
+          max_retries: 1
+          depends_on:
+            - task_key: test_01_imports_and_config
+          job_cluster_key: gpu_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_e2e_gpu.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+              endpoint: "{{job.parameters.endpoint}}"
+          libraries:
+            - whl: ../../dist/*.whl

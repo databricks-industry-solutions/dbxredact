@@ -35,7 +35,7 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api")
 
 
-_DEBUG = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
+_DEBUG = os.environ.get("DEBUG", "true").lower() in ("1", "true", "yes")
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "90"))
 
 
@@ -127,6 +127,7 @@ DEFAULT_CONFIG = {
     "use_presidio": True,
     "use_ai_query": True,
     "use_gliner": True,
+    "ner_backend": "gliner",
     "endpoint": "databricks-gpt-oss-120b",
     "score_threshold": 0.5,
     "gliner_model": "nvidia/gliner-PII",
@@ -137,6 +138,8 @@ DEFAULT_CONFIG = {
     "gliner_max_words": 256,
     "presidio_model_size": "trf",
     "presidio_pattern_only": True,
+    "language": "en",
+    "translate_to": "none",
 }
 
 
@@ -162,25 +165,38 @@ async def on_startup():
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_pattern_only BOOLEAN)",
         f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (run_page_url STRING)",
         f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (job_type STRING)",
+        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (ner_backend STRING)",
+        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (language STRING DEFAULT 'en')",
+        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (translate_to STRING DEFAULT 'none')",
     ]:
         try:
             execute(col_ddl)
-        except Exception:
-            pass  # column already exists
+        except Exception as e:
+            if "already exists" in str(e).lower() or "FIELDS_ALREADY_EXISTS" in str(e):
+                pass
+            else:
+                logger.warning("Migration DDL failed (may be benign): %s — %s", col_ddl.split("(")[0], e)
+    # Backfill ner_backend for rows added before the column existed
+    try:
+        execute(f"UPDATE {_table('redact_config')} SET ner_backend = 'gliner' WHERE ner_backend IS NULL")
+    except Exception:
+        pass
     try:
         row = fetch_one(f"SELECT count(*) as cnt FROM {_table('redact_config')}")
         if row and int(row.get("cnt", 0)) == 0:
             execute(
                 f"""INSERT INTO {_table('redact_config')}
                 (config_id, name, detection_profile, use_presidio, use_ai_query, use_gliner,
-                 endpoint, score_threshold, gliner_model, gliner_threshold, redaction_strategy,
-                 alignment_mode, reasoning_effort, gliner_max_words, presidio_model_size,
-                 presidio_pattern_only, extra_params, created_at, updated_at)
+                 ner_backend, endpoint, score_threshold, gliner_model, gliner_threshold,
+                 redaction_strategy, alignment_mode, reasoning_effort, gliner_max_words,
+                 presidio_model_size, presidio_pattern_only, language, translate_to,
+                 extra_params, created_at, updated_at)
                 VALUES (%(config_id)s, %(name)s, %(detection_profile)s, %(use_presidio)s,
-                        %(use_ai_query)s, %(use_gliner)s, %(endpoint)s, %(score_threshold)s,
-                        %(gliner_model)s, %(gliner_threshold)s, %(redaction_strategy)s,
-                        %(alignment_mode)s, %(reasoning_effort)s, %(gliner_max_words)s,
-                        %(presidio_model_size)s, %(presidio_pattern_only)s,
+                        %(use_ai_query)s, %(use_gliner)s, %(ner_backend)s, %(endpoint)s,
+                        %(score_threshold)s, %(gliner_model)s, %(gliner_threshold)s,
+                        %(redaction_strategy)s, %(alignment_mode)s, %(reasoning_effort)s,
+                        %(gliner_max_words)s, %(presidio_model_size)s, %(presidio_pattern_only)s,
+                        %(language)s, %(translate_to)s,
                         NULL, current_timestamp(), current_timestamp())""",
                 DEFAULT_CONFIG,
             )

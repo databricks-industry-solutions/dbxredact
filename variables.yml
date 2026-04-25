@@ -30,10 +30,10 @@ variables:
     description: "GLiNER chunk size in words (256=fine-grained/high recall, 512=faster)"
     default: "256"
   language:
-    description: "Source text language: en (English), es (Spanish). Non-English uses AI_QUERY only."
+    description: "Document language for detection prompts: en or es"
     default: "en"
   translate_to:
-    description: "Translate redacted text to this language after redaction. 'none' to skip. Adds 3x AI_QUERY cost."
+    description: "Target language for post-redaction translation (none to skip)"
     default: "none"
   benchmark_dataset:
     description: "Base table name for benchmark data (source, ground truth, and intermediate tables are derived from this)"
