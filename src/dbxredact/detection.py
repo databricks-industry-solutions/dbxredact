@@ -12,6 +12,7 @@ from .analyzer import SpacyModelNotFoundError
 from .config import (
     LABEL_ENUMS,
     PHI_PROMPT_SKELETON,
+    PROMPT_SKELETON_BY_LANGUAGE,
     DEFAULT_PRESIDIO_SCORE_THRESHOLD,
     DEFAULT_GLINER_MODEL,
     DEFAULT_GLINER_THRESHOLD,
@@ -350,11 +351,13 @@ def run_detection(
     use_presidio: bool = True,
     use_ai_query: bool = True,
     use_gliner: bool = False,
+    use_privacy_filter: bool = False,
     endpoint: Optional[str] = None,
     score_threshold: float = DEFAULT_PRESIDIO_SCORE_THRESHOLD,
     gliner_model: str = DEFAULT_GLINER_MODEL,
     gliner_threshold: float = DEFAULT_GLINER_THRESHOLD,
     gliner_max_words: int = None,
+    privacy_filter_threshold: float = 0.5,
     num_cores: int = 10,
     fail_on_presidio_error: bool = True,
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT,
@@ -378,11 +381,13 @@ def run_detection(
         use_presidio = _cfg_map.get("use_presidio", use_presidio)
         use_ai_query = _cfg_map.get("use_ai_query", use_ai_query)
         use_gliner = _cfg_map.get("use_gliner", use_gliner)
+        use_privacy_filter = config.use_privacy_filter
         endpoint = _cfg_map.get("endpoint", endpoint)
         score_threshold = _cfg_map.get("score_threshold", score_threshold)
         gliner_model = _cfg_map.get("gliner_model", gliner_model)
         gliner_threshold = _cfg_map.get("gliner_threshold", gliner_threshold)
         gliner_max_words = _cfg_map.get("gliner_max_words", gliner_max_words)
+        privacy_filter_threshold = _cfg_map.get("privacy_filter_threshold", privacy_filter_threshold)
         num_cores = _cfg_map.get("num_cores", num_cores)
         fail_on_presidio_error = _cfg_map.get("fail_on_presidio_error", fail_on_presidio_error)
         reasoning_effort = _cfg_map.get("reasoning_effort", reasoning_effort)
@@ -391,6 +396,18 @@ def run_detection(
         ai_model_type = _cfg_map.get("ai_model_type", ai_model_type)
         ai_max_chars = _cfg_map.get("ai_max_chars", ai_max_chars)
         ai_overlap_chars = _cfg_map.get("ai_overlap_chars", ai_overlap_chars)
+
+    # Language-aware prompt selection
+    language = config.language if config is not None else "en"
+    prompt_skeleton = PROMPT_SKELETON_BY_LANGUAGE.get(language, PHI_PROMPT_SKELETON)
+    if language != "en":
+        logger.warning(
+            "Language=%s: forcing AI Query only (Presidio and NER are English-only).",
+            language,
+        )
+        use_presidio = False
+        use_gliner = False
+        use_ai_query = True
 
     # Repartition once; all detectors will use _repartition=False
     n_parts = _smart_partitions(df, num_cores, row_count=row_count)
@@ -441,6 +458,7 @@ def run_detection(
                 ai_model_type,
                 ai_max_chars,
                 ai_overlap_chars,
+                prompt_skeleton=prompt_skeleton,
             )
         else:
             result_df = run_ai_query_detection(
@@ -450,6 +468,7 @@ def run_detection(
                 text_column=text_column,
                 endpoint=endpoint,
                 num_cores=num_cores,
+                prompt_skeleton=prompt_skeleton,
                 reasoning_effort=reasoning_effort,
                 ai_model_type=ai_model_type,
                 _repartition=False,
@@ -477,6 +496,22 @@ def run_detection(
         result_df.count()
         _prior_caches.append(result_df)
         logger.info("GLiNER detection: %.1fs", time.time() - t_gliner)
+
+    if use_privacy_filter:
+        from .privacy_filter_detector import run_privacy_filter_detection as _run_pf
+        t_pf = time.time()
+        result_df = _run_pf(
+            df=result_df,
+            doc_id_column=doc_id_column,
+            text_column=text_column,
+            num_cores=num_cores,
+            threshold=privacy_filter_threshold,
+            _repartition=False,
+        )
+        result_df = result_df.cache()
+        result_df.count()
+        _prior_caches.append(result_df)
+        logger.info("Privacy Filter detection: %.1fs", time.time() - t_pf)
 
     # Release intermediate caches; only the final one is needed by the caller
     for c in _prior_caches[:-1]:

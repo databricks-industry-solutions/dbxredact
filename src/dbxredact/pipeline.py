@@ -31,6 +31,7 @@ from .config import (
     DEFAULT_GLINER_MAX_WORDS,
     DEFAULT_AI_REASONING_EFFORT,
     DEFAULT_AI_OVERLAP_CHARS,
+    PHI_PROMPT_SKELETON,
     RedactionConfig,
 )
 from .entity_filter import EntityFilter, apply_safe_filter, apply_block_filter
@@ -321,7 +322,11 @@ def _select_output_columns(
     redacted_col_name = f"{text_column}_redacted"
 
     if output_strategy == "production":
-        wanted = [doc_id_column, redacted_col_name, "_detection_status", "_entity_count"]
+        wanted = [
+            doc_id_column, redacted_col_name, "_detection_status", "_entity_count",
+            f"{text_column}_redacted_translated", f"{text_column}_reviewed",
+            "review_entities", "review_entity_count",
+        ]
         return df.select(*[c for c in wanted if c in df.columns])
     else:  # validation
         return df
@@ -372,7 +377,9 @@ def run_detection_pipeline(
     Returns:
         DataFrame with detection results and optional aligned entities
     """
+    use_privacy_filter = False
     if config is not None:
+        use_privacy_filter = config.use_privacy_filter
         _v = _apply_config(config, {
             "use_presidio": use_presidio, "use_ai_query": use_ai_query,
             "use_gliner": use_gliner, "endpoint": endpoint,
@@ -401,7 +408,8 @@ def run_detection_pipeline(
             _v["entity_filter"],
         )
 
-    if not any([use_presidio, use_ai_query, use_gliner]):
+    _ner_active = use_gliner or use_privacy_filter
+    if not any([use_presidio, use_ai_query, _ner_active]):
         raise ValueError("At least one detection method must be enabled.")
 
     t0 = time.time()
@@ -414,6 +422,7 @@ def run_detection_pipeline(
         use_presidio=use_presidio,
         use_ai_query=use_ai_query,
         use_gliner=use_gliner,
+        use_privacy_filter=use_privacy_filter,
         endpoint=endpoint,
         score_threshold=score_threshold,
         gliner_model=gliner_model,
@@ -428,16 +437,17 @@ def run_detection_pipeline(
         presidio_pattern_only=presidio_pattern_only,
         ai_model_type=ai_model_type,
         row_count=row_count,
+        config=config,
     )
     t1 = time.time()
     logger.info("Detection total [%.1fs]", t1 - t0)
 
-    methods_used = sum([use_presidio, use_ai_query, use_gliner])
+    methods_used = sum([use_presidio, use_ai_query, _ner_active])
 
     if align_results and methods_used >= 1:
         logger.info("2. Aligning entity results (mode=%s)...", alignment_mode)
         result_df = _apply_alignment(
-            result_df, doc_id_column, use_presidio, use_ai_query, use_gliner,
+            result_df, doc_id_column, use_presidio, use_ai_query, _ner_active,
             alignment_mode=alignment_mode,
             fuzzy_threshold=fuzzy_threshold,
         )
@@ -482,6 +492,71 @@ def run_detection_pipeline(
         logger.info("Entity filter applied (deny + allow)")
 
     return result_df
+
+
+def _apply_translation_and_review(
+    spark: SparkSession,
+    df: DataFrame,
+    text_column: str,
+    config: RedactionConfig,
+) -> DataFrame:
+    """Translate redacted text and run a review detection pass.
+
+    1. Translate ``{text}_redacted`` -> ``{text}_translated``
+    2. Run AI Query review on translated text -> ``review_entities``
+    3. Audit-redact translated text -> ``{text}_reviewed``
+    """
+    from .translation import translate_column
+    from .config import REVIEW_PROMPT_SKELETON
+
+    redacted_col = f"{text_column}_redacted"
+    endpoint = config.endpoint or "databricks-gpt-oss-120b"
+
+    df = translate_column(
+        spark, df, redacted_col,
+        source_lang=config.language,
+        target_lang=config.translate_to,
+        endpoint=endpoint,
+        reasoning_effort=config.reasoning_effort,
+    )
+
+    # Preserve first-pass AI results before the review call overwrites
+    if "ai_results_struct" in df.columns:
+        df = df.withColumnRenamed("ai_results_struct", "_ai_results_detection")
+
+    translated_col = f"{redacted_col}_translated"
+    from .detection import run_ai_query_detection
+    df = run_ai_query_detection(
+        spark, df,
+        doc_id_column="_translation_dummy_id",
+        text_column=translated_col,
+        endpoint=endpoint,
+        prompt_skeleton=REVIEW_PROMPT_SKELETON,
+        reasoning_effort=config.reasoning_effort,
+        ai_model_type=config.ai_model_type,
+        _repartition=False,
+    )
+
+    # Rename review output and restore original detection results
+    if "ai_results_struct" in df.columns:
+        df = df.withColumnRenamed("ai_results_struct", "review_entities")
+    if "_ai_results_detection" in df.columns:
+        df = df.withColumnRenamed("_ai_results_detection", "ai_results_struct")
+    review_ent_col = "review_entities"
+
+    redact_udf = create_redaction_audit_udf(
+        RedactionStrategy(config.redaction_strategy)
+    )
+    df = df.withColumn(
+        f"{text_column}_reviewed",
+        redact_udf(col(translated_col), col(review_ent_col)).getField("redacted_text"),
+    ).withColumn(
+        "review_entity_count",
+        when(col(review_ent_col).isNotNull(), size(col(review_ent_col))).otherwise(lit(0)),
+    )
+
+    logger.info("Translation + review pass complete.")
+    return df
 
 
 def run_redaction_pipeline(
@@ -562,7 +637,9 @@ def run_redaction_pipeline(
     Returns:
         DataFrame with redacted text
     """
+    use_privacy_filter = False
     if config is not None:
+        use_privacy_filter = config.use_privacy_filter
         _v = _apply_config(config, {
             "use_presidio": use_presidio, "use_ai_query": use_ai_query,
             "use_gliner": use_gliner, "endpoint": endpoint,
@@ -600,7 +677,8 @@ def run_redaction_pipeline(
             _v["max_rows"], _v["entity_filter"],
         )
 
-    if not any([use_presidio, use_ai_query, use_gliner]):
+    _ner_active = use_gliner or use_privacy_filter
+    if not any([use_presidio, use_ai_query, _ner_active]):
         raise ValueError("At least one detection method must be enabled.")
 
     _check_consensus_safety(alignment_mode, allow_consensus_redaction)
@@ -675,6 +753,7 @@ def run_redaction_pipeline(
         fuzzy_threshold=fuzzy_threshold,
         entity_filter=entity_filter,
         row_count=row_count,
+        config=config,
     )
 
     detection_df = detection_df.cache()
@@ -689,6 +768,14 @@ def run_redaction_pipeline(
     result_df = _apply_redaction(
         detection_df, text_column, entities_column, redaction_strategy
     )
+
+    # Translation + review pass (non-English with translate_to set)
+    _translate_to = config.translate_to if config is not None else None
+    if _translate_to:
+        from pyspark.sql.functions import monotonically_increasing_id as _mono_id
+        result_df = result_df.withColumn("_translation_dummy_id", _mono_id())
+        result_df = _apply_translation_and_review(spark, result_df, text_column, config)
+        result_df = result_df.drop("_translation_dummy_id")
 
     if output_mode == "in_place":
         logger.info("4. Updating %s.%s in-place...", source_table, text_column)
@@ -706,6 +793,8 @@ def run_redaction_pipeline(
             detectors.append("ai_query")
         if use_gliner:
             detectors.append("gliner")
+        if use_privacy_filter:
+            detectors.append("privacy_filter")
         config_snap = json.dumps({
             "score_threshold": score_threshold, "gliner_threshold": gliner_threshold,
             "alignment_mode": alignment_mode, "redaction_strategy": redaction_strategy,
@@ -847,7 +936,9 @@ def run_redaction_pipeline_streaming(
         StreamingQuery (after blocking until all micro-batches complete, since
         ``trigger(availableNow=True)`` is used).
     """
+    use_privacy_filter = False
     if config is not None:
+        use_privacy_filter = config.use_privacy_filter
         _v = _apply_config(config, {
             "use_presidio": use_presidio, "use_ai_query": use_ai_query,
             "use_gliner": use_gliner, "endpoint": endpoint,
@@ -882,6 +973,7 @@ def run_redaction_pipeline_streaming(
             _v["entity_filter"],
         )
 
+    _ner_active = use_gliner or use_privacy_filter
     from .metadata import _validate_identifier, _parse_table_name
 
     _check_consensus_safety(alignment_mode, allow_consensus_redaction)
@@ -914,6 +1006,16 @@ def run_redaction_pipeline_streaming(
     # Ensure checkpoint volume exists
     _ensure_checkpoint_volume_exists(spark, checkpoint_path)
 
+    # Language-aware overrides (must run before Presidio pre-check)
+    _stream_language = config.language if config is not None else "en"
+    from .config import PROMPT_SKELETON_BY_LANGUAGE
+    _stream_prompt = PROMPT_SKELETON_BY_LANGUAGE.get(_stream_language, PHI_PROMPT_SKELETON)
+    if _stream_language != "en":
+        logger.warning("Streaming: language=%s, forcing AI Query only.", _stream_language)
+        use_presidio = False
+        use_gliner = False
+        use_ai_query = True
+
     # Pre-check Presidio availability if enabled (skip check for pattern-only mode)
     if use_presidio and not presidio_pattern_only:
         from .detection import check_presidio_available
@@ -924,12 +1026,7 @@ def run_redaction_pipeline_streaming(
             logger.warning(f"Presidio detection skipped - {error_msg}")
             use_presidio = False
 
-    # Read source as stream -- natural Delta file partitioning controls parallelism.
-    # maxFilesPerTrigger caps both data volume and partition count per micro-batch.
-    # Default 50: large enough that availableNow usually completes in 1-2 batches
-    # (maximising parallelism and minimising MERGE overhead), but bounded enough
-    # to avoid OOM on clusters with limited executor memory.  For continuous
-    # production streaming over very wide tables, callers should tune this down.
+    # Read source as stream
     reader = spark.readStream
     _mfpt = max_files_per_trigger if max_files_per_trigger is not None else 50
     reader = reader.option("maxFilesPerTrigger", _mfpt)
@@ -955,6 +1052,7 @@ def run_redaction_pipeline_streaming(
             text_column=text_column,
             endpoint=endpoint or "databricks-gpt-oss-120b",
             num_cores=num_cores,
+            prompt_skeleton=_stream_prompt,
             reasoning_effort=reasoning_effort,
             ai_model_type=ai_model_type,
             _repartition=False,
@@ -982,11 +1080,23 @@ def run_redaction_pipeline_streaming(
             gliner_kwargs["max_words"] = gliner_max_words
         stream_df = run_gliner_detection(**gliner_kwargs)
 
+    if use_privacy_filter:
+        from .privacy_filter_detector import run_privacy_filter_detection as _run_pf
+        pf_threshold = config.privacy_filter_threshold if config else 0.5
+        stream_df = _run_pf(
+            df=stream_df,
+            doc_id_column=doc_id_column,
+            text_column=text_column,
+            num_cores=num_cores,
+            threshold=pf_threshold,
+            _repartition=False,
+        )
+
     # Apply alignment
-    methods_used = sum([use_presidio, use_ai_query, use_gliner])
+    methods_used = sum([use_presidio, use_ai_query, _ner_active])
     if methods_used >= 1:
         stream_df = _apply_alignment(
-            stream_df, doc_id_column, use_presidio, use_ai_query, use_gliner,
+            stream_df, doc_id_column, use_presidio, use_ai_query, _ner_active,
             alignment_mode=alignment_mode,
         )
 
@@ -997,7 +1107,7 @@ def run_redaction_pipeline_streaming(
         entities_column = "presidio_results_struct"
     elif use_ai_query:
         entities_column = "ai_results_struct"
-    elif use_gliner:
+    elif _ner_active:
         entities_column = "gliner_results_struct"
     else:
         raise ValueError("At least one detection method must be enabled")
@@ -1042,6 +1152,14 @@ def run_redaction_pipeline_streaming(
 
     # Apply redaction
     stream_df = _apply_redaction(stream_df, text_column, entities_column, redaction_strategy)
+
+    # Translation + review pass (streaming -- uses ai_query which is streaming-safe)
+    _translate_to_s = config.translate_to if config is not None else None
+    if _translate_to_s:
+        from pyspark.sql.functions import monotonically_increasing_id as _mono_id
+        stream_df = stream_df.withColumn("_translation_dummy_id", _mono_id())
+        stream_df = _apply_translation_and_review(spark, stream_df, text_column, config)
+        stream_df = stream_df.drop("_translation_dummy_id")
 
     # Select output columns (skip for in-place -- we only need doc_id + redacted col)
     if _is_in_place:
@@ -1305,6 +1423,7 @@ def run_redaction_pipeline_by_tag(
             allow_consensus_redaction=allow_consensus_redaction,
             confirm_validation_output=confirm_validation_output,
             entity_filter=entity_filter,
+            config=config,
         )
 
     return result_df
@@ -1463,6 +1582,7 @@ def run_table_redaction(
             alignment_mode=alignment_mode,
             fuzzy_threshold=fuzzy_threshold,
             entity_filter=entity_filter,
+            config=config,
         )
         entities_column = _get_entities_column(detection_df, use_aligned=True)
         result_df = _apply_redaction(

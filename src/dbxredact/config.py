@@ -159,6 +159,97 @@ MedicalText: "SSN 123-45-6789. DOB: 24/07/1974. Phone: 608-555-7714. MRN: 040826
 response: [{{"entity": "123-45-6789", "entity_type": "US_SSN"}}, {{"entity": "24/07/1974", "entity_type": "DATE_TIME"}}, {{"entity": "608-555-7714", "entity_type": "PHONE_NUMBER"}}, {{"entity": "0408267", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{"entity": "15/03/25", "entity_type": "DATE_TIME"}}]
 """
 
+# ---------------------------------------------------------------------------
+# Spanish PHI detection prompt -- same output contract, HIPAA list in Spanish,
+# additional Latin American identifiers (CURP, RFC, DNI, NIE, RUT)
+# ---------------------------------------------------------------------------
+PHI_PROMPT_SKELETON_ES = """
+Eres un experto en detección de Información de Salud Protegida (PHI) e Información de Identificación Personal (PII). Identificarás todas las entidades PHI/PII en un texto.
+
+La PHI/PII incluye:
+1. Nombres de personas;
+2. Subdivisiones geográficas menores a un estado, incluyendo dirección, ciudad, condado, código postal y equivalentes;
+3. Todos los elementos de fechas (excepto el año) relacionados directamente con un individuo, incluyendo fecha de nacimiento, fecha de ingreso, fecha de alta, fecha de defunción; y todas las edades mayores de 89 años;
+4. Números de teléfono;
+5. Números de fax;
+6. Direcciones de correo electrónico;
+7. Números de seguro social (SSN, NSS, CURP, RFC, DNI, NIE, RUT);
+8. Números de expediente médico;
+9. Números de beneficiario de plan de salud;
+10. Números de cuenta bancaria o financiera;
+11. Números de certificado o licencia;
+12. Identificadores de vehículos y números de serie, incluyendo placas;
+13. Identificadores de dispositivos y números de serie;
+14. URLs;
+15. Direcciones IP;
+16. Identificadores biométricos;
+17. Imágenes fotográficas de rostro completo;
+18. Cualquier otro número, característica o código de identificación único.
+
+Entidades adicionales a detectar:
+- Nombres de hospitales e instalaciones de salud, incluyendo abreviaturas
+- Nombres de organizaciones y empresas
+- Números de cuenta financiera
+- IDs de referencia o caso
+
+Identificarás todas las entidades PHI/PII con los siguientes valores como "label":
+
+{label_enums}
+
+Responde con una lista de diccionarios: [{{"entity": "Juan García", "entity_type": "PERSON"}}, {{"entity": "123-45-6789", "entity_type": "US_SSN"}}]
+
+IMPORTANTE: Devuelve cada entidad EXACTAMENTE como aparece en el texto original. Copia el texto carácter por carácter — no normalices espacios, no corrijas ortografía ni reformules. Lista cada entidad única solo UNA VEZ.
+
+El texto está aquí:
+<TextoMedico>
+{{med_text}}
+<TextoMedico/>
+
+EJEMPLOS:
+TextoMedico: "MRN: 222345 -- Atendí al paciente Juan García hoy a las 11:30 en el Hospital General de Guadalajara, quien presenta dolor de garganta y temperatura de 39.4°C"
+respuesta: [{{"entity": "Juan García", "entity_type": "PERSON"}}, {{"entity": "222345", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{"entity": "Hospital General de Guadalajara", "entity_type": "HOSPITAL_NAME"}}]
+
+TextoMedico: "CURP: GARM850101HDFRRL09. NSS: 12345678901. Tel: 55-1234-5678. Fecha de ingreso: 15/03/2024"
+respuesta: [{{"entity": "GARM850101HDFRRL09", "entity_type": "ID_NUMBER"}}, {{"entity": "12345678901", "entity_type": "US_SSN"}}, {{"entity": "55-1234-5678", "entity_type": "PHONE_NUMBER"}}, {{"entity": "15/03/2024", "entity_type": "DATE_TIME"}}]
+"""
+
+PROMPT_SKELETON_BY_LANGUAGE = {
+    "en": PHI_PROMPT_SKELETON,
+    "es": PHI_PROMPT_SKELETON_ES,
+}
+SUPPORTED_LANGUAGES = set(PROMPT_SKELETON_BY_LANGUAGE.keys())
+
+# ---------------------------------------------------------------------------
+# Translation prompt -- preserves redaction bracket tokens during translation
+# ---------------------------------------------------------------------------
+TRANSLATION_PROMPT_SKELETON = """You are a professional translator. Translate the following text from {source_lang} to {target_lang}.
+
+CRITICAL RULES:
+1. Preserve ALL text inside square brackets exactly as-is. These are redaction markers and must NOT be translated, modified, or removed. Examples: [REDACTED], [PERSON], [DATE_TIME], [PHONE_NUMBER]
+2. Translate everything else naturally and accurately.
+3. Return ONLY the translated text, no explanations.
+
+Text to translate:
+{text}"""
+
+# ---------------------------------------------------------------------------
+# Review prompt -- second-pass detection on translated text
+# ---------------------------------------------------------------------------
+REVIEW_PROMPT_SKELETON = """You are an expert PHI/PII reviewer. The text below has already been partially redacted (entities replaced with [BRACKETED_LABELS]) and translated.
+
+Your job: find any PHI/PII that was MISSED by the initial redaction pass. IGNORE all text inside square brackets -- those are already handled.
+
+Look for: names, dates, addresses, phone numbers, emails, SSNs, medical record numbers, account numbers, IDs, hospital names, organization names, and any other personally identifiable information.
+
+Respond with a list of dictionaries: [{{"entity": "missed entity text", "entity_type": "PERSON"}}]
+If nothing was missed, respond with an empty list: []
+
+Entity type labels: {label_enums}
+
+<ReviewText>
+{{med_text}}
+</ReviewText>"""
+
 # Default thresholds
 DEFAULT_PRESIDIO_SCORE_THRESHOLD = 0.7
 DEFAULT_FUZZY_MATCH_THRESHOLD = 50
@@ -483,10 +574,17 @@ def get_gliner_preset(model_name: str) -> dict:
         model_name, GLINER_MODEL_PRESETS[DEFAULT_GLINER_MODEL]
     )
 
+# ---------------------------------------------------------------------------
+# Privacy Filter defaults  (openai/privacy-filter)
+# ---------------------------------------------------------------------------
+DEFAULT_PRIVACY_FILTER_MODEL = "openai/privacy-filter"
+DEFAULT_PRIVACY_FILTER_THRESHOLD = 0.5
+
 # Confidence thresholds
 HIGH_CONFIDENCE_THRESHOLD = 0.7
 
 # Source weights for confidence calculation (used in weighted scoring)
+# "gliner" slot is reused for privacy_filter (mutually exclusive backends)
 SOURCE_WEIGHTS = {
     "presidio": 0.35,
     "gliner": 0.30,
@@ -574,9 +672,13 @@ def should_ignore_entity(
 
 
 # ---------------------------------------------------------------------------
-# Prompt version tracking (short hash of PHI_PROMPT_SKELETON for audit)
+# Prompt version tracking (short hash per language for audit)
 # ---------------------------------------------------------------------------
 PROMPT_VERSION = _hashlib.sha256(PHI_PROMPT_SKELETON.encode()).hexdigest()[:12]
+PROMPT_VERSION_BY_LANGUAGE = {
+    lang: _hashlib.sha256(skel.encode()).hexdigest()[:12]
+    for lang, skel in PROMPT_SKELETON_BY_LANGUAGE.items()
+}
 
 
 # ---------------------------------------------------------------------------
@@ -595,11 +697,13 @@ class RedactionConfig:
     use_presidio: bool = True
     use_ai_query: bool = True
     use_gliner: bool = False
+    ner_backend: str = "gliner"  # "gliner", "privacy_filter", or "none"
     endpoint: Optional[str] = None
     score_threshold: float = DEFAULT_PRESIDIO_SCORE_THRESHOLD
     gliner_model: str = DEFAULT_GLINER_MODEL
     gliner_threshold: float = DEFAULT_GLINER_THRESHOLD
     gliner_max_words: Optional[int] = None
+    privacy_filter_threshold: float = DEFAULT_PRIVACY_FILTER_THRESHOLD
     num_cores: int = 10
     fail_on_presidio_error: bool = True
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT
@@ -608,6 +712,9 @@ class RedactionConfig:
     ai_model_type: str = "foundation"
     ai_max_chars: Optional[int] = DEFAULT_AI_MAX_CHARS
     ai_overlap_chars: int = DEFAULT_AI_OVERLAP_CHARS
+    # Language
+    language: str = "en"
+    translate_to: Optional[str] = None
     # Alignment
     alignment_mode: str = "union"
     fuzzy_threshold: int = 50
@@ -621,7 +728,36 @@ class RedactionConfig:
     max_rows: Optional[int] = 10000
     entity_filter: Any = field(default=None, repr=False)
 
+    @property
+    def use_privacy_filter(self) -> bool:
+        return self.ner_backend == "privacy_filter"
+
     def __post_init__(self):
+        # Derive use_gliner from ner_backend for backward compat
+        if self.ner_backend == "gliner":
+            object.__setattr__(self, "use_gliner", True)
+        elif self.ner_backend == "privacy_filter":
+            object.__setattr__(self, "use_gliner", False)
+        elif self.ner_backend == "none":
+            object.__setattr__(self, "use_gliner", False)
+
+        if self.language not in PROMPT_SKELETON_BY_LANGUAGE:
+            raise ValueError(
+                f"language={self.language!r} is not supported. "
+                f"Choose from: {list(PROMPT_SKELETON_BY_LANGUAGE.keys())}"
+            )
+        if self.translate_to:
+            if self.translate_to == self.language:
+                raise ValueError(
+                    f"translate_to={self.translate_to!r} must differ from "
+                    f"language={self.language!r}"
+                )
+            if self.translate_to not in SUPPORTED_LANGUAGES:
+                raise ValueError(
+                    f"translate_to={self.translate_to!r} is not supported. "
+                    f"Choose from: {sorted(SUPPORTED_LANGUAGES)}"
+                )
+
         if self.score_threshold < MIN_SCORE_THRESHOLD:
             raise ValueError(
                 f"score_threshold={self.score_threshold} is below the governance "

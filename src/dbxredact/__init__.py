@@ -17,6 +17,11 @@ from .config import (
     PRESIDIO_ENTITY_TYPES,
     LABEL_ENUMS,
     PHI_PROMPT_SKELETON,
+    PHI_PROMPT_SKELETON_ES,
+    PROMPT_SKELETON_BY_LANGUAGE,
+    SUPPORTED_LANGUAGES,
+    TRANSLATION_PROMPT_SKELETON,
+    REVIEW_PROMPT_SKELETON,
     ENTITY_TYPES_TO_IGNORE,
     ENTITY_TEXT_IGNORE_PATTERNS,
     should_ignore_entity,
@@ -27,11 +32,14 @@ from .config import (
     JUDGE_PROMPT_SKELETON,
     NEXT_ACTION_PROMPT_SKELETON,
     PROMPT_VERSION,
+    PROMPT_VERSION_BY_LANGUAGE,
     RedactionConfig,
     _entity_schema,
     MIN_SCORE_THRESHOLD,
     MIN_GLINER_THRESHOLD,
 )
+
+from .translation import translate_column
 
 from .utils import (
     is_fuzzy_match,
@@ -78,6 +86,9 @@ from .detection import (
     run_ai_query_detection,
     run_gliner_detection,
     run_detection,
+)
+from .privacy_filter_detector import (
+    run_privacy_filter_detection,
 )
 
 from .redaction import (
@@ -141,6 +152,12 @@ __all__ = [
     "PRESIDIO_ENTITY_TYPES",
     "LABEL_ENUMS",
     "PHI_PROMPT_SKELETON",
+    "PHI_PROMPT_SKELETON_ES",
+    "PROMPT_SKELETON_BY_LANGUAGE",
+    "SUPPORTED_LANGUAGES",
+    "TRANSLATION_PROMPT_SKELETON",
+    "REVIEW_PROMPT_SKELETON",
+    "translate_column",
     "ENTITY_TYPES_TO_IGNORE",
     "ENTITY_TEXT_IGNORE_PATTERNS",
     "should_ignore_entity",
@@ -151,6 +168,7 @@ __all__ = [
     "JUDGE_PROMPT_SKELETON",
     "NEXT_ACTION_PROMPT_SKELETON",
     "PROMPT_VERSION",
+    "PROMPT_VERSION_BY_LANGUAGE",
     "RedactionConfig",
     "_entity_schema",
     "MIN_SCORE_THRESHOLD",
@@ -188,6 +206,7 @@ __all__ = [
     "run_presidio_detection",
     "run_ai_query_detection",
     "run_gliner_detection",
+    "run_privacy_filter_detection",
     "run_detection",
     # Redaction
     "redact_text",
