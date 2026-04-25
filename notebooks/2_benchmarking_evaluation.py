@@ -139,6 +139,7 @@ if "aligned_entities" in detection_df.columns:
     available_methods.append("aligned")
 
 print(f"Available detection methods: {available_methods}")
+print(f"All detection columns: {detection_df.columns}")
 
 # COMMAND ----------
 
@@ -198,6 +199,13 @@ if "aligned" in available_methods:
             "aligned_entities.end",
         )
     )
+
+for method_name, expl_df in exploded_results.items():
+    cnt = expl_df.count()
+    if cnt == 0:
+        print(f"WARNING: {method_name} produced 0 detected entities. Evaluation will report P=0, R=0, F1=0.")
+    else:
+        print(f"  {method_name}: {cnt} exploded entity rows")
 
 # COMMAND ----------
 
