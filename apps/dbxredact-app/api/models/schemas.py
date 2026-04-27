@@ -16,7 +16,7 @@ class ConfigCreate(BaseModel):
     endpoint: str = "databricks-gpt-oss-120b"
     score_threshold: float = Field(0.5, ge=0.1, le=1.0)
     gliner_model: str = "nvidia/gliner-PII"
-    gliner_threshold: float = Field(0.2, ge=0.05, le=1.0)
+    gliner_threshold: Optional[float] = 0.2
     redaction_strategy: str = "typed"
     alignment_mode: str = "union"
     reasoning_effort: Optional[str] = "low"
@@ -27,6 +27,14 @@ class ConfigCreate(BaseModel):
     translate_to: Optional[str] = "none"
     encryption_secret: Optional[str] = ""
     extra_params: Optional[Dict[str, Any]] = None
+
+    @field_validator("gliner_threshold", mode="before")
+    @classmethod
+    def coerce_gliner_threshold(cls, v):
+        if v is None or v == "":
+            return 0.2
+        v = float(v)
+        return v if 0.05 <= v <= 1.0 else 0.2
 
 
 class ConfigResponse(ConfigCreate):
