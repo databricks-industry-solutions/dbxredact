@@ -158,7 +158,7 @@ async def on_startup():
         except Exception as e:
             logger.error("Failed to create table: %s", e)
     # Migrate pre-existing tables that may lack newer columns
-    for col_ddl in [
+    _migrations = [
         f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (cost_estimate_usd DOUBLE)",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (detection_profile STRING)",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (reasoning_effort STRING)",
@@ -171,14 +171,28 @@ async def on_startup():
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (language STRING DEFAULT 'en')",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (translate_to STRING DEFAULT 'none')",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (encryption_secret STRING DEFAULT '')",
-    ]:
+    ]
+    logger.info("Running %d column migrations...", len(_migrations))
+    for col_ddl in _migrations:
         try:
             execute(col_ddl)
+            logger.info("Migration OK: %s", col_ddl.split("(")[0].strip())
         except Exception as e:
             if "already exists" in str(e).lower() or "FIELDS_ALREADY_EXISTS" in str(e):
                 pass
             else:
-                logger.warning("Migration DDL failed (may be benign): %s — %s", col_ddl.split("(")[0], e)
+                logger.error("Migration FAILED: %s — %s", col_ddl, e)
+    # Verify critical columns exist on redact_config
+    try:
+        cols = fetch_all(f"DESCRIBE TABLE {_table('redact_config')}")
+        col_names = {r.get("col_name", "").lower() for r in cols}
+        missing = {"language", "translate_to", "ner_backend", "encryption_secret"} - col_names
+        if missing:
+            logger.error("CRITICAL: redact_config is missing columns after migration: %s", missing)
+        else:
+            logger.info("redact_config schema verified: all required columns present")
+    except Exception as e:
+        logger.error("Failed to verify redact_config schema: %s", e)
     # Backfill ner_backend for rows added before the column existed
     try:
         execute(f"UPDATE {_table('redact_config')} SET ner_backend = 'none' WHERE ner_backend IS NULL")
@@ -223,6 +237,25 @@ async def on_startup():
                 )
         except Exception:
             pass
+
+
+@app.get("/api/health")
+async def health_check():
+    """Schema diagnostic endpoint -- reports missing columns on redact_config."""
+    try:
+        cols = fetch_all(f"DESCRIBE TABLE {_table('redact_config')}")
+        col_names = {r.get("col_name", "").lower() for r in cols}
+        required = {"language", "translate_to", "ner_backend", "encryption_secret"}
+        missing = required - col_names
+        return {
+            "status": "ok" if not missing else "degraded",
+            "columns_found": len(col_names),
+            "missing_required": sorted(missing) if missing else None,
+            "catalog": CATALOG,
+            "schema": SCHEMA,
+        }
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
 
 # ---------------------------------------------------------------------------
