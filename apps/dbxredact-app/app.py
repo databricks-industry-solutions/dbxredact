@@ -168,9 +168,9 @@ def _run_table_setup():
             f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (run_page_url STRING)",
             f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (job_type STRING)",
             f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (ner_backend STRING)",
-            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (language STRING DEFAULT 'en')",
-            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (translate_to STRING DEFAULT 'none')",
-            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (encryption_secret STRING DEFAULT '')",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (language STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (translate_to STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (encryption_secret STRING)",
         ]
         logger.info("Running %d column migrations...", len(_migrations))
         for col_ddl in _migrations:
@@ -182,6 +182,18 @@ def _run_table_setup():
                     pass
                 else:
                     logger.error("Migration FAILED: %s — %s", col_ddl, e)
+        # Backfill nulls for newly-added columns
+        _backfills = [
+            f"UPDATE {_table('redact_config')} SET language = 'en' WHERE language IS NULL",
+            f"UPDATE {_table('redact_config')} SET translate_to = 'none' WHERE translate_to IS NULL",
+            f"UPDATE {_table('redact_config')} SET ner_backend = 'none' WHERE ner_backend IS NULL",
+            f"UPDATE {_table('redact_config')} SET encryption_secret = '' WHERE encryption_secret IS NULL",
+        ]
+        for backfill in _backfills:
+            try:
+                execute(backfill)
+            except Exception:
+                pass
         # Verify critical columns
         try:
             cols = fetch_all(f"DESCRIBE TABLE {_table('redact_config')}")
@@ -193,11 +205,6 @@ def _run_table_setup():
                 logger.info("redact_config schema verified: all required columns present")
         except Exception as e:
             logger.error("Failed to verify redact_config schema: %s", e)
-        # Backfill ner_backend
-        try:
-            execute(f"UPDATE {_table('redact_config')} SET ner_backend = 'none' WHERE ner_backend IS NULL")
-        except Exception:
-            pass
         # Seed default config if table is empty
         try:
             row = fetch_one(f"SELECT count(*) as cnt FROM {_table('redact_config')}")
