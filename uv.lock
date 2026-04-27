@@ -466,7 +466,7 @@ requires-dist = [
     { name = "databricks-sdk", specifier = ">=0.30.0" },
     { name = "fastapi", marker = "extra == 'app'", specifier = ">=0.115.0" },
     { name = "gliner", specifier = ">=0.2.0,<1.0.0" },
-    { name = "opf", git = "https://github.com/openai/privacy-filter.git" },
+    { name = "opf", git = "https://github.com/openai/privacy-filter.git?rev=f7f00ca7fb869683eb732c010299d901457f19c3" },
     { name = "presidio-analyzer", specifier = "==2.2.358" },
     { name = "presidio-anonymizer", specifier = "==2.2.358" },
     { name = "pydantic", specifier = ">=2.0.0" },
@@ -1139,7 +1139,7 @@ wheels = [
 [[package]]
 name = "opf"
 version = "0.1.0"
-source = { git = "https://github.com/openai/privacy-filter.git#f7f00ca7fb869683eb732c010299d901457f19c3" }
+source = { git = "https://github.com/openai/privacy-filter.git?rev=f7f00ca7fb869683eb732c010299d901457f19c3#f7f00ca7fb869683eb732c010299d901457f19c3" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi-proxy.dev.databricks.com/simple" }, marker = "python_full_version < '3.11'" },

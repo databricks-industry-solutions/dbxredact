@@ -1,12 +1,10 @@
 name: CI
 
-# Paused -- CI runners not available. Re-enable by uncommenting push/pull_request triggers.
-# on:
-#   push:
-#     branches: [main, dev]
-#   pull_request:
-#     branches: [main, dev]
 on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
   workflow_dispatch:
 
 jobs:
