@@ -341,8 +341,8 @@ export default function RunPage() {
         {redactionScope === "full_table" && hasTable && (
           <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Discovers PII columns via Unity Catalog tags. Tagged string columns are processed with NER detection (Presidio/AI Query/NER model);
-              tagged structured columns are masked directly. Columns without PII tags are left untouched.
+              Discovers all columns and classifies them as string (NER detection) or structured (rule-based masking).
+              String columns are processed with Presidio/AI Query/NER model; structured columns are masked directly.
             </p>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -353,6 +353,11 @@ export default function RunPage() {
                   <option value="hash">Hash (SHA-256)</option>
                   <option value="encrypt">Encrypt (AES)</option>
                 </select>
+                {maskingStrategy === "encrypt" && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                    Requires an Encryption Secret (scope/key) set in the config's Advanced Settings.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">Doc ID Column</label>
@@ -427,6 +432,11 @@ export default function RunPage() {
                       <option value="hash">Hash (SHA-256)</option>
                       <option value="encrypt">Encrypt (AES)</option>
                     </select>
+                    {maskingStrategy === "encrypt" && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                        Requires an Encryption Secret (scope/key) set in the config's Advanced Settings.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1.5">Doc ID Column</label>
@@ -457,6 +467,11 @@ export default function RunPage() {
               <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded-full ml-1.5 font-medium">Beta</span>
             </summary>
             <div className="px-3 pb-3">
+              {isMultiColumn && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+                  Estimate is based on a single column. Multi-column scopes process all text columns and may cost significantly more.
+                </p>
+              )}
               {loadingCost && <p className="text-xs text-gray-400 animate-pulse">Calculating...</p>}
               {costEstimate && !loadingCost && (
                 <div className="grid grid-cols-3 gap-2 text-xs">
@@ -583,6 +598,9 @@ export default function RunPage() {
           {outputMode === "in_place" && !isMultiColumn && (
             <div className="col-span-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 p-3 text-sm text-amber-800 dark:text-amber-200">
               <strong>Destructive operation:</strong> The <code>{textCol}</code> column in the source table will be permanently overwritten with redacted text.
+              {selectedConfig?.translate_to && selectedConfig.translate_to !== "none" && (
+                <span className="block mt-1 text-xs">Translation and review columns are computed but not persisted in in-place mode. Use separate output mode to retain them.</span>
+              )}
             </div>
           )}
           {refreshApproach === "full" && outputTable && (

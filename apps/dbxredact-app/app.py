@@ -35,7 +35,7 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api")
 
 
-_DEBUG = os.environ.get("DEBUG", "true").lower() in ("1", "true", "yes")
+_DEBUG = os.environ.get("DEBUG", "false").lower() in ("1", "true", "yes")
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "90"))
 
 
@@ -76,7 +76,9 @@ TABLE_DDLS = [
         gliner_model STRING, gliner_threshold DOUBLE, redaction_strategy STRING,
         alignment_mode STRING, reasoning_effort STRING, gliner_max_words INT,
         presidio_model_size STRING, presidio_pattern_only BOOLEAN,
+        ner_backend STRING DEFAULT 'none',
         language STRING DEFAULT 'en', translate_to STRING DEFAULT 'none',
+        encryption_secret STRING DEFAULT '',
         extra_params STRING, created_at TIMESTAMP, updated_at TIMESTAMP
     )""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_block_list (
@@ -168,6 +170,7 @@ async def on_startup():
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (ner_backend STRING)",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (language STRING DEFAULT 'en')",
         f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (translate_to STRING DEFAULT 'none')",
+        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (encryption_secret STRING DEFAULT '')",
     ]:
         try:
             execute(col_ddl)
@@ -178,7 +181,7 @@ async def on_startup():
                 logger.warning("Migration DDL failed (may be benign): %s — %s", col_ddl.split("(")[0], e)
     # Backfill ner_backend for rows added before the column existed
     try:
-        execute(f"UPDATE {_table('redact_config')} SET ner_backend = 'gliner' WHERE ner_backend IS NULL")
+        execute(f"UPDATE {_table('redact_config')} SET ner_backend = 'none' WHERE ner_backend IS NULL")
     except Exception:
         pass
     try:

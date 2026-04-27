@@ -41,10 +41,11 @@ const DEFAULTS = {
   alignment_mode: "union",
   reasoning_effort: "low",
   gliner_max_words: 256,
-  presidio_model_size: "trf",
+  presidio_model_size: "lg",
   presidio_pattern_only: true,
   language: "en",
   translate_to: "none",
+  encryption_secret: "",
   extra_params: null as Record<string, unknown> | null,
 };
 
@@ -135,6 +136,7 @@ export default function ConfigPage() {
       presidio_pattern_only: c.presidio_pattern_only ?? true,
       language: c.language || "en",
       translate_to: c.translate_to || "none",
+      encryption_secret: c.encryption_secret || "",
       extra_params: c.extra_params || null,
     });
     setShowAdvanced(true);
@@ -242,6 +244,11 @@ export default function ConfigPage() {
             </select>
           </div>
         </div>
+        {form.ner_backend === "privacy_filter" && (
+          <p className="col-span-2 text-xs text-amber-600 dark:text-amber-400 -mt-2">
+            Privacy Filter works best on GPU clusters. It supports non-English languages but accuracy may be lower than English.
+          </p>
+        )}
 
         <div>
           <label className="block text-sm font-medium mb-1.5">Endpoint</label>
@@ -284,7 +291,7 @@ export default function ConfigPage() {
           </select>
           {form.language === "es" && (
             <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-              Detection uses AI Query only; Presidio and NER models are English-only.
+              Presidio and GLiNER are English-only and will be disabled. Privacy Filter and AI Query remain active (Privacy Filter accuracy may be reduced).
             </p>
           )}
         </div>
@@ -298,7 +305,7 @@ export default function ConfigPage() {
           </select>
           {form.translate_to !== "none" && (
             <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-              Adds translation + review pass (~3x AI Query cost)
+              Adds translation + review pass (~3x AI Query cost). Note: in-place output mode only persists the redacted column -- translation and review columns are not saved.
             </p>
           )}
         </div>
@@ -323,6 +330,7 @@ export default function ConfigPage() {
                 <option value="high">High</option>
               </select>
             </div>
+            {!form.presidio_pattern_only && (
             <div>
               <label className="block text-sm font-medium mb-1.5">Presidio Model</label>
               <select className="input-field" value={form.presidio_model_size}
@@ -332,6 +340,7 @@ export default function ConfigPage() {
                 <option value="lg">en_core_web_lg (faster)</option>
               </select>
             </div>
+            )}
             <div>
               <label className={`flex items-center gap-2 text-sm mt-2 ${isPreset ? "opacity-60" : "cursor-pointer"}`}>
                 <input type="checkbox" className="rounded" checked={form.presidio_pattern_only}
@@ -365,6 +374,13 @@ export default function ConfigPage() {
                 onChange={(e) => set("gliner_max_words", parseInt(e.target.value))} />
             </div>
             </>)}
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Encryption Secret</label>
+              <input type="text" className="input-field font-mono text-xs" placeholder="scope/key"
+                value={form.encryption_secret}
+                onChange={(e) => set("encryption_secret", e.target.value)} />
+              <p className="text-xs text-gray-400 mt-1">Databricks Secret Scope reference (scope/key). Only used when Encrypt (AES) is selected as masking strategy on the Run page.</p>
+            </div>
             <div className="col-span-2 border-t pt-3 mt-1">
               <details>
                 <summary className="text-sm text-blue-600 dark:text-blue-400 cursor-pointer select-none">

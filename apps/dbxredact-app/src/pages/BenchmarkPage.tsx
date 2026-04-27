@@ -120,10 +120,14 @@ export default function BenchmarkPage() {
     <div>
       <ErrorBanner message={displayError} onDismiss={() => setError("")} />
       <h2 className="text-xl font-semibold mb-1">Benchmark</h2>
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
         Run the full benchmark pipeline (detection, evaluation, redaction) against a labeled dataset.
         Results populate the Review and Metrics pages.
       </p>
+      <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 mb-6 max-w-2xl space-y-1">
+        <p>Benchmarks run English-only detection (language and translation settings are not applied).</p>
+        <p>Fast and Deep profiles enable GLiNER as the NER backend. A config using Privacy Filter will use GLiNER instead during benchmarks.</p>
+      </div>
 
       <div className="card p-5 mb-6 space-y-4 max-w-2xl">
         <TablePicker value={sourceTable} onChange={setSourceTable} label="Source Table (labeled benchmark data)" />
@@ -142,14 +146,22 @@ export default function BenchmarkPage() {
                 ))}
               </select>
               {selectedConfig && (
-                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 grid grid-cols-2 gap-x-4 gap-y-1">
-                  <span>Endpoint: <b>{selectedConfig.endpoint || "default"}</b></span>
-                  <span>Alignment: <b>{selectedConfig.alignment_mode}</b></span>
-                  <span>Presidio: <b>{selectedConfig.use_presidio ? "on" : "off"}</b></span>
-                  <span>AI Query: <b>{selectedConfig.use_ai_query ? "on" : "off"}</b></span>
-                  <span>NER: <b>{selectedConfig.ner_backend === "none" ? "off" : selectedConfig.ner_backend === "privacy_filter" ? "Privacy Filter" : "GLiNER"}</b></span>
-                  <span>Threshold: <b>{selectedConfig.score_threshold}</b></span>
-                </div>
+                <>
+                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 grid grid-cols-2 gap-x-4 gap-y-1">
+                    <span>Endpoint: <b>{selectedConfig.endpoint || "default"}</b></span>
+                    <span>Alignment: <b>{selectedConfig.alignment_mode}</b></span>
+                    <span>Presidio: <b>{selectedConfig.use_presidio ? "on" : "off"}</b></span>
+                    <span>AI Query: <b>{selectedConfig.use_ai_query ? "on" : "off"}</b></span>
+                    <span>NER: <b>{selectedConfig.ner_backend === "none" ? "off" : selectedConfig.ner_backend === "privacy_filter" ? "Privacy Filter" : "GLiNER"}</b></span>
+                    <span>Threshold: <b>{selectedConfig.score_threshold}</b></span>
+                  </div>
+                  {(selectedConfig.language !== "en" || selectedConfig.ner_backend === "privacy_filter") && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                      {selectedConfig.language !== "en" && "This config targets non-English text, but benchmarks run English-only detection. "}
+                      {selectedConfig.ner_backend === "privacy_filter" && "Privacy Filter NER will be replaced by GLiNER during the benchmark run."}
+                    </p>
+                  )}
+                </>
               )}
             </>
           )}
