@@ -12,7 +12,7 @@ class ConfigCreate(BaseModel):
     use_presidio: bool = True
     use_ai_query: bool = True
     use_gliner: bool = False
-    ner_backend: Literal["none", "gliner", "privacy_filter"] = "gliner"
+    ner_backend: Literal["none", "gliner", "privacy_filter"] = "none"
     endpoint: str = "databricks-gpt-oss-120b"
     score_threshold: float = Field(0.5, ge=0.1, le=1.0)
     gliner_model: str = "nvidia/gliner-PII"
@@ -25,6 +25,7 @@ class ConfigCreate(BaseModel):
     presidio_pattern_only: Optional[bool] = False
     language: str = "en"
     translate_to: Optional[str] = "none"
+    encryption_secret: Optional[str] = ""
     extra_params: Optional[Dict[str, Any]] = None
 
 
@@ -37,7 +38,7 @@ class ConfigResponse(ConfigCreate):
     @field_validator("ner_backend", mode="before")
     @classmethod
     def coerce_ner_backend(cls, v):
-        return v if v else "gliner"
+        return v if v else "none"
 
     @field_validator("use_presidio", "use_ai_query", "use_gliner", "presidio_pattern_only", mode="before")
     @classmethod

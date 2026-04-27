@@ -56,8 +56,7 @@ async def run_pipeline(body: PipelineRunRequest):
         "detection_profile": config.get("detection_profile", "fast"),
         "use_presidio": str(config.get("use_presidio", True)).lower(),
         "use_ai_query": str(config.get("use_ai_query", True)).lower(),
-        "use_gliner": str(config.get("use_gliner", False)).lower(),
-        "ner_backend": config.get("ner_backend", "gliner"),
+        "ner_backend": config.get("ner_backend") or "none",
         "endpoint": config.get("endpoint", ""),
         "score_threshold": str(config.get("score_threshold", 0.5)),
         "redaction_strategy": config.get("redaction_strategy", "typed"),
@@ -70,6 +69,7 @@ async def run_pipeline(body: PipelineRunRequest):
         "presidio_pattern_only": str(config.get("presidio_pattern_only", False)).lower(),
         "language": config.get("language") or "en",
         "translate_to": config.get("translate_to") or "none",
+        "encryption_secret": config.get("encryption_secret") or "",
         "max_rows": str(body.max_rows or 10000),
         "refresh_approach": body.refresh_approach,
         "safe_list_table": f"{CATALOG}.{SCHEMA}.redact_safe_list",
@@ -79,8 +79,7 @@ async def run_pipeline(body: PipelineRunRequest):
         "allow_consensus_redaction": "true" if config.get("alignment_mode", "union") == "consensus" else "false",
         "audit_table": f"{CATALOG}.{SCHEMA}.redact_audit_log",
         "output_strategy": body.output_strategy,
-        "language": config.get("language", "en"),
-        "translate_to": config.get("translate_to", "none"),
+        "confirm_validation_output": "true" if body.output_strategy == "validation" else "false",
     }
 
     if body.redaction_scope == "full_table":

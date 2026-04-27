@@ -100,7 +100,7 @@ include:
 artifacts:
   default:
     type: whl
-    build: poetry build
+    build: uv build
     path: .
 
 targets:
@@ -138,7 +138,7 @@ if [ "$RUN_ONLY" = false ]; then
   echo ""
 
   echo "Building wheel..."
-  poetry build -q
+  uv build -q
 
   echo "Deploying bundle..."
   "$DATABRICKS_CLI" bundle deploy -t "$TARGET"

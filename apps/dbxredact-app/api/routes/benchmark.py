@@ -27,7 +27,7 @@ def _config_to_job_params(config: dict) -> dict[str, str]:
         "use_presidio": str(config.get("use_presidio", "true")).lower(),
         "use_ai_query": str(config.get("use_ai_query", "true")).lower(),
         "use_gliner": str(config.get("use_gliner", "false")).lower(),
-        "ner_backend": config.get("ner_backend", "gliner"),
+        "ner_backend": config.get("ner_backend") or "none",
         "score_threshold": str(config.get("score_threshold", "0.5")),
         "detection_profile": config.get("detection_profile") or "fast",
         "reasoning_effort": config.get("reasoning_effort") or "low",

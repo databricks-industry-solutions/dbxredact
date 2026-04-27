@@ -705,7 +705,7 @@ class TestConfigToJobParams:
         params = _config_to_job_params(_CONFIG_ROW)
         expected = {
             "endpoint", "alignment_mode", "use_presidio", "use_ai_query",
-            "use_gliner", "score_threshold", "detection_profile",
+            "use_gliner", "ner_backend", "score_threshold", "detection_profile",
             "reasoning_effort", "gliner_model", "gliner_max_words",
             "presidio_model_size", "presidio_pattern_only",
             "gliner_threshold", "redaction_strategy",

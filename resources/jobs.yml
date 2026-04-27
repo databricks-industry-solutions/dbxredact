@@ -184,7 +184,6 @@ resources:
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
-              use_gliner: "true"
               ner_backend: "gliner"
               redaction_strategy: "typed"
               endpoint: "databricks-gpt-oss-120b"
@@ -208,8 +207,6 @@ resources:
               block_list_table: ""
               audit_table: ""
               num_cores: "8"
-              language: ${var.language}
-              translate_to: ${var.translate_to}
           new_cluster:
             spark_version: "17.3.x-scala2.13"
             kind: CLASSIC_PREVIEW

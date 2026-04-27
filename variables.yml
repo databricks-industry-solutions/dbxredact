@@ -16,7 +16,7 @@ variables:
     default: "redaction"
   max_rows:
     description: "Maximum rows to process in the redaction pipeline. Set to 0 for unlimited."
-    default: "1000"
+    default: "10000"
   detection_profile:
     description: "Detection profile: fast (AI+GLiNER+Presidio pattern-only), deep (all detectors), or custom"
     default: "fast"

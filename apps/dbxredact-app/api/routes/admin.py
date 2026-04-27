@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Optional
 from fastapi import APIRouter, Query
-from api.services.db import execute, fetch_one, fetch_all, _table, quote_table, validate_identifier, WAREHOUSE_ID, CATALOG, SCHEMA
+from api.services.db import execute, fetch_one, fetch_all, _table, quote_table, WAREHOUSE_ID
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

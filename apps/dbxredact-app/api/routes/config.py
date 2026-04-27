@@ -5,7 +5,6 @@ import logging
 import uuid
 from typing import List
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
 from api.models.schemas import ConfigCreate
 from api.services.db import fetch_all, fetch_one, execute, _table
 
@@ -39,7 +38,7 @@ def _clean_config(row: dict) -> dict:
     if "gliner_max_words" in row and row["gliner_max_words"] is not None:
         row["gliner_max_words"] = int(row["gliner_max_words"])
     if not row.get("ner_backend"):
-        row["ner_backend"] = "gliner"
+        row["ner_backend"] = "none"
     if not row.get("language"):
         row["language"] = "en"
     if not row.get("translate_to"):
@@ -86,6 +85,7 @@ async def create_config(body: ConfigCreate):
                 presidio_model_size=%(presidio_model_size)s,
                 presidio_pattern_only=%(presidio_pattern_only)s,
                 language=%(language)s, translate_to=%(translate_to)s,
+                encryption_secret=%(encryption_secret)s,
                 extra_params=%(extra_params)s, updated_at=current_timestamp()
             WHERE config_id = %(config_id)s""",
             {"config_id": config_id, **params},
@@ -98,13 +98,13 @@ async def create_config(body: ConfigCreate):
              ner_backend, endpoint, score_threshold, gliner_model, gliner_threshold,
              redaction_strategy, alignment_mode, reasoning_effort, gliner_max_words,
              presidio_model_size, presidio_pattern_only, language, translate_to,
-             extra_params, created_at, updated_at)
+             encryption_secret, extra_params, created_at, updated_at)
             VALUES (%(config_id)s, %(name)s, %(detection_profile)s, %(use_presidio)s,
                     %(use_ai_query)s, %(use_gliner)s, %(ner_backend)s, %(endpoint)s,
                     %(score_threshold)s, %(gliner_model)s, %(gliner_threshold)s,
                     %(redaction_strategy)s, %(alignment_mode)s, %(reasoning_effort)s,
                     %(gliner_max_words)s, %(presidio_model_size)s, %(presidio_pattern_only)s,
-                    %(language)s, %(translate_to)s,
+                    %(language)s, %(translate_to)s, %(encryption_secret)s,
                     %(extra_params)s, current_timestamp(), current_timestamp())""",
             {"config_id": config_id, **params},
         )
@@ -130,6 +130,7 @@ async def update_config(config_id: str, body: ConfigCreate):
             presidio_model_size=%(presidio_model_size)s,
             presidio_pattern_only=%(presidio_pattern_only)s,
             language=%(language)s, translate_to=%(translate_to)s,
+            encryption_secret=%(encryption_secret)s,
             extra_params=%(extra_params)s, updated_at=current_timestamp()
         WHERE config_id = %(config_id)s""",
         {"config_id": config_id, **params},

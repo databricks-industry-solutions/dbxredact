@@ -280,18 +280,6 @@ dbutils.widgets.text(
     defaultValue="",
     label="36. Encryption Secret (scope/key, e.g. my-scope/aes-key)",
 )
-dbutils.widgets.dropdown(
-    name="language",
-    defaultValue="en",
-    choices=["en", "es"],
-    label="34. Source Language (es = Spanish, AI_QUERY only)",
-)
-dbutils.widgets.dropdown(
-    name="translate_to",
-    defaultValue="none",
-    choices=["none", "en"],
-    label="35. Translate To (none = no translation; 3x AI_QUERY cost when enabled)",
-)
 
 # COMMAND ----------
 
@@ -360,22 +348,26 @@ elif _encryption_secret_raw:
     encryption_key = _encryption_secret_raw
 else:
     encryption_key = None
-language = dbutils.widgets.get("language")
-_translate_to_raw = dbutils.widgets.get("translate_to")
-translate_to = None if _translate_to_raw == "none" else _translate_to_raw
 
 # Profile overrides (don't touch presidio_pattern_only -- let widget/job param control it)
+# Respect explicit ner_backend choice (e.g. "privacy_filter"); only default to gliner when "none".
 if detection_profile == "fast":
-    use_presidio, use_ai_query, use_gliner = True, True, True
-    ner_backend = "gliner"
+    use_presidio, use_ai_query = True, True
+    if ner_backend == "none":
+        ner_backend = "gliner"
+    use_gliner = ner_backend == "gliner"
     reasoning_effort, gliner_max_words = "low", 256
     _ppo = "pattern-only" if presidio_pattern_only else "full NER"
-    print(f"Profile: Fast Mode -- AI Query + GLiNER + Presidio ({_ppo}), reasoning=low, max_words=256")
+    _ner_label = ner_backend if ner_backend != "none" else "off"
+    print(f"Profile: Fast Mode -- AI Query + {_ner_label} + Presidio ({_ppo}), reasoning=low, max_words=256")
 elif detection_profile == "deep":
-    use_presidio, use_ai_query, use_gliner = True, True, True
-    ner_backend = "gliner"
+    use_presidio, use_ai_query = True, True
+    if ner_backend == "none":
+        ner_backend = "gliner"
+    use_gliner = ner_backend == "gliner"
     reasoning_effort, gliner_max_words = "medium", 256
-    print("Profile: Deep Search -- all detectors, reasoning=medium, max_words=256")
+    _ner_label = ner_backend if ner_backend != "none" else "off"
+    print(f"Profile: Deep Search -- all detectors ({_ner_label}), reasoning=medium, max_words=256")
 
 entity_filter = None
 if safe_list_table or block_list_table:
