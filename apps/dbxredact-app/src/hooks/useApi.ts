@@ -12,7 +12,11 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     let message: string;
     try {
       const json = JSON.parse(body);
-      message = json.error || json.detail || json.message || `Request failed (${res.status})`;
+      const detail = json.detail;
+      const detailStr = Array.isArray(detail)
+        ? detail.map((d: any) => d.msg || JSON.stringify(d)).join("; ")
+        : detail;
+      message = json.error || detailStr || json.message || `Request failed (${res.status})`;
     } catch {
       const STATUS_MESSAGES: Record<number, string> = {
         400: "Bad request -- check your inputs and try again.",
