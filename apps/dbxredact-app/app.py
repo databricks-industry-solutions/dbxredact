@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 import uuid
 
 from fastapi import FastAPI, Request
@@ -10,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.routes import api_router
-from api.services.db import execute, fetch_one, _table, CATALOG, SCHEMA, WAREHOUSE_ID, DatabaseError
+from api.services.db import execute, fetch_one, fetch_all, _table, CATALOG, SCHEMA, WAREHOUSE_ID, DatabaseError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -145,103 +146,124 @@ DEFAULT_CONFIG = {
 }
 
 
+_schema_ready = threading.Event()
+
+
+def _run_table_setup():
+    """Create tables, run migrations, seed defaults. Runs in a background thread
+    so the app starts serving immediately (SQL warehouse cold-start can take minutes)."""
+    try:
+        for ddl in TABLE_DDLS:
+            try:
+                execute(ddl)
+            except Exception as e:
+                logger.error("Failed to create table: %s", e)
+        _migrations = [
+            f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (cost_estimate_usd DOUBLE)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (detection_profile STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (reasoning_effort STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (gliner_max_words INT)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_model_size STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_pattern_only BOOLEAN)",
+            f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (run_page_url STRING)",
+            f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (job_type STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (ner_backend STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (language STRING DEFAULT 'en')",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (translate_to STRING DEFAULT 'none')",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (encryption_secret STRING DEFAULT '')",
+        ]
+        logger.info("Running %d column migrations...", len(_migrations))
+        for col_ddl in _migrations:
+            try:
+                execute(col_ddl)
+                logger.info("Migration OK: %s", col_ddl.split("(")[0].strip())
+            except Exception as e:
+                if "already exists" in str(e).lower() or "FIELDS_ALREADY_EXISTS" in str(e):
+                    pass
+                else:
+                    logger.error("Migration FAILED: %s — %s", col_ddl, e)
+        # Verify critical columns
+        try:
+            cols = fetch_all(f"DESCRIBE TABLE {_table('redact_config')}")
+            col_names = {r.get("col_name", "").lower() for r in cols}
+            missing = {"language", "translate_to", "ner_backend", "encryption_secret"} - col_names
+            if missing:
+                logger.error("CRITICAL: redact_config missing columns after migration: %s", missing)
+            else:
+                logger.info("redact_config schema verified: all required columns present")
+        except Exception as e:
+            logger.error("Failed to verify redact_config schema: %s", e)
+        # Backfill ner_backend
+        try:
+            execute(f"UPDATE {_table('redact_config')} SET ner_backend = 'none' WHERE ner_backend IS NULL")
+        except Exception:
+            pass
+        # Seed default config if table is empty
+        try:
+            row = fetch_one(f"SELECT count(*) as cnt FROM {_table('redact_config')}")
+            if row and int(row.get("cnt", 0)) == 0:
+                execute(
+                    f"""INSERT INTO {_table('redact_config')}
+                    (config_id, name, detection_profile, use_presidio, use_ai_query, use_gliner,
+                     ner_backend, endpoint, score_threshold, gliner_model, gliner_threshold,
+                     redaction_strategy, alignment_mode, reasoning_effort, gliner_max_words,
+                     presidio_model_size, presidio_pattern_only, language, translate_to,
+                     extra_params, created_at, updated_at)
+                    VALUES (%(config_id)s, %(name)s, %(detection_profile)s, %(use_presidio)s,
+                            %(use_ai_query)s, %(use_gliner)s, %(ner_backend)s, %(endpoint)s,
+                            %(score_threshold)s, %(gliner_model)s, %(gliner_threshold)s,
+                            %(redaction_strategy)s, %(alignment_mode)s, %(reasoning_effort)s,
+                            %(gliner_max_words)s, %(presidio_model_size)s, %(presidio_pattern_only)s,
+                            %(language)s, %(translate_to)s,
+                            NULL, current_timestamp(), current_timestamp())""",
+                    DEFAULT_CONFIG,
+                )
+                logger.info("Seeded default config")
+        except Exception as e:
+            logger.error("Failed to seed default config: %s", e)
+        # Governance: warn about stale PII data
+        for pii_table in ("redact_annotations", "redact_ground_truths"):
+            try:
+                stale = fetch_one(
+                    f"SELECT count(*) as cnt, min(created_at) as oldest "
+                    f"FROM {_table(pii_table)} "
+                    f"WHERE created_at < current_timestamp() - INTERVAL {RETENTION_DAYS} DAY"
+                )
+                cnt = int(stale.get("cnt", 0)) if stale else 0
+                if cnt > 0:
+                    logger.warning(
+                        "GOVERNANCE: %s has %d rows older than %d days (oldest: %s). "
+                        "These contain raw PII. Call POST /api/admin/purge-annotations to clean up.",
+                        pii_table, cnt, RETENTION_DAYS, stale.get("oldest"),
+                    )
+            except Exception:
+                pass
+        logger.info("Table setup complete")
+    except Exception as e:
+        logger.error("Table setup failed: %s", e)
+    finally:
+        _schema_ready.set()
+
+
 @app.on_event("startup")
 async def on_startup():
     if not _allowed_origins:
         logger.warning("ALLOWED_ORIGINS not set -- CORS allows all origins. Set ALLOWED_ORIGINS for production.")
     if not os.environ.get("DATABRICKS_WAREHOUSE_ID"):
         logger.warning("DATABRICKS_WAREHOUSE_ID not set -- skipping table setup")
+        _schema_ready.set()
         return
-    for ddl in TABLE_DDLS:
-        try:
-            execute(ddl)
-        except Exception as e:
-            logger.error("Failed to create table: %s", e)
-    # Migrate pre-existing tables that may lack newer columns
-    _migrations = [
-        f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (cost_estimate_usd DOUBLE)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (detection_profile STRING)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (reasoning_effort STRING)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (gliner_max_words INT)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_model_size STRING)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_pattern_only BOOLEAN)",
-        f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (run_page_url STRING)",
-        f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (job_type STRING)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (ner_backend STRING)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (language STRING DEFAULT 'en')",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (translate_to STRING DEFAULT 'none')",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (encryption_secret STRING DEFAULT '')",
-    ]
-    logger.info("Running %d column migrations...", len(_migrations))
-    for col_ddl in _migrations:
-        try:
-            execute(col_ddl)
-            logger.info("Migration OK: %s", col_ddl.split("(")[0].strip())
-        except Exception as e:
-            if "already exists" in str(e).lower() or "FIELDS_ALREADY_EXISTS" in str(e):
-                pass
-            else:
-                logger.error("Migration FAILED: %s — %s", col_ddl, e)
-    # Verify critical columns exist on redact_config
-    try:
-        cols = fetch_all(f"DESCRIBE TABLE {_table('redact_config')}")
-        col_names = {r.get("col_name", "").lower() for r in cols}
-        missing = {"language", "translate_to", "ner_backend", "encryption_secret"} - col_names
-        if missing:
-            logger.error("CRITICAL: redact_config is missing columns after migration: %s", missing)
-        else:
-            logger.info("redact_config schema verified: all required columns present")
-    except Exception as e:
-        logger.error("Failed to verify redact_config schema: %s", e)
-    # Backfill ner_backend for rows added before the column existed
-    try:
-        execute(f"UPDATE {_table('redact_config')} SET ner_backend = 'none' WHERE ner_backend IS NULL")
-    except Exception:
-        pass
-    try:
-        row = fetch_one(f"SELECT count(*) as cnt FROM {_table('redact_config')}")
-        if row and int(row.get("cnt", 0)) == 0:
-            execute(
-                f"""INSERT INTO {_table('redact_config')}
-                (config_id, name, detection_profile, use_presidio, use_ai_query, use_gliner,
-                 ner_backend, endpoint, score_threshold, gliner_model, gliner_threshold,
-                 redaction_strategy, alignment_mode, reasoning_effort, gliner_max_words,
-                 presidio_model_size, presidio_pattern_only, language, translate_to,
-                 extra_params, created_at, updated_at)
-                VALUES (%(config_id)s, %(name)s, %(detection_profile)s, %(use_presidio)s,
-                        %(use_ai_query)s, %(use_gliner)s, %(ner_backend)s, %(endpoint)s,
-                        %(score_threshold)s, %(gliner_model)s, %(gliner_threshold)s,
-                        %(redaction_strategy)s, %(alignment_mode)s, %(reasoning_effort)s,
-                        %(gliner_max_words)s, %(presidio_model_size)s, %(presidio_pattern_only)s,
-                        %(language)s, %(translate_to)s,
-                        NULL, current_timestamp(), current_timestamp())""",
-                DEFAULT_CONFIG,
-            )
-            logger.info("Seeded default config")
-    except Exception as e:
-        logger.error("Failed to seed default config: %s", e)
-    # Warn if PII-bearing tables have stale data beyond retention period
-    for pii_table in ("redact_annotations", "redact_ground_truths"):
-        try:
-            stale = fetch_one(
-                f"SELECT count(*) as cnt, min(created_at) as oldest "
-                f"FROM {_table(pii_table)} "
-                f"WHERE created_at < current_timestamp() - INTERVAL {RETENTION_DAYS} DAY"
-            )
-            cnt = int(stale.get("cnt", 0)) if stale else 0
-            if cnt > 0:
-                logger.warning(
-                    "GOVERNANCE: %s has %d rows older than %d days (oldest: %s). "
-                    "These contain raw PII. Call POST /api/admin/purge-annotations to clean up.",
-                    pii_table, cnt, RETENTION_DAYS, stale.get("oldest"),
-                )
-        except Exception:
-            pass
+    thread = threading.Thread(target=_run_table_setup, daemon=True)
+    thread.start()
+    logger.info("Table setup running in background -- app is serving requests")
 
 
 @app.get("/api/health")
 async def health_check():
-    """Schema diagnostic endpoint -- reports missing columns on redact_config."""
+    """Schema diagnostic endpoint -- reports setup status and missing columns."""
+    ready = _schema_ready.is_set()
+    if not ready:
+        return {"status": "initializing", "detail": "Table setup still running (warehouse may be starting)"}
     try:
         cols = fetch_all(f"DESCRIBE TABLE {_table('redact_config')}")
         col_names = {r.get("col_name", "").lower() for r in cols}
