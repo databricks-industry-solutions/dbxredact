@@ -680,8 +680,8 @@ def diagnose_strict_failures(
         contains(lower(col(f"gt.{chunk_column}")), lower(col(f"det.{entity_column}")))
         | contains(lower(col(f"det.{entity_column}")), lower(col(f"gt.{chunk_column}")))
     )
-    overlap_pos = (col(f"det.{start_column}") < col(f"gt.{end_column}")) & (
-        col(f"det.{end_column}") > col(f"gt.{begin_column}")
+    overlap_pos = (col(f"det.{start_column}") <= col(f"gt.{end_column}")) & (
+        col(f"det.{end_column}") >= col(f"gt.{begin_column}")
     )
 
     strict_ok = (col(f"det.{start_column}") <= col(f"gt.{begin_column}")) & (

@@ -697,7 +697,7 @@ class RedactionConfig:
     use_presidio: bool = True
     use_ai_query: bool = True
     use_gliner: bool = False
-    ner_backend: str = "gliner"  # "gliner", "privacy_filter", or "none"
+    ner_backend: str = "none"  # "gliner", "privacy_filter", or "none"
     endpoint: Optional[str] = None
     score_threshold: float = DEFAULT_PRESIDIO_SCORE_THRESHOLD
     gliner_model: str = DEFAULT_GLINER_MODEL

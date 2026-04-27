@@ -96,10 +96,13 @@ def make_privacy_filter_udf(
                         )
                         if should_ignore_entity(ent["text"], entity_type):
                             continue
+                        score = float(ent.get("score", 1.0)) if isinstance(ent, dict) else 1.0
+                        if score < threshold:
+                            continue
                         formatted.append({
                             "entity": ent["text"],
                             "entity_type": entity_type,
-                            "score": 1.0,
+                            "score": score,
                             "start": ent["start"],
                             "end": ent["end"],
                             "doc_id": str(doc_id),

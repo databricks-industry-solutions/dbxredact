@@ -56,8 +56,9 @@ class TestConcatTextColumns:
         df = spark.createDataFrame([(None, "some text")], schema=schema)
         result = _concat_text_columns(df, ["a", "b"])
         row = result.collect()[0]
-        # concat_ws skips nulls
-        assert "some text" in row["_combined_text"]
+        expected = f"{_FIELD_BOUNDARY_SENTINEL}some text"
+        assert row["_combined_text"] == expected
+        assert list(row["_field_lengths"]) == [0, 9]
 
 
 class TestSplitAndRedactColumns:
@@ -123,3 +124,47 @@ class TestSplitAndRedactColumns:
         result = df.withColumn("_split_map", split_udf(col("_redacted"), col("_field_lengths")))
         row = result.collect()[0]
         assert row["_split_map"]["body"] == "Hello [REDACTED]"
+
+
+class TestNullColumnRoundTrip:
+    """Verify null columns survive concat -> split without misalignment."""
+
+    def test_null_first_column_round_trip(self, spark):
+        from pyspark.sql.types import StructType, StructField, StringType
+        schema = StructType([
+            StructField("a", StringType(), True),
+            StructField("b", StringType(), True),
+            StructField("c", StringType(), True),
+        ])
+        df = spark.createDataFrame([(None, "hello", "world")], schema=schema)
+        cols = ["a", "b", "c"]
+        concat_df = _concat_text_columns(df, cols)
+        split_udf = _split_and_redact_columns(cols, "generic")
+        result = concat_df.withColumn(
+            "_split_map",
+            split_udf(col("_combined_text"), col("_field_lengths")),
+        )
+        row = result.collect()[0]
+        assert row["_split_map"]["a"] == ""
+        assert row["_split_map"]["b"] == "hello"
+        assert row["_split_map"]["c"] == "world"
+
+    def test_null_middle_column_round_trip(self, spark):
+        from pyspark.sql.types import StructType, StructField, StringType
+        schema = StructType([
+            StructField("a", StringType(), True),
+            StructField("b", StringType(), True),
+            StructField("c", StringType(), True),
+        ])
+        df = spark.createDataFrame([("hello", None, "world")], schema=schema)
+        cols = ["a", "b", "c"]
+        concat_df = _concat_text_columns(df, cols)
+        split_udf = _split_and_redact_columns(cols, "generic")
+        result = concat_df.withColumn(
+            "_split_map",
+            split_udf(col("_combined_text"), col("_field_lengths")),
+        )
+        row = result.collect()[0]
+        assert row["_split_map"]["a"] == "hello"
+        assert row["_split_map"]["b"] == ""
+        assert row["_split_map"]["c"] == "world"

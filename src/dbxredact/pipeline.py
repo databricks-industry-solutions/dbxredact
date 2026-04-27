@@ -635,7 +635,9 @@ def run_redaction_pipeline(
         for incremental processing with lower memory pressure and no row-count limits.
 
     Returns:
-        DataFrame with redacted text
+        DataFrame with redacted text.  Production strategy returns only safe
+        output columns; use ``output_strategy="validation"`` to retain
+        intermediate detection metadata.
     """
     use_privacy_filter = False
     if config is not None:
@@ -1011,7 +1013,7 @@ def run_redaction_pipeline_streaming(
     from .config import PROMPT_SKELETON_BY_LANGUAGE
     _stream_prompt = PROMPT_SKELETON_BY_LANGUAGE.get(_stream_language, PHI_PROMPT_SKELETON)
     if _stream_language != "en":
-        logger.warning("Streaming: language=%s, forcing AI Query only.", _stream_language)
+        logger.warning("Streaming: language=%s, disabling Presidio/GLiNER (English-only).", _stream_language)
         use_presidio = False
         use_gliner = False
         use_ai_query = True
@@ -1648,7 +1650,12 @@ def _apply_streaming_detection_chain(
     use_aligned: bool,
     alignment_mode: str,
 ) -> tuple:
-    """Run detector chain and alignment, return (df, entities_column)."""
+    """Run detector chain and alignment, return (df, entities_column).
+
+    Note: This streaming helper supports Presidio, AI Query, and GLiNER only.
+    Privacy Filter and AI Query text chunking (ai_max_chars) are not available
+    in streaming mode -- use the batch pipeline for these features.
+    """
     if use_presidio:
         from .presidio import make_presidio_batch_udf
         presidio_udf = make_presidio_batch_udf(
@@ -1933,10 +1940,10 @@ def _concat_text_columns(
     sentinel: str = _FIELD_BOUNDARY_SENTINEL,
 ) -> DataFrame:
     """Concatenate multiple text columns into ``_combined_text`` with sentinel boundaries."""
-    from pyspark.sql.functions import concat_ws, length as spark_length, array as spark_array
+    from pyspark.sql.functions import concat_ws, length as spark_length, array as spark_array, coalesce, lit
 
-    combined_expr = concat_ws(sentinel, *[col(c) for c in text_columns])
-    length_exprs = spark_array(*[spark_length(col(c)).cast("int") for c in text_columns])
+    combined_expr = concat_ws(sentinel, *[coalesce(col(c), lit("")) for c in text_columns])
+    length_exprs = spark_array(*[spark_length(coalesce(col(c), lit(""))).cast("int") for c in text_columns])
     return (
         df
         .withColumn("_combined_text", combined_expr)
@@ -2018,6 +2025,9 @@ def run_ingestion_redaction_pipeline(
 
     Raw PII never lands in a persistent table -- detection and redaction happen
     within the streaming micro-batch before the MERGE INTO writes to ``output_table``.
+
+    Limitations: Privacy Filter and AI Query text chunking (ai_max_chars) are
+    not supported in the ingestion pipeline. Use the batch pipeline for these.
     """
     if config is not None:
         _v = _apply_config(config, {

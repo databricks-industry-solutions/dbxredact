@@ -217,6 +217,10 @@ def _run_ai_chunked(
         _get_offset_correct_udf,
     )
 
+    if ai_overlap_chars >= ai_max_chars:
+        raise ValueError(
+            f"ai_overlap_chars ({ai_overlap_chars}) must be less than ai_max_chars ({ai_max_chars})"
+        )
     step = ai_max_chars - ai_overlap_chars
 
     original_df = df.withColumn("_row_id", monotonically_increasing_id())
@@ -399,29 +403,20 @@ def run_detection(
         ai_overlap_chars = _cfg_map.get("ai_overlap_chars", ai_overlap_chars)
         language = _cfg_map.get("language", "en")
 
-    # Non-English: force AI_QUERY only
+    # Non-English: disable English-only detectors (Presidio, GLiNER).
+    # Privacy Filter has multilingual capability and stays enabled.
     if language != "en":
         if use_presidio:
-            logger.warning("Presidio disabled for language='%s' (English-only). Using AI_QUERY.", language)
+            logger.warning("Presidio disabled for language='%s' (English-only).", language)
             use_presidio = False
         if use_gliner:
-            logger.warning("GLiNER disabled for language='%s' (English-only). Using AI_QUERY.", language)
+            logger.warning("GLiNER disabled for language='%s' (English-only).", language)
             use_gliner = False
+        if use_privacy_filter:
+            logger.warning("Privacy Filter: accuracy may be lower for language='%s' (primarily trained on English).", language)
         use_ai_query = True
 
     prompt_skeleton = PROMPT_SKELETON_BY_LANGUAGE.get(language, PHI_PROMPT_SKELETON)
-
-    # Language-aware prompt selection
-    language = config.language if config is not None else "en"
-    prompt_skeleton = PROMPT_SKELETON_BY_LANGUAGE.get(language, PHI_PROMPT_SKELETON)
-    if language != "en":
-        logger.warning(
-            "Language=%s: forcing AI Query only (Presidio and NER are English-only).",
-            language,
-        )
-        use_presidio = False
-        use_gliner = False
-        use_ai_query = True
 
     # Repartition once; all detectors will use _repartition=False
     n_parts = _smart_partitions(df, num_cores, row_count=row_count)
@@ -504,7 +499,7 @@ def run_detection(
             _repartition=False,
         )
         if gliner_max_words is not None:
-            gliner_kwargs["gliner_max_words"] = gliner_max_words
+            gliner_kwargs["max_words"] = gliner_max_words
         result_df = run_gliner_detection(**gliner_kwargs)
         result_df = result_df.cache()
         result_df.count()

@@ -3,7 +3,7 @@
 import pytest
 from pyspark.sql import Row
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType
-from dbxredact.evaluation import calculate_metrics, diagnose_strict_failures, _validate_metric_name
+from dbxredact.evaluation import calculate_metrics, diagnose_strict_failures, evaluate_detection, _validate_metric_name
 
 _EVAL_ROW_SCHEMA = StructType(
     [
@@ -279,3 +279,31 @@ class TestMetricsToLongFormat:
         assert basis_map["npv"] == "character"
         assert basis_map["true_negatives"] == "character"
         assert basis_map["true_positives"] == "entity"
+
+
+class TestEvaluateDetectionMatchModes:
+    """Verify strict vs overlap match modes in evaluate_detection + calculate_metrics."""
+
+    def _eval(self, spark, gt_rows, det_rows, match_mode):
+        gt = _make_gt_df(spark, gt_rows)
+        det = _make_det_df(spark, det_rows)
+        eval_df = evaluate_detection(gt, det, match_mode=match_mode)
+        return calculate_metrics(eval_df, total_tokens=100)
+
+    def test_strict_match_exact(self, spark):
+        m = self._eval(spark, [("d1", 5, 10, "hello")], [("d1", 5, 10, "hello")], "strict")
+        assert m["recall"] == 1.0
+        assert m["precision"] == 1.0
+
+    def test_overlap_match_partial(self, spark):
+        m = self._eval(spark, [("d1", 5, 10, "hello")], [("d1", 7, 12, "llo")], "overlap")
+        assert m["recall"] == 1.0
+
+    def test_strict_rejects_partial(self, spark):
+        m = self._eval(spark, [("d1", 5, 10, "hello")], [("d1", 7, 12, "llo")], "strict")
+        assert m["recall"] == 0.0
+
+    def test_boundary_adjacent_overlap(self, spark):
+        """Spans that share an endpoint (det.end == gt.begin) should match with overlap."""
+        m = self._eval(spark, [("d1", 10, 15, "world")], [("d1", 5, 10, "world")], "overlap")
+        assert m["recall"] == 1.0
