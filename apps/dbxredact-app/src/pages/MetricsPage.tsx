@@ -131,6 +131,9 @@ export default function MetricsPage() {
 function DetectionView({ summary, byType, confDist, examples }: {
   summary: DetectionSummary; byType: EntityByType[]; confDist: ConfidenceBucket[]; examples: DetectionExample[];
 }) {
+  const isEmpty = !summary.total_entities && !byType.length && !examples.length;
+  if (isEmpty) return <p className="text-sm text-gray-400">No detection data found. Run a benchmark first.</p>;
+
   return (
     <>
       <div className="grid grid-cols-3 gap-4 mb-6">
