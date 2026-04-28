@@ -36,13 +36,14 @@ async def metrics_by_entity_type(output_table: str = Query(...)):
 
 @router.get("/confidence-distribution")
 async def confidence_distribution(output_table: str = Query(...)):
+    score_expr = "GREATEST(COALESCE(ent.presidio_score, 0), COALESCE(ent.gliner_score, 0), COALESCE(ent.ai_score, 0))"
     rows = fetch_all(
         f"""SELECT
             CASE
-                WHEN ent.score >= 0.9 THEN '0.9-1.0'
-                WHEN ent.score >= 0.7 THEN '0.7-0.9'
-                WHEN ent.score >= 0.5 THEN '0.5-0.7'
-                WHEN ent.score >= 0.3 THEN '0.3-0.5'
+                WHEN {score_expr} >= 0.9 THEN '0.9-1.0'
+                WHEN {score_expr} >= 0.7 THEN '0.7-0.9'
+                WHEN {score_expr} >= 0.5 THEN '0.5-0.7'
+                WHEN {score_expr} >= 0.3 THEN '0.3-0.5'
                 ELSE '0.0-0.3'
             END as bucket,
             count(*) as count
@@ -58,7 +59,8 @@ async def confidence_distribution(output_table: str = Query(...)):
 async def entity_examples(output_table: str = Query(...), limit: int = Query(50, le=200)):
     """Sample of detected entities with text, type, and confidence."""
     rows = fetch_all(
-        f"""SELECT ent.entity, ent.entity_type, ent.confidence
+        f"""SELECT ent.entity, ent.entity_type, ent.confidence,
+            GREATEST(COALESCE(ent.presidio_score, 0), COALESCE(ent.gliner_score, 0), COALESCE(ent.ai_score, 0)) as score
         FROM {quote_table(output_table)}
         LATERAL VIEW explode(aligned_entities) t AS ent
         LIMIT {int(limit)}"""
