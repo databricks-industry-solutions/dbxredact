@@ -18,7 +18,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
-dist/
+/dist/
 build/
 .venv/
 venv/
@@ -47,7 +47,6 @@ ROADMAP.md
 
 # Frontend build artifacts
 apps/dbxredact-app/node_modules/
-apps/dbxredact-app/dist/
 apps/dbxredact-app/package-lock.json
 
 .ai-dev-kit/

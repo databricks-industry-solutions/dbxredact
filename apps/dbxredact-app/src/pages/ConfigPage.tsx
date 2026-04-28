@@ -11,12 +11,12 @@ const PROFILE_PRESETS: Record<string, Partial<typeof DEFAULTS>> = {
   fast: {
     use_presidio: true, use_ai_query: true, use_gliner: true, ner_backend: "gliner",
     reasoning_effort: "low", gliner_max_words: 256, presidio_model_size: "lg",
-    presidio_pattern_only: true,
+    presidio_pattern_only: true, score_threshold: 0.7,
   },
   deep: {
     use_presidio: true, use_ai_query: true, use_gliner: true, ner_backend: "gliner",
     reasoning_effort: "medium", gliner_max_words: 256, presidio_model_size: "trf",
-    presidio_pattern_only: false,
+    presidio_pattern_only: false, score_threshold: 0.5,
   },
 };
 
@@ -34,7 +34,7 @@ const DEFAULTS = {
   use_gliner: true,
   ner_backend: "gliner" as "none" | "gliner" | "privacy_filter",
   endpoint: "databricks-gpt-oss-120b",
-  score_threshold: 0.5,
+  score_threshold: 0.7,
   gliner_model: "nvidia/gliner-PII",
   gliner_threshold: 0.2,
   redaction_strategy: "typed",
@@ -257,7 +257,7 @@ export default function ConfigPage() {
         </div>
         <div>
           <label className="block text-sm font-medium mb-1.5">Score Threshold</label>
-          <input type="number" step={0.05} min={0} max={1} className="input-field"
+          <input type="number" step={0.05} min={0.1} max={0.95} className="input-field"
             value={form.score_threshold} onChange={(e) => set("score_threshold", parseFloat(e.target.value))} />
         </div>
         <div>
