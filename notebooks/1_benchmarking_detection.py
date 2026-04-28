@@ -153,6 +153,16 @@ dbutils.widgets.dropdown(
     choices=["true", "false"],
     label="17. Presidio Pattern-Only (skip NER)",
 )
+dbutils.widgets.text(
+    name="gliner_threshold",
+    defaultValue="0.2",
+    label="18. GLiNER Threshold",
+)
+dbutils.widgets.text(
+    name="presidio_model_size",
+    defaultValue="",
+    label="19. Presidio Model Size (lg, trf, or empty for default)",
+)
 
 detection_profile = dbutils.widgets.get("detection_profile")
 source_table = dbutils.widgets.get("source_table")
@@ -187,6 +197,8 @@ safe_list_table = dbutils.widgets.get("safe_list_table").strip()
 block_list_table = dbutils.widgets.get("block_list_table").strip()
 
 presidio_pattern_only = dbutils.widgets.get("presidio_pattern_only") == "true"
+gliner_threshold = float(dbutils.widgets.get("gliner_threshold") or "0.2")
+presidio_model_size = dbutils.widgets.get("presidio_model_size").strip() or None
 
 # Profile overrides (don't touch presidio_pattern_only -- let widget/job param control it)
 if detection_profile == "fast":
@@ -275,10 +287,12 @@ config = RedactionConfig(
     score_threshold=score_threshold,
     gliner_model=gliner_model,
     gliner_max_words=gliner_max_words,
+    gliner_threshold=gliner_threshold,
     num_cores=num_cores,
     alignment_mode=alignment_mode,
     reasoning_effort=reasoning_effort,
     presidio_pattern_only=presidio_pattern_only,
+    presidio_model_size=presidio_model_size,
     entity_filter=entity_filter,
 )
 

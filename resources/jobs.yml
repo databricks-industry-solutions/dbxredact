@@ -96,6 +96,7 @@ resources:
             base_parameters:
               detection_table: "{{job.parameters.source_table}}_detection_results"
               output_table: "{{job.parameters.source_table}}_redacted"
+              redaction_strategy: "{{job.parameters.redaction_strategy}}"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
