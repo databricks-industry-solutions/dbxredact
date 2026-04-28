@@ -70,9 +70,14 @@ async def entity_examples(output_table: str = Query(...), limit: int = Query(50,
 async def evaluation_metrics(eval_table: str = Query(...)):
     """Precision/Recall/F1 from the long-format evaluation results table."""
     rows = fetch_all(
-        f"""SELECT method_name, metric_name, metric_value, match_mode
+        f"""WITH latest AS (
+            SELECT run_id FROM {quote_table(eval_table)}
+            ORDER BY timestamp DESC LIMIT 1
+        )
+        SELECT method_name, metric_name, metric_value, match_mode
         FROM {quote_table(eval_table)}
-        WHERE metric_name IN ('precision', 'recall', 'f1_score', 'accuracy',
+        WHERE run_id = (SELECT run_id FROM latest)
+          AND metric_name IN ('precision', 'recall', 'f1_score', 'accuracy',
                               'true_positives', 'false_positives', 'false_negatives', 'true_negatives')
         ORDER BY method_name, metric_name"""
     )
