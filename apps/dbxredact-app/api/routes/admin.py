@@ -191,9 +191,23 @@ async def audit_summary(
         f"FROM {_table('redact_audit_log')} {where}",
         params,
     )
+    total_docs = int(total_row.get("total_docs", 0)) if total_row else 0
+    total_runs = int(total_row.get("total_runs", 0)) if total_row else 0
+    total_entities = int(total_row.get("total_entities", 0)) if total_row else 0
+
+    if total_runs == 0:
+        try:
+            job_row = fetch_one(
+                f"SELECT count(*) as cnt FROM {_table('redact_job_history')} {where}",
+                params,
+            )
+            total_runs = int(job_row.get("cnt", 0)) if job_row else 0
+        except Exception:
+            pass
+
     return {
-        "total_docs": int(total_row.get("total_docs", 0)) if total_row else 0,
-        "total_runs": int(total_row.get("total_runs", 0)) if total_row else 0,
-        "total_entities": int(total_row.get("total_entities", 0)) if total_row else 0,
+        "total_docs": total_docs,
+        "total_runs": total_runs,
+        "total_entities": total_entities,
         "by_entity_type": summary,
     }
