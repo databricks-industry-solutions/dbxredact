@@ -544,9 +544,7 @@ def _apply_translation_and_review(
         df = df.withColumnRenamed("_ai_results_detection", "ai_results_struct")
     review_ent_col = "review_entities"
 
-    redact_udf = create_redaction_audit_udf(
-        RedactionStrategy(config.redaction_strategy)
-    )
+    redact_udf = create_redaction_audit_udf(config.redaction_strategy)
     df = df.withColumn(
         f"{text_column}_reviewed",
         redact_udf(col(translated_col), col(review_ent_col)).getField("redacted_text"),
