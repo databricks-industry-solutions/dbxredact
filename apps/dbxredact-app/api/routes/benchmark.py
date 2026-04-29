@@ -35,7 +35,7 @@ def _config_to_job_params(config: dict) -> dict[str, str]:
         "gliner_max_words": str(config.get("gliner_max_words", 256)),
         "presidio_model_size": config.get("presidio_model_size") or "trf",
         "presidio_pattern_only": str(config.get("presidio_pattern_only", "false")).lower(),
-        "gliner_threshold": str(config.get("gliner_threshold", 0.2)),
+        "gliner_threshold": str(float(config.get("gliner_threshold", 0.2)) or 0.2),
         "redaction_strategy": config.get("redaction_strategy") or "typed",
     }
 

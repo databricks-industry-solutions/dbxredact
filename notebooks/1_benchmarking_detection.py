@@ -197,7 +197,10 @@ safe_list_table = dbutils.widgets.get("safe_list_table").strip()
 block_list_table = dbutils.widgets.get("block_list_table").strip()
 
 presidio_pattern_only = dbutils.widgets.get("presidio_pattern_only") == "true"
-gliner_threshold = float(dbutils.widgets.get("gliner_threshold") or "0.2")
+_gt_raw = dbutils.widgets.get("gliner_threshold").strip()
+gliner_threshold = float(_gt_raw) if _gt_raw else 0.2
+if gliner_threshold < 0.05:
+    gliner_threshold = 0.2
 presidio_model_size = dbutils.widgets.get("presidio_model_size").strip() or None
 
 # Profile overrides (don't touch presidio_pattern_only -- let widget/job param control it)
