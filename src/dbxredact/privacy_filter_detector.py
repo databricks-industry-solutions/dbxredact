@@ -108,8 +108,8 @@ def make_privacy_filter_udf(
                             "doc_id": str(doc_id),
                         })
                     results.append(formatted)
-                except (RuntimeError, ValueError, KeyError, IndexError, TypeError) as e:
-                    logger.warning("Privacy Filter detection failed for doc %s: %s", doc_id, type(e).__name__)
+                except Exception as e:
+                    logger.warning("Privacy Filter detection failed for doc %s: %s: %s", doc_id, type(e).__name__, e)
                     results.append([])
 
             yield pd.Series(results)
