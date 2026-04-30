@@ -499,7 +499,7 @@ def run_detection(
             _repartition=False,
         )
         if gliner_max_words is not None:
-            gliner_kwargs["max_words"] = gliner_max_words
+            gliner_kwargs["gliner_max_words"] = gliner_max_words
         result_df = run_gliner_detection(**gliner_kwargs)
         result_df = result_df.cache()
         result_df.count()
