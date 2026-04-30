@@ -142,47 +142,54 @@ def format_entity_response_object_udf(
 
     Returns a Series of lists-of-dicts matching ``ENTITY_SCHEMA``.
     """
+    n = max(len(identified_entities_series), len(sentences))
     new_entity_series = []
 
-    for entity_list, sentence in zip(identified_entities_series, sentences):
-        entities = _parse_entity_list(entity_list)
+    for i in range(n):
+        try:
+            entity_list = identified_entities_series.iloc[i] if i < len(identified_entities_series) else None
+            sentence = sentences.iloc[i] if i < len(sentences) else None
+            entities = _parse_entity_list(entity_list)
 
-        new_entity_list = []
-        unlocated_count = 0
-
-        for entity in entities:
-            entity_text = entity.get("entity")
-            entity_type = entity.get("entity_type")
-            if not entity_text or not entity_type:
+            if not sentence or not entities:
+                new_entity_series.append([])
                 continue
-            if should_ignore_entity(entity_text, entity_type):
-                continue
-            positions = _find_entity_positions(entity_text, sentence)
 
-            if not positions:
+            new_entity_list = []
+            unlocated_count = 0
+
+            for entity in entities:
+                entity_text = entity.get("entity")
+                entity_type = entity.get("entity_type")
+                if not entity_text or not entity_type:
+                    continue
+                if should_ignore_entity(entity_text, entity_type):
+                    continue
+                positions = _find_entity_positions(entity_text, sentence)
+
+                if not positions:
+                    unlocated_count += 1
+                    continue
+
+                for start, end in positions:
+                    new_entity_list.append({
+                        "entity": sentence[start:end],
+                        "entity_type": entity_type,
+                        "score": float(DEFAULT_AI_CONFIDENCE_SCORE),
+                        "start": start,
+                        "end": end,
+                        "doc_id": None,
+                    })
+
+            if unlocated_count > 0:
                 logger.warning(
-                    "AI detected entity (%s, %d chars) but could not locate in text",
-                    entity_type, len(entity_text),
+                    "%d AI-detected entities could not be located in text (out of %d)",
+                    unlocated_count, len(entities),
                 )
-                unlocated_count += 1
-                continue
-
-            for start, end in positions:
-                new_entity_list.append({
-                    "entity": sentence[start:end],
-                    "entity_type": entity_type,
-                    "score": float(DEFAULT_AI_CONFIDENCE_SCORE),
-                    "start": start,
-                    "end": end,
-                    "doc_id": None,
-                })
-
-        if unlocated_count > 0:
-            logger.warning(
-                "%d AI-detected entities could not be located in text (out of %d)",
-                unlocated_count, len(entities),
-            )
-        new_entity_series.append(new_entity_list)
+            new_entity_series.append(new_entity_list)
+        except Exception as e:
+            logger.warning("format_entity_response_object_udf failed on row %d: %s", i, e)
+            new_entity_series.append([])
 
     return pd.Series(new_entity_series)
 
