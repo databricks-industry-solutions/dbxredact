@@ -228,6 +228,78 @@ print(f"Total tokens in corpus: {all_tokens:,}")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Token-Level Metrics Helper
+# MAGIC
+# MAGIC Computes precision/recall/F1 weighted by character length (matching OpenAI's
+# MAGIC reported token-level metrics for Privacy Filter).
+
+# COMMAND ----------
+
+from pyspark.sql.functions import sum as spark_sum, length as spark_length, when, lit, struct
+
+def calculate_token_metrics(
+    eval_df,
+    chunk_column="chunk", entity_column="entity",
+    doc_id_column="doc_id", begin_column="begin",
+    end_column="end", start_column="start",
+):
+    """Compute token-level (character-weighted) P/R/F1 from an eval DataFrame.
+
+    Deduplicates GT and detection entities before summing character lengths,
+    matching the distinct-counting approach in calculate_metrics.
+    """
+    gt_id = struct(
+        col(f"gt.{doc_id_column}"), col(f"gt.{begin_column}"),
+        col(f"gt.{end_column}"), col(f"gt.{chunk_column}"),
+    )
+    det_id = struct(
+        col(f"det.{doc_id_column}"), col(f"det.{start_column}"),
+        col(f"det.{end_column}"), col(f"det.{entity_column}"),
+    )
+
+    matched_gt = (
+        eval_df
+        .where(col(f"gt.{chunk_column}").isNotNull() & col(f"det.{entity_column}").isNotNull())
+        .select(gt_id.alias("_gid"), spark_length(col(f"gt.{chunk_column}")).alias("_len"))
+        .distinct()
+    )
+    all_gt = (
+        eval_df
+        .where(col(f"gt.{chunk_column}").isNotNull())
+        .select(gt_id.alias("_gid"), spark_length(col(f"gt.{chunk_column}")).alias("_len"))
+        .distinct()
+    )
+    unmatched_det = (
+        eval_df
+        .where(col(f"det.{entity_column}").isNotNull() & col(f"gt.{chunk_column}").isNull())
+        .select(det_id.alias("_did"), spark_length(col(f"det.{entity_column}")).alias("_len"))
+        .distinct()
+    )
+
+    token_tp = matched_gt.select(spark_sum("_len")).first()[0] or 0
+    token_all_gt = all_gt.select(spark_sum("_len")).first()[0] or 0
+    token_fn = token_all_gt - token_tp
+    token_fp = unmatched_det.select(spark_sum("_len")).first()[0] or 0
+
+    token_precision = token_tp / (token_tp + token_fp) if (token_tp + token_fp) > 0 else 0.0
+    token_recall = token_tp / (token_tp + token_fn) if (token_tp + token_fn) > 0 else 0.0
+    token_f1 = (
+        2 * token_precision * token_recall / (token_precision + token_recall)
+        if (token_precision + token_recall) > 0 else 0.0
+    )
+
+    return {
+        "token_precision": token_precision,
+        "token_recall": token_recall,
+        "token_f1_score": token_f1,
+        "token_true_positives": int(token_tp),
+        "token_false_positives": int(token_fp),
+        "token_false_negatives": int(token_fn),
+    }
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Evaluate Each Detection Method
 # MAGIC
 # MAGIC Runs both **strict** (full-containment with -1 tolerance) and **overlap** (interval
@@ -266,6 +338,9 @@ for mode in MATCH_MODES:
         metrics = calculate_metrics(eval_df, all_tokens)
         evaluation_results[mode][method_name] = metrics
 
+        token_metrics = calculate_token_metrics(eval_df)
+        metrics.update(token_metrics)
+
         print(f"\n{method_name.upper()} Contingency Table:")
         contingency_df = format_contingency_table(metrics)
         display(contingency_df)
@@ -273,6 +348,7 @@ for mode in MATCH_MODES:
         print(f"\n{method_name.upper()} Metrics Summary:")
         summary_df = format_metrics_summary(metrics)
         display(summary_df)
+        print(f"  Token-level: P={token_metrics['token_precision']:.3f}  R={token_metrics['token_recall']:.3f}  F1={token_metrics['token_f1_score']:.3f}")
 
         save_evaluation_results(
             spark=spark,
@@ -285,6 +361,59 @@ for mode in MATCH_MODES:
         )
 
         print(f"\nResults saved to {evaluation_output_table}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Corrected Evaluation (exclude non-PII GT entity types)
+# MAGIC
+# MAGIC Following OpenAI's methodology for PII-Masking-300k, exclude GT entity types
+# MAGIC that have no mapping to any detector's taxonomy (e.g. DEMOGRAPHIC).
+# MAGIC This gives a "corrected" recall that reflects actual PII detection quality.
+
+# COMMAND ----------
+
+_EXCLUDE_GT_TYPES = {"DEMOGRAPHIC"}
+
+if "chunk_label" in ground_truth_df.columns:
+    _excluded_count = ground_truth_df.where(
+        col("chunk_label").isin(_EXCLUDE_GT_TYPES)
+    ).count()
+    print(f"Excluding {_excluded_count} GT entities with types: {_EXCLUDE_GT_TYPES}")
+
+    corrected_gt_df = ground_truth_df.where(
+        ~col("chunk_label").isin(_EXCLUDE_GT_TYPES)
+    )
+    corrected_tokens = all_tokens  # token count unchanged
+
+    for mode in MATCH_MODES:
+        for method_name, exploded_df in exploded_results.items():
+            corrected_eval = evaluate_detection(
+                corrected_gt_df, exploded_df, match_mode=mode
+            )
+            corrected_metrics = calculate_metrics(corrected_eval, corrected_tokens)
+            corrected_token = calculate_token_metrics(corrected_eval)
+            corrected_metrics.update(corrected_token)
+            evaluation_results[mode][f"{method_name}_corrected"] = corrected_metrics
+
+            save_evaluation_results(
+                spark=spark,
+                metrics=corrected_metrics,
+                dataset_name=dataset_name,
+                method_name=f"{method_name}_corrected_{mode}",
+                output_table=evaluation_output_table,
+                mode=write_mode,
+                run_metadata={**base_run_metadata, "match_mode": mode},
+            )
+            print(
+                f"  {method_name} corrected ({mode}): "
+                f"P={corrected_metrics['precision']:.3f}  "
+                f"R={corrected_metrics['recall']:.3f}  "
+                f"F1={corrected_metrics['f1_score']:.3f}  "
+                f"Token-R={corrected_token['token_recall']:.3f}"
+            )
+else:
+    print("No chunk_label column in GT -- skipping corrected evaluation")
 
 # COMMAND ----------
 

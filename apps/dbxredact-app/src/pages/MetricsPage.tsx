@@ -195,23 +195,42 @@ function DetectionView({ summary, byType, confDist, examples }: {
 
 function EvaluationView({ rows }: { rows: EvalRow[] }) {
   const [mode, setMode] = useState<"strict" | "overlap">("strict");
+  const [metricLevel, setMetricLevel] = useState<"entity" | "token">("entity");
+  const [showCorrected, setShowCorrected] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
 
   if (!rows.length) return <p className="text-sm text-gray-400">No evaluation data found. Run a benchmark first.</p>;
 
   const modes = [...new Set(rows.map(r => r.match_mode).filter(Boolean))];
   const activeMode = modes.includes(mode) ? mode : modes[0] || "strict";
-  const filtered = rows.filter(r => (r.match_mode || r.method_name.split("_").pop()) === activeMode);
 
-  const stripSuffix = (name: string) => name.replace(/_strict$|_overlap$/, "");
+  const hasCorrected = rows.some(r => r.method_name.includes("_corrected"));
+  const hasTokenMetrics = rows.some(r => r.metric_name.startsWith("token_"));
+
+  const filtered = rows.filter(r => {
+    const matchesMode = (r.match_mode || r.method_name.split("_").pop()) === activeMode;
+    if (!matchesMode) return false;
+    const isCorrected = r.method_name.includes("_corrected");
+    return showCorrected ? isCorrected : !isCorrected;
+  });
+
+  const stripSuffix = (name: string) => name.replace(/_strict$|_overlap$|_corrected/g, "");
   const rawMethods = [...new Set(filtered.map(r => stripSuffix(r.method_name)))];
   const methods = rawMethods.map(displayMethod);
-  const coreMetrics = ["precision", "recall", "f1_score"];
+
+  const prefix = metricLevel === "token" ? "token_" : "";
+  const coreMetrics = [`${prefix}precision`, `${prefix}recall`, `${prefix}f1_score`];
+  const tpKey = `${prefix}true_positives`;
+  const fpKey = `${prefix}false_positives`;
+  const fnKey = `${prefix}false_negatives`;
+  const tnKey = metricLevel === "entity" ? "true_negatives" : "";
 
   const findRow = (raw: string, metric: string) =>
     filtered.find(r => stripSuffix(r.method_name) === raw && r.metric_name === metric);
 
   const chartData = coreMetrics.map(m => {
-    const point: Record<string, string | number> = { metric: m.replace("_", " ") };
+    const label = m.replace("token_", "").replace("_", " ");
+    const point: Record<string, string | number> = { metric: label };
     rawMethods.forEach((raw, i) => {
       const row = findRow(raw, m);
       point[methods[i]] = row ? Number(row.metric_value) : 0;
@@ -223,14 +242,14 @@ function EvaluationView({ rows }: { rows: EvalRow[] }) {
     const point: Record<string, string | number> = { method: methods[i] };
     coreMetrics.forEach(m => {
       const row = findRow(raw, m);
-      point[m] = row ? Number(row.metric_value) : 0;
+      point[m.replace("token_", "").replace("_", " ")] = row ? Number(row.metric_value) : 0;
     });
     return point;
   });
 
   const confusionRows = rawMethods.map((raw, i) => {
     const get = (m: string) => { const r = findRow(raw, m); return r ? Number(r.metric_value) : 0; };
-    return { method: methods[i], tp: get("true_positives"), fp: get("false_positives"), fn: get("false_negatives"), tn: get("true_negatives") };
+    return { method: methods[i], tp: get(tpKey), fp: get(fpKey), fn: get(fnKey), tn: tnKey ? get(tnKey) : null };
   });
 
   const bestOf = (metric: string) => rawMethods.reduce((best, raw, i) => {
@@ -239,23 +258,59 @@ function EvaluationView({ rows }: { rows: EvalRow[] }) {
     return val > best.val ? { method: methods[i], val } : best;
   }, { method: "", val: 0 });
 
-  const bestF1 = bestOf("f1_score");
-  const bestP = bestOf("precision");
-  const bestR = bestOf("recall");
+  const bestF1 = bestOf(coreMetrics[2]);
+  const bestP = bestOf(coreMetrics[0]);
+  const bestR = bestOf(coreMetrics[1]);
 
-  const avgP = rawMethods.reduce((s, raw) => { const r = findRow(raw, "precision"); return s + (r ? Number(r.metric_value) : 0); }, 0) / (methods.length || 1);
-  const avgR = rawMethods.reduce((s, raw) => { const r = findRow(raw, "recall"); return s + (r ? Number(r.metric_value) : 0); }, 0) / (methods.length || 1);
+  const avgP = rawMethods.reduce((s, raw) => { const r = findRow(raw, coreMetrics[0]); return s + (r ? Number(r.metric_value) : 0); }, 0) / (methods.length || 1);
+  const avgR = rawMethods.reduce((s, raw) => { const r = findRow(raw, coreMetrics[1]); return s + (r ? Number(r.metric_value) : 0); }, 0) / (methods.length || 1);
+
+  const radarMetricLabels = coreMetrics.map(m => m.replace("token_", "").replace("_", " "));
 
   return (
     <>
-      <div className="flex items-center gap-1 mb-5 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 w-fit">
-        {(["strict", "overlap"] as const).map(m => (
-          <button key={m} onClick={() => setMode(m)}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              activeMode === m ? "bg-white dark:bg-gray-700 shadow-sm text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400 hover:text-gray-700"
-            }`}>{m.charAt(0).toUpperCase() + m.slice(1)} Match</button>
-        ))}
+      <div className="flex flex-wrap items-center gap-4 mb-4">
+        <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+          {(["strict", "overlap"] as const).map(m => (
+            <button key={m} onClick={() => setMode(m)}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                activeMode === m ? "bg-white dark:bg-gray-700 shadow-sm text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400 hover:text-gray-700"
+              }`}>{m.charAt(0).toUpperCase() + m.slice(1)} Match</button>
+          ))}
+        </div>
+
+        {hasTokenMetrics && (
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+            {(["entity", "token"] as const).map(l => (
+              <button key={l} onClick={() => setMetricLevel(l)}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  metricLevel === l ? "bg-white dark:bg-gray-700 shadow-sm text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400 hover:text-gray-700"
+                }`}>{l === "entity" ? "Entity-level" : "Token-level"}</button>
+            ))}
+          </div>
+        )}
+
+        {hasCorrected && (
+          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer select-none">
+            <input type="checkbox" checked={showCorrected} onChange={e => setShowCorrected(e.target.checked)}
+              className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500" />
+            Show Corrected
+          </label>
+        )}
+
+        <button type="button" onClick={() => setShowInfo(!showInfo)}
+          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 underline underline-offset-2">
+          {showInfo ? "Hide explanation" : "What do these mean?"}
+        </button>
       </div>
+
+      {showInfo && (
+        <div className="mb-5 p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-sm text-gray-700 dark:text-gray-300 space-y-2">
+          <p><span className="font-semibold">Entity-level</span> counts each detected PII item equally -- missing a 2-character state code penalizes the same as missing a 50-character address.</p>
+          <p><span className="font-semibold">Token-level</span> weights by text length, matching how OpenAI reports Privacy Filter benchmarks (0.98 recall). Better reflects actual data protection coverage.</p>
+          {hasCorrected && <p><span className="font-semibold">Corrected</span> excludes ground truth entity types with no detector mapping (e.g. DEMOGRAPHIC), following OpenAI's PII-Masking-300k methodology.</p>}
+        </div>
+      )}
 
       <div className="grid grid-cols-3 md:grid-cols-6 gap-4 mb-6">
         <div className="stat-card"><div className="stat-label">methods evaluated</div><div className="stat-value">{methods.length}</div></div>
@@ -285,7 +340,7 @@ function EvaluationView({ rows }: { rows: EvalRow[] }) {
         <div className="card p-5">
           <h3 className="font-semibold mb-4">Method Comparison (Radar)</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <RadarChart data={coreMetrics.map(m => ({ metric: m.replace("_", " "), ...Object.fromEntries(radarData.map(r => [r.method, r[m]])) }))}>
+            <RadarChart data={radarMetricLabels.map(label => ({ metric: label, ...Object.fromEntries(radarData.map(r => [r.method, r[label]])) }))}>
               <PolarGrid />
               <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11 }} />
               <PolarRadiusAxis domain={[0, 1]} tick={{ fontSize: 10 }} />
@@ -299,17 +354,19 @@ function EvaluationView({ rows }: { rows: EvalRow[] }) {
         </div>
 
         <div className="card p-5">
-          <h3 className="font-semibold mb-4">Confusion Matrix Counts</h3>
+          <h3 className="font-semibold mb-4">
+            {metricLevel === "token" ? "Token Counts (characters)" : "Confusion Matrix Counts"}
+          </h3>
           <table className="data-table">
-            <thead><tr><th>Method</th><th>TP</th><th>FP</th><th>FN</th><th>TN</th></tr></thead>
+            <thead><tr><th>Method</th><th>TP</th><th>FP</th><th>FN</th>{confusionRows[0]?.tn != null && <th>TN</th>}</tr></thead>
             <tbody>
               {confusionRows.map(r => (
                 <tr key={r.method}>
                   <td className="font-medium text-xs">{r.method}</td>
-                  <td className="text-emerald-600 dark:text-emerald-400 font-mono text-xs">{r.tp}</td>
-                  <td className="text-red-600 dark:text-red-400 font-mono text-xs">{r.fp}</td>
-                  <td className="text-amber-600 dark:text-amber-400 font-mono text-xs">{r.fn}</td>
-                  <td className="font-mono text-xs">{r.tn}</td>
+                  <td className="text-emerald-600 dark:text-emerald-400 font-mono text-xs">{r.tp.toLocaleString()}</td>
+                  <td className="text-red-600 dark:text-red-400 font-mono text-xs">{r.fp.toLocaleString()}</td>
+                  <td className="text-amber-600 dark:text-amber-400 font-mono text-xs">{r.fn.toLocaleString()}</td>
+                  {r.tn != null && <td className="font-mono text-xs">{r.tn.toLocaleString()}</td>}
                 </tr>
               ))}
             </tbody>

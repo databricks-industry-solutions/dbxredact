@@ -315,9 +315,19 @@ def metrics_to_long_format(
         "false_positives",
         "true_negatives",
         "false_negatives",
+        "token_precision",
+        "token_recall",
+        "token_f1_score",
+        "token_true_positives",
+        "token_false_positives",
+        "token_false_negatives",
     ]
 
-    _CHAR_LEVEL_METRICS = {"accuracy", "specificity", "npv", "true_negatives"}
+    _CHAR_LEVEL_METRICS = {
+        "accuracy", "specificity", "npv", "true_negatives",
+        "token_precision", "token_recall", "token_f1_score",
+        "token_true_positives", "token_false_positives", "token_false_negatives",
+    }
 
     rows = []
     timestamp = datetime.datetime.now()

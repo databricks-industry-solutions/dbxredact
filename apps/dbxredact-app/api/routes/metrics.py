@@ -80,7 +80,9 @@ async def evaluation_metrics(eval_table: str = Query(...)):
         FROM {quote_table(eval_table)}
         WHERE run_id = (SELECT run_id FROM latest)
           AND metric_name IN ('precision', 'recall', 'f1_score', 'accuracy',
-                              'true_positives', 'false_positives', 'false_negatives', 'true_negatives')
+                              'true_positives', 'false_positives', 'false_negatives', 'true_negatives',
+                              'token_precision', 'token_recall', 'token_f1_score',
+                              'token_true_positives', 'token_false_positives', 'token_false_negatives')
         ORDER BY method_name, metric_name"""
     )
     return rows
