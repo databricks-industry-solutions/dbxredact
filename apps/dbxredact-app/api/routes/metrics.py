@@ -167,10 +167,13 @@ async def recommendations_for_lists(recs_table: str = Query(...)):
 @router.get("/job-history")
 async def job_metrics():
     return fetch_all(
-        f"""SELECT config_id, status, count(*) as run_count,
-            avg(timestampdiff(SECOND, started_at, completed_at)) as avg_duration_sec
-        FROM {_table('redact_job_history')}
-        WHERE started_at IS NOT NULL
-        GROUP BY config_id, status
+        f"""SELECT j.config_id,
+            COALESCE(c.name, j.config_id) as config_name,
+            j.status, count(*) as run_count,
+            avg(timestampdiff(SECOND, j.started_at, j.completed_at)) as avg_duration_sec
+        FROM {_table('redact_job_history')} j
+        LEFT JOIN {_table('redact_config')} c ON j.config_id = c.config_id
+        WHERE j.started_at IS NOT NULL
+        GROUP BY j.config_id, c.name, j.status
         ORDER BY run_count DESC"""
     )

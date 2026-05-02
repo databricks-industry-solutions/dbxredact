@@ -35,6 +35,7 @@ export interface RunStatus {
 export interface JobHistoryItem {
   run_id: number;
   config_id: string;
+  config_name?: string;
   source_table: string;
   output_table: string;
   status: string;

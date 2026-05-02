@@ -98,7 +98,7 @@ export default function BenchmarkPage() {
 
   const historyColumns: Column<JobHistoryItem & Record<string, unknown>>[] = [
     { key: "run_id", header: "Run ID", render: (h) => <span className="font-mono text-xs">{h.run_id}</span> },
-    { key: "config_id", header: "Config", render: (h) => <span className="font-mono text-xs">{String(h.config_id || "").slice(0, 8)}</span> },
+    { key: "config_id", header: "Config", render: (h) => <span className="text-xs">{h.config_name || String(h.config_id || "").slice(0, 8)}</span> },
     { key: "source_table", header: "Source" },
     { key: "status", header: "Status", render: (h) => (
       <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${

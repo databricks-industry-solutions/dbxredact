@@ -64,7 +64,7 @@ async def run_pipeline(body: PipelineRunRequest):
         "reasoning_effort": config.get("reasoning_effort", "low"),
         "gliner_model": config.get("gliner_model", "nvidia/gliner-PII"),
         "gliner_max_words": str(config.get("gliner_max_words", 256)),
-        "gliner_threshold": str(config.get("gliner_threshold", 0.2)),
+        "gliner_threshold": str(float(config["gliner_threshold"]) if config.get("gliner_threshold") is not None else 0.2),
         "presidio_model_size": config.get("presidio_model_size", "trf"),
         "presidio_pattern_only": str(config.get("presidio_pattern_only", False)).lower(),
         "language": config.get("language") or "en",
@@ -225,9 +225,11 @@ async def pipeline_history(limit: int = 50, offset: int = 0):
     limit = max(1, min(limit, 500))
     offset = max(0, offset)
     rows = fetch_all(
-        f"""SELECT * FROM {_table('redact_job_history')}
-        WHERE job_type = 'pipeline' OR job_type IS NULL
-        ORDER BY started_at DESC LIMIT %(limit)s OFFSET %(offset)s""",
+        f"""SELECT j.*, COALESCE(c.name, j.config_id) as config_name
+        FROM {_table('redact_job_history')} j
+        LEFT JOIN {_table('redact_config')} c ON j.config_id = c.config_id
+        WHERE j.job_type = 'pipeline' OR j.job_type IS NULL
+        ORDER BY j.started_at DESC LIMIT %(limit)s OFFSET %(offset)s""",
         {"limit": limit, "offset": offset},
     )
     return _reconcile_stale_rows(rows)

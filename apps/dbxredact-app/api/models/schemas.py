@@ -107,6 +107,7 @@ class RunStatusResponse(BaseModel):
 class JobHistoryItem(BaseModel):
     run_id: int
     config_id: str
+    config_name: Optional[str] = None
     source_table: str
     output_table: str
     status: str
