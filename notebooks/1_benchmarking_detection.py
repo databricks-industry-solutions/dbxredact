@@ -35,12 +35,21 @@ _needs_restart = False
 _presidio = dbutils.widgets.get("use_presidio") == "true"
 _presidio_ppo = dbutils.widgets.get("presidio_pattern_only") == "true"
 _ner = dbutils.widgets.get("ner_backend").strip()
+_model_size = dbutils.widgets.get("presidio_model_size").strip() or "trf"
 
 if _presidio and not _presidio_ppo:
-    %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl -q
+    if _model_size == "lg":
+        %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl -q
+    elif _model_size == "md":
+        %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl -q
+    else:
+        %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl -q
     _needs_restart = True
 
-if _ner == "privacy_filter":
+if _ner == "gliner":
+    %pip install "gliner>=0.2.0,<1.0.0" -q
+    _needs_restart = True
+elif _ner == "privacy_filter":
     %pip install git+https://github.com/openai/privacy-filter.git -q
     _needs_restart = True
 

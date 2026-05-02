@@ -23,12 +23,12 @@ dependencies = [
     "pydantic>=2.0.0",
     "databricks-sdk>=0.30.0",
     "pyyaml>=6.0.1",
-    "gliner>=0.2.0,<1.0.0",
     "scikit-learn>=1.3.0",
-    "opf @ git+https://github.com/openai/privacy-filter.git@f7f00ca7fb869683eb732c010299d901457f19c3",
 ]
 
 [project.optional-dependencies]
+gliner = ["gliner>=0.2.0,<1.0.0"]
+privacy_filter = ["opf @ git+https://github.com/openai/privacy-filter.git@f7f00ca7fb869683eb732c010299d901457f19c3"]
 app = ["fastapi>=0.115.0", "uvicorn>=0.30.0"]
 
 [dependency-groups]
