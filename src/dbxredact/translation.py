@@ -46,4 +46,4 @@ def translate_column(
 
     out_col = f"{text_column}_translated"
     logger.info("Translating %s (%s -> %s) via %s", text_column, src_name, tgt_name, endpoint)
-    return df.withColumn(out_col, expr(ai_expr))
+    return df.withColumn(out_col, expr(ai_expr).getField("result"))

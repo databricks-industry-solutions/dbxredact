@@ -520,11 +520,6 @@ def _apply_translation_and_review(
         reasoning_effort=config.reasoning_effort,
     )
 
-    # Materialize translation results to prevent Arrow batch-length mismatch
-    # when mixed NULL/non-NULL translated rows feed into downstream UDFs.
-    df = df.cache()
-    df.count()
-
     # Preserve first-pass AI results before the review call overwrites
     if "ai_results_struct" in df.columns:
         df = df.withColumnRenamed("ai_results_struct", "_ai_results_detection")

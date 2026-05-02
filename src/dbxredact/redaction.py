@@ -92,16 +92,13 @@ def create_redaction_udf(strategy: RedactionStrategy = "generic"):
 
     @pandas_udf(StringType())
     def redact_udf(texts: pd.Series, entities_series: pd.Series) -> pd.Series:
-        n = max(len(texts), len(entities_series))
         results = []
-        for i in range(n):
+        for text, entities in zip(texts, entities_series):
             try:
-                text = texts.iloc[i] if i < len(texts) else None
-                entities = entities_series.iloc[i] if i < len(entities_series) else None
                 ent_list = _safe_entity_list(entities)
                 results.append(redact_text(text, ent_list, strategy=strategy))
             except Exception:
-                results.append(texts.iloc[i] if i < len(texts) else None)
+                results.append(text)
         return pd.Series(results)
 
     return redact_udf
@@ -120,17 +117,14 @@ def create_redaction_audit_udf(strategy: RedactionStrategy = "generic"):
 
     @pandas_udf(_AUDIT_SCHEMA)
     def redact_audit_udf(texts: pd.Series, entities_series: pd.Series) -> pd.DataFrame:
-        n = max(len(texts), len(entities_series))
         rows = []
-        for i in range(n):
+        for text, entities in zip(texts, entities_series):
             try:
-                text = texts.iloc[i] if i < len(texts) else None
-                entities = entities_series.iloc[i] if i < len(entities_series) else None
                 ent_list = _safe_entity_list(entities)
                 redacted = redact_text(text, ent_list, strategy=strategy)
                 rows.append((redacted, len(ent_list)))
             except Exception:
-                rows.append((texts.iloc[i] if i < len(texts) else None, 0))
+                rows.append((text, 0))
         return pd.DataFrame(rows, columns=["redacted_text", "entity_count"])
 
     return redact_audit_udf

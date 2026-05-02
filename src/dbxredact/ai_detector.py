@@ -142,13 +142,10 @@ def format_entity_response_object_udf(
 
     Returns a Series of lists-of-dicts matching ``ENTITY_SCHEMA``.
     """
-    n = max(len(identified_entities_series), len(sentences))
     new_entity_series = []
 
-    for i in range(n):
+    for entity_list, sentence in zip(identified_entities_series, sentences):
         try:
-            entity_list = identified_entities_series.iloc[i] if i < len(identified_entities_series) else None
-            sentence = sentences.iloc[i] if i < len(sentences) else None
             entities = _parse_entity_list(entity_list)
 
             if not sentence or not entities:
@@ -188,7 +185,7 @@ def format_entity_response_object_udf(
                 )
             new_entity_series.append(new_entity_list)
         except Exception as e:
-            logger.warning("format_entity_response_object_udf failed on row %d: %s", i, e)
+            logger.warning("format_entity_response_object_udf failed: %s", e)
             new_entity_series.append([])
 
     return pd.Series(new_entity_series)
