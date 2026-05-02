@@ -611,7 +611,8 @@ REQUIRED_ENTITY_FIELDS = {"entity", "start", "end"}
 # ---------------------------------------------------------------------------
 # Entity types to suppress entirely (matched against the detection entity_type).
 ENTITY_TYPES_TO_IGNORE = {
-    "NRP",  # Nationalities / religious / political groups -- not PII in most contexts
+    "NRP",           # Nationalities / religious / political groups -- not PII in most contexts
+    "MEDICAL_INFO",  # Drug names, diseases, procedures -- not PII unless linked to a patient
 }
 
 # Regex patterns matched against the detected entity *text* (case-insensitive).
@@ -621,7 +622,7 @@ ENTITY_TEXT_IGNORE_PATTERNS = _re.compile(
     r"^("
     r"dr\.?|mr\.?|mrs\.?|ms\.?|prof\.?|sir|madam"  # titles / prefixes
     r"|he|she|they|you|we|it|i"                       # pronouns
-    r"|nurse|physician|surgeon"                        # generic clinical roles (not "doctor"/"patient" -- can appear in names)
+    r"|nurse|physician|surgeon|(?:the\s+)?patient"      # generic clinical roles/references
     r"|am|pm"                                          # bare time fragments
     r"|today|yesterday|tomorrow"                         # relative day words
     r"|(19|20)\d{2}"                                     # bare 4-digit years

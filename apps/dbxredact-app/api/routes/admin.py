@@ -13,7 +13,6 @@ RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "90"))
 
 REQUIRED_TABLES = [
     "redact_annotations",
-    "redact_detection_results",
     "redact_audit_log",
     "redact_ground_truths",
 ]

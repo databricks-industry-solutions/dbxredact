@@ -109,7 +109,7 @@ def _prepare_params(
             int_type = "INT" if -(2**31) <= v <= 2**31 - 1 else "BIGINT"
             sdk_params.append(StatementParameterListItem(name=k, value=str(v), type=int_type))
         elif isinstance(v, float):
-            sdk_params.append(StatementParameterListItem(name=k, value=str(v), type="DECIMAL"))
+            sdk_params.append(StatementParameterListItem(name=k, value=str(v), type="DOUBLE"))
         else:
             sdk_params.append(StatementParameterListItem(name=k, value=str(v)))
     statement = _PYFORMAT_RE.sub(lambda m: f":{m.group(1)}", sql)
