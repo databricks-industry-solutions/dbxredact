@@ -432,8 +432,6 @@ version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "databricks-sdk" },
-    { name = "gliner" },
-    { name = "opf" },
     { name = "presidio-analyzer" },
     { name = "presidio-anonymizer" },
     { name = "pydantic" },
@@ -448,6 +446,12 @@ dependencies = [
 app = [
     { name = "fastapi" },
     { name = "uvicorn" },
+]
+gliner = [
+    { name = "gliner" },
+]
+privacy-filter = [
+    { name = "opf" },
 ]
 
 [package.dev-dependencies]
@@ -465,8 +469,8 @@ dev = [
 requires-dist = [
     { name = "databricks-sdk", specifier = ">=0.30.0" },
     { name = "fastapi", marker = "extra == 'app'", specifier = ">=0.115.0" },
-    { name = "gliner", specifier = ">=0.2.0,<1.0.0" },
-    { name = "opf", git = "https://github.com/openai/privacy-filter.git?rev=f7f00ca7fb869683eb732c010299d901457f19c3" },
+    { name = "gliner", marker = "extra == 'gliner'", specifier = ">=0.2.0,<1.0.0" },
+    { name = "opf", marker = "extra == 'privacy-filter'", git = "https://github.com/openai/privacy-filter.git?rev=f7f00ca7fb869683eb732c010299d901457f19c3" },
     { name = "presidio-analyzer", specifier = "==2.2.358" },
     { name = "presidio-anonymizer", specifier = "==2.2.358" },
     { name = "pydantic", specifier = ">=2.0.0" },
@@ -476,7 +480,7 @@ requires-dist = [
     { name = "spacy", specifier = "==3.8.7" },
     { name = "uvicorn", marker = "extra == 'app'", specifier = ">=0.30.0" },
 ]
-provides-extras = ["app"]
+provides-extras = ["gliner", "privacy-filter", "app"]
 
 [package.metadata.requires-dev]
 dev = [
