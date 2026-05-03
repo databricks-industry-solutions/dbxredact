@@ -60,10 +60,14 @@ class TestShouldIgnoreEntity:
     def test_clinical_roles_ignored(self, text):
         assert should_ignore_entity(text, "PERSON") is True
 
-    @pytest.mark.parametrize("text", ["doctor", "patient"])
-    def test_doctor_patient_not_ignored(self, text):
-        """'doctor' and 'patient' can appear in compound names."""
-        assert should_ignore_entity(text, "PERSON") is False
+    def test_doctor_not_ignored(self):
+        """'doctor' can appear in compound names."""
+        assert should_ignore_entity("doctor", "PERSON") is False
+
+    @pytest.mark.parametrize("text", ["patient", "the patient"])
+    def test_patient_ignored(self, text):
+        """Generic 'patient' references are not PII names."""
+        assert should_ignore_entity(text, "PERSON") is True
 
     @pytest.mark.parametrize("text", ["am", "pm"])
     def test_bare_time_fragments_ignored(self, text):
