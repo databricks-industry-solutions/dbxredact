@@ -201,8 +201,8 @@ async def audit_summary(
                 params,
             )
             total_runs = int(job_row.get("cnt", 0)) if job_row else 0
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Failed to supplement total_runs from job_history: %s", exc)
 
     return {
         "total_docs": total_docs,
