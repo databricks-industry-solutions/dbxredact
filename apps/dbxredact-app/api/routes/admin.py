@@ -196,9 +196,15 @@ async def audit_summary(
 
     if total_runs == 0:
         try:
+            jh_where_clauses = [f"started_at >= current_timestamp() - INTERVAL {int(days)} DAY"]
+            jh_params = {}
+            if run_id:
+                jh_where_clauses.append("run_id = %(run_id)s")
+                jh_params["run_id"] = run_id
+            jh_where = "WHERE " + " AND ".join(jh_where_clauses)
             job_row = fetch_one(
-                f"SELECT count(*) as cnt FROM {_table('redact_job_history')} {where}",
-                params,
+                f"SELECT count(*) as cnt FROM {_table('redact_job_history')} {jh_where}",
+                jh_params,
             )
             total_runs = int(job_row.get("cnt", 0)) if job_row else 0
         except Exception as exc:

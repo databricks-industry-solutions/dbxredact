@@ -139,6 +139,12 @@ export interface DiscoverColumnsResponse {
   warnings: string[];
 }
 
+export interface DiscoverAllColumnsResponse {
+  text_columns: string[];
+  non_text_columns: string[];
+  doc_id_candidates: string[];
+}
+
 export interface Annotation {
   annotation_id?: string;
   doc_id: string;

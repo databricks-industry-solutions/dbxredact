@@ -85,11 +85,18 @@ async def run_pipeline(body: PipelineRunRequest):
     if body.redaction_scope == "full_table":
         notebook_params["input_mode"] = "full_table"
         notebook_params["masking_strategy"] = body.masking_strategy or "mask"
-        all_cols = await discover_all_columns(body.source_table)
-        extra = {
-            "text_columns": all_cols["text_columns"],
-            "structured_columns": {c: "unknown" for c in all_cols["non_text_columns"]},
-        }
+        if body.text_columns is not None or body.structured_columns is not None:
+            extra = {}
+            if body.text_columns:
+                extra["text_columns"] = body.text_columns
+            if body.structured_columns:
+                extra["structured_columns"] = body.structured_columns
+        else:
+            all_cols = await discover_all_columns(body.source_table)
+            extra = {
+                "text_columns": all_cols["text_columns"],
+                "structured_columns": {c: "unknown" for c in all_cols["non_text_columns"]},
+            }
         notebook_params["extra_params"] = json.dumps(extra)
     elif body.redaction_scope == "tagged_columns":
         notebook_params["input_mode"] = "full_table"

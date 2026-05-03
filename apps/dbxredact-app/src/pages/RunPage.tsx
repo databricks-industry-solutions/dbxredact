@@ -7,7 +7,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
 import { SkeletonRows } from "../components/Skeleton";
 import { useToast } from "../hooks/useToast";
-import type { Config, RunStatus, JobHistoryItem, DiscoverColumnsResponse } from "../types";
+import type { Config, RunStatus, JobHistoryItem, DiscoverColumnsResponse, DiscoverAllColumnsResponse } from "../types";
 import { TERMINAL_STATES } from "../constants";
 
 interface TableInfo {
@@ -65,9 +65,14 @@ export default function RunPage() {
 
   const isMultiColumn = redactionScope === "full_table" || redactionScope === "tagged_columns";
   const isTaggedColumns = redactionScope === "tagged_columns";
+  const isFullTable = redactionScope === "full_table";
   const { data: discovered, loading: loadingDiscovery } = useGet<DiscoverColumnsResponse>(
     `/pipeline/discover-columns?table=${encodeURIComponent(qualified)}`,
     { enabled: hasTable && isTaggedColumns, deps: [qualified, isTaggedColumns] },
+  );
+  const { data: allColumns, loading: loadingAllColumns } = useGet<DiscoverAllColumnsResponse>(
+    `/pipeline/discover-all-columns?table=${encodeURIComponent(qualified)}`,
+    { enabled: hasTable && isFullTable, deps: [qualified, isFullTable] },
   );
 
   useEffect(() => {
@@ -76,6 +81,15 @@ export default function RunPage() {
     setSelectedStructCols({ ...discovered.structured_columns });
     if (discovered.doc_id_candidates.length) setDocIdCol(discovered.doc_id_candidates[0]);
   }, [discovered]);
+
+  useEffect(() => {
+    if (!allColumns) return;
+    setSelectedTextCols(allColumns.text_columns);
+    setSelectedStructCols(
+      Object.fromEntries(allColumns.non_text_columns.map((c) => [c, "unknown"]))
+    );
+    if (allColumns.doc_id_candidates.length) setDocIdCol(allColumns.doc_id_candidates[0]);
+  }, [allColumns]);
 
   const failCountRef = useRef(0);
 
@@ -184,8 +198,6 @@ export default function RunPage() {
       };
       if (isMultiColumn) {
         payload.masking_strategy = maskingStrategy;
-      }
-      if (isTaggedColumns) {
         payload.text_columns = selectedTextCols;
         payload.structured_columns = Object.keys(selectedStructCols).length ? selectedStructCols : undefined;
       }
@@ -300,7 +312,7 @@ export default function RunPage() {
           </div>
           <p className="text-xs text-gray-400 mt-1">
             {redactionScope === "full_table"
-              ? "Runs NER detection on all string columns and rule-based masking on structured columns."
+              ? "Choose which columns to redact. Output excludes unredacted originals of selected columns."
               : redactionScope === "tagged_columns"
               ? "Detects PII across columns tagged with data_classification=protected."
               : "Runs NER detection on a single text column."}
@@ -341,9 +353,47 @@ export default function RunPage() {
         {redactionScope === "full_table" && hasTable && (
           <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Discovers all columns and classifies them as string (NER detection) or structured (rule-based masking).
-              String columns are processed with Presidio/AI Query/NER model; structured columns are masked directly.
+              Select which columns to redact. Unselected columns pass through unchanged.
+              Original values of redacted columns are excluded from the output.
             </p>
+            {loadingAllColumns && <p className="text-sm text-gray-400 animate-pulse">Discovering columns...</p>}
+            {allColumns && !loadingAllColumns && (
+              <>
+                {allColumns.text_columns.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Text Columns (NER detection)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {allColumns.text_columns.map((col) => (
+                        <label key={col} className="inline-flex items-center gap-1.5 text-sm cursor-pointer">
+                          <input type="checkbox" checked={selectedTextCols.includes(col)}
+                            onChange={(e) => setSelectedTextCols((prev) =>
+                              e.target.checked ? [...prev, col] : prev.filter((c) => c !== col)
+                            )} />
+                          {col}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {allColumns.non_text_columns.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Structured Columns (rule-based masking)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {allColumns.non_text_columns.map((col) => (
+                        <label key={col} className="inline-flex items-center gap-1.5 text-sm cursor-pointer">
+                          <input type="checkbox" checked={col in selectedStructCols}
+                            onChange={(e) => setSelectedStructCols((prev) => {
+                              if (e.target.checked) return { ...prev, [col]: "unknown" };
+                              const next = { ...prev }; delete next[col]; return next;
+                            })} />
+                          {col}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1.5">Masking Strategy</label>

@@ -93,7 +93,7 @@ Use GPU variants when `ner_backend=privacy_filter`. CPU variants are sufficient 
 
 ```bash
 # Deploy the bundle first (builds wheel, syncs to workspace)
-./deploy.sh --profile DEFAULT --target dev --no-app
+./deploy.sh dev
 
 # Run with default parameters
 databricks bundle run redaction_pipeline_cpu_small -t dev -p DEFAULT

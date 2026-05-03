@@ -29,7 +29,7 @@
 # COMMAND ----------
 
 # MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
-# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.2.1-py3-none-any.whl
+# MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.3.1-py3-none-any.whl
 # MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
 
 # COMMAND ----------
@@ -593,6 +593,7 @@ else:
             config=config,
             text_columns=text_columns,
             structured_columns=structured_columns,
+            drop_originals=True,
         )
     elif input_mode == "table_tag":
         result_df = run_redaction_pipeline_by_tag(

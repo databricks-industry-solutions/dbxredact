@@ -259,3 +259,99 @@ class TestEntityFilterE2E:
         entity_texts = {e["entity"] for e in entities}
         assert "info@company.org" not in entity_texts
         assert "user@secret.com" in entity_texts
+
+
+# ---------------------------------------------------------------------------
+# Test D: Full table output schema -- drop_originals behavior
+# ---------------------------------------------------------------------------
+
+class TestDropOriginalsE2E:
+    """Verify run_table_redaction output excludes original text columns."""
+
+    def test_drop_originals_true(self, spark):
+        """With drop_originals=True, original text column is absent from output."""
+        df = spark.createDataFrame([
+            ("d1", "Email is test@corp.org", 42),
+            ("d2", "No PII here", 99),
+        ], ["doc_id", "notes", "age"])
+        df.createOrReplaceTempView("_drop_orig_src")
+
+        cfg = RedactionConfig(
+            use_presidio=True, use_ai_query=False, use_gliner=False,
+            presidio_pattern_only=True, score_threshold=0.3, num_cores=2,
+        )
+
+        result = run_table_redaction(
+            spark=spark,
+            source_table="_drop_orig_src",
+            text_columns=["notes"],
+            structured_columns={},
+            max_rows=None,
+            config=cfg,
+            drop_originals=True,
+        )
+
+        cols = result.columns
+        assert "notes" not in cols, "Original text column should be dropped"
+        assert "notes_redacted" in cols
+        assert "doc_id" in cols
+        assert "age" in cols
+
+        rows = {r["doc_id"]: r for r in result.collect()}
+        assert "test@corp.org" not in rows["d1"]["notes_redacted"]
+
+    def test_drop_originals_false(self, spark):
+        """With drop_originals=False, original text column is retained."""
+        df = spark.createDataFrame([
+            ("d1", "Email is test@corp.org", 42),
+        ], ["doc_id", "notes", "age"])
+        df.createOrReplaceTempView("_drop_orig_keep_src")
+
+        cfg = RedactionConfig(
+            use_presidio=True, use_ai_query=False, use_gliner=False,
+            presidio_pattern_only=True, score_threshold=0.3, num_cores=2,
+        )
+
+        result = run_table_redaction(
+            spark=spark,
+            source_table="_drop_orig_keep_src",
+            text_columns=["notes"],
+            structured_columns={},
+            max_rows=None,
+            config=cfg,
+            drop_originals=False,
+        )
+
+        cols = result.columns
+        assert "notes" in cols, "Original text column should be retained"
+        assert "notes_redacted" in cols
+
+    def test_multi_column_drops_all_originals(self, spark):
+        """Multiple text columns: all originals dropped, all _redacted present."""
+        df = spark.createDataFrame([
+            ("d1", "admin@hosp.org", "Call 555-0123"),
+            ("d2", "clean text", "also clean"),
+        ], ["doc_id", "notes", "comments"])
+        df.createOrReplaceTempView("_drop_multi_src")
+
+        cfg = RedactionConfig(
+            use_presidio=True, use_ai_query=False, use_gliner=False,
+            presidio_pattern_only=True, score_threshold=0.3, num_cores=2,
+        )
+
+        result = run_table_redaction(
+            spark=spark,
+            source_table="_drop_multi_src",
+            text_columns=["notes", "comments"],
+            structured_columns={},
+            max_rows=None,
+            config=cfg,
+            drop_originals=True,
+        )
+
+        cols = result.columns
+        assert "notes" not in cols
+        assert "comments" not in cols
+        assert "notes_redacted" in cols
+        assert "comments_redacted" in cols
+        assert "doc_id" in cols
