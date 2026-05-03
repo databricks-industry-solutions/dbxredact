@@ -55,11 +55,18 @@ class ConfigResponse(ConfigCreate):
             return v.lower() in ("true", "1", "yes")
         return bool(v) if v is not None else False
 
-    @field_validator("score_threshold", "gliner_threshold", mode="before")
+    @field_validator("score_threshold", mode="before")
     @classmethod
-    def coerce_float(cls, v):
+    def coerce_score_threshold(cls, v):
         if v is None:
             return 0.5
+        return float(v)
+
+    @field_validator("gliner_threshold", mode="before")
+    @classmethod
+    def coerce_gliner_threshold(cls, v):
+        if v is None:
+            return 0.2
         return float(v)
 
     @field_validator("gliner_max_words", mode="before")

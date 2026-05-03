@@ -45,7 +45,12 @@ def _clean_config(row: dict) -> dict:
         row["translate_to"] = "none"
     ep = row.get("extra_params")
     if isinstance(ep, str):
-        row["extra_params"] = json.loads(ep) if ep else None
+        try:
+            row["extra_params"] = json.loads(ep) if ep else None
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("Corrupt extra_params JSON for config %s", row.get("config_id"))
+            row["extra_params"] = None
+    row.pop("encryption_secret", None)
     return row
 
 
@@ -108,7 +113,9 @@ async def create_config(body: ConfigCreate):
                     %(extra_params)s, current_timestamp(), current_timestamp())""",
             {"config_id": config_id, **params},
         )
-    return {**body.model_dump(), "config_id": config_id}
+    resp = body.model_dump()
+    resp.pop("encryption_secret", None)
+    return {**resp, "config_id": config_id}
 
 
 @router.put("/{config_id}")
@@ -118,6 +125,12 @@ async def update_config(config_id: str, body: ConfigCreate):
     if not existing:
         raise HTTPException(404, "Config not found")
     params = _serialize_params(body)
+    secret_val = params.get("encryption_secret")
+    if secret_val:
+        secret_clause = "encryption_secret=%(encryption_secret)s,"
+    else:
+        secret_clause = ""
+        params.pop("encryption_secret", None)
     execute(
         f"""UPDATE {_table('redact_config')} SET
             name=%(name)s, detection_profile=%(detection_profile)s,
@@ -130,12 +143,14 @@ async def update_config(config_id: str, body: ConfigCreate):
             presidio_model_size=%(presidio_model_size)s,
             presidio_pattern_only=%(presidio_pattern_only)s,
             language=%(language)s, translate_to=%(translate_to)s,
-            encryption_secret=%(encryption_secret)s,
+            {secret_clause}
             extra_params=%(extra_params)s, updated_at=current_timestamp()
         WHERE config_id = %(config_id)s""",
         {"config_id": config_id, **params},
     )
-    return {**body.model_dump(), "config_id": config_id}
+    resp = body.model_dump()
+    resp.pop("encryption_secret", None)
+    return {**resp, "config_id": config_id}
 
 
 @router.delete("/{config_id}", status_code=204)

@@ -245,7 +245,11 @@ def _apply_redaction(
 
 def _add_detection_status(df: DataFrame, entities_column: str) -> DataFrame:
     """Derive ``_detection_status`` from entity count and optional error flags."""
-    status = when(col("_entity_count") > 0, lit("ok")).otherwise(lit("no_entities"))
+    status = (
+        when(col("_entity_count") < 0, lit("redaction_error"))
+        .when(col("_entity_count") > 0, lit("ok"))
+        .otherwise(lit("no_entities"))
+    )
     if "_ai_detection_failed" in df.columns:
         status = when(
             col("_ai_detection_failed") & (col("_entity_count") == 0),
@@ -1463,6 +1467,7 @@ def run_table_redaction(
     structured_columns: Optional[dict] = None,
     entity_filter: Optional[EntityFilter] = None,
     config: Optional[RedactionConfig] = None,
+    drop_originals: bool = False,
 ) -> DataFrame:
     """Unified table-level redaction: NER for text columns, rule-based masking
     for structured PII columns, all in a single read/write pass.
@@ -1607,6 +1612,12 @@ def run_table_redaction(
             strategy=masking_strategy,
             encryption_key=encryption_key,
         )
+
+    if drop_originals and text_columns:
+        cols_to_drop = [c for c in text_columns if f"{c}_redacted" in result_df.columns]
+        if cols_to_drop:
+            logger.info("Dropping %d original text column(s) from output", len(cols_to_drop))
+            result_df = result_df.drop(*cols_to_drop)
 
     if output_table:
         result_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(output_table)
@@ -1871,9 +1882,8 @@ def _run_streaming_query(
             query.awaitTermination()
             _log_ingestion_summary(batch_stats)
     finally:
-        if not processing_time:
-            spark.conf.set("spark.sql.shuffle.partitions", _prior_shuffle_parts)
-            spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", _prior_auto_merge)
+        spark.conf.set("spark.sql.shuffle.partitions", _prior_shuffle_parts)
+        spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", _prior_auto_merge)
 
     return query
 
@@ -1960,6 +1970,8 @@ def _split_and_redact_columns(
 
     n_fields = len(text_columns)
 
+    _sentinel_len = len(sentinel)
+
     @_pandas_udf(MapType(StringType(), StringType()))
     def _split_redact_udf(
         redacted_text_col: pd.Series,
@@ -1970,10 +1982,21 @@ def _split_and_redact_columns(
             if redacted_text is None:
                 results.append({c: None for c in text_columns})
                 continue
-            parts = redacted_text.split(sentinel)
-            if len(parts) < n_fields:
-                parts.extend([""] * (n_fields - len(parts)))
-            mapping = {text_columns[i]: parts[i] for i in range(n_fields)}
+            if field_lengths is not None and len(field_lengths) == n_fields:
+                offset = 0
+                parts = []
+                for i in range(n_fields):
+                    end = redacted_text.find(sentinel, offset) if i < n_fields - 1 else len(redacted_text)
+                    if end == -1:
+                        end = len(redacted_text)
+                    parts.append(redacted_text[offset:end])
+                    offset = end + _sentinel_len
+                mapping = {text_columns[i]: parts[i] for i in range(n_fields)}
+            else:
+                parts = redacted_text.split(sentinel)
+                if len(parts) < n_fields:
+                    parts.extend([""] * (n_fields - len(parts)))
+                mapping = {text_columns[i]: parts[i] for i in range(min(len(parts), n_fields))}
             results.append(mapping)
         return pd.Series(results)
 

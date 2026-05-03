@@ -103,7 +103,7 @@ jobs:
         working-directory: apps/dbxredact-app
         run: |
           npm ci --no-audit --no-fund
-          npx tsc --noEmit || true
+          npx tsc --noEmit
       - name: Build
         working-directory: apps/dbxredact-app
         run: npm run build
