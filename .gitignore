@@ -47,6 +47,7 @@ ROADMAP.md
 
 # Frontend build artifacts
 apps/dbxredact-app/node_modules/
+apps/dbxredact-app/src/node_modules/
 
 .ai-dev-kit/
 .github/skills/

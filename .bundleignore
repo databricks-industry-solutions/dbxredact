@@ -1,9 +1,2 @@
-apps/dbxredact-app/src/
-apps/dbxredact-app/package.json
-apps/dbxredact-app/package-lock.json
-apps/dbxredact-app/tsconfig.json
-apps/dbxredact-app/vite.config.ts
-apps/dbxredact-app/postcss.config.js
-apps/dbxredact-app/tailwind.config.js
-apps/dbxredact-app/node_modules/
+apps/dbxredact-app/src/node_modules/
 apps/dbxredact-app/tests/

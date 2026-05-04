@@ -147,8 +147,8 @@ fi
 if [ "${DEPLOY_APP}" != "false" ]; then
     if [ -d "apps/dbxredact-app/dist" ] && [ -f "apps/dbxredact-app/dist/index.html" ]; then
         echo "Frontend dist/ already exists -- skipping build (delete dist/ to force rebuild)"
-    elif confirm "Build frontend (apps/dbxredact-app)"; then
-        (cd apps/dbxredact-app && npm install --no-audit --no-fund && npm run build)
+    elif confirm "Build frontend (apps/dbxredact-app/src)"; then
+        (cd apps/dbxredact-app/src && npm install --no-audit --no-fund && npm run build)
         echo "Built frontend: apps/dbxredact-app/dist/"
     fi
 fi
