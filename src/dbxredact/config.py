@@ -783,6 +783,50 @@ class RedactionConfig:
 
 
 # ---------------------------------------------------------------------------
+# Sensitivity-driven redaction profiles
+# ---------------------------------------------------------------------------
+# Map a table's ``data_sensitivity`` tag (from dbxredact.sensitivity) to a
+# RedactionConfig, so run_catalog_redaction applies a level-appropriate profile
+# per table.
+#
+# All profiles use ``alignment_mode="union"`` (recall-biased): these configs
+# drive *actual redaction*, where a missed span leaks PII, so consensus -- which
+# the pipeline gates behind allow_consensus_redaction and warns "may leave PII
+# unredacted" -- is deliberately avoided.  Levels are differentiated by how
+# aggressive detection is (score_threshold, GLiNER) and by redaction strategy,
+# not by alignment mode.  All thresholds sit well above MIN_SCORE_THRESHOLD.
+SENSITIVITY_PROFILES = {
+    # PHI: most aggressive recall -- lowest threshold + GLiNER NER on top of
+    # Presidio + AI Query, since missed PHI carries the highest compliance cost.
+    "phi": RedactionConfig(
+        use_presidio=True,
+        use_ai_query=True,
+        ner_backend="gliner",
+        alignment_mode="union",
+        score_threshold=0.35,
+        redaction_strategy="typed",
+    ),
+    # PCI: payment identifiers are structured/high-precision; typed redaction
+    # labels them, moderate threshold.
+    "pci": RedactionConfig(
+        use_presidio=True,
+        use_ai_query=True,
+        alignment_mode="union",
+        score_threshold=0.4,
+        redaction_strategy="typed",
+    ),
+    # PII: general personal data -- balanced recall with generic redaction.
+    "pii": RedactionConfig(
+        use_presidio=True,
+        use_ai_query=True,
+        alignment_mode="union",
+        score_threshold=0.5,
+        redaction_strategy="generic",
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
 # Judge prompt -- grades redaction quality by comparing original vs redacted
 # ---------------------------------------------------------------------------
 JUDGE_PROMPT_SKELETON = """

@@ -33,6 +33,7 @@ from .config import (
     DEFAULT_AI_OVERLAP_CHARS,
     PHI_PROMPT_SKELETON,
     RedactionConfig,
+    SENSITIVITY_PROFILES,
 )
 from .entity_filter import EntityFilter, apply_safe_filter, apply_block_filter
 
@@ -1631,6 +1632,113 @@ def run_table_redaction(
     source_df.unpersist()
     logger.info("run_table_redaction complete in %.1fs", time.time() - t_start)
     return result_df
+
+
+def run_catalog_redaction(
+    spark: SparkSession,
+    catalog: str,
+    schema: Optional[str] = None,
+    *,
+    min_level: str = "pii",
+    profiles: Optional[dict] = None,
+    output_catalog: Optional[str] = None,
+    output_schema: Optional[str] = None,
+    output_suffix: str = "_redacted",
+    doc_id_column: str = "doc_id",
+    continue_on_error: bool = True,
+    **table_redaction_kwargs,
+) -> dict:
+    """Redact every sensitive table in a catalog/schema using a per-table profile.
+
+    Discovers tables via their ``data_sensitivity`` tag (written by
+    :func:`dbxredact.sensitivity.apply_sensitivity_tags`), selects a
+    level-appropriate :class:`RedactionConfig` from *profiles*, and calls
+    :func:`run_table_redaction` on each -- which in turn reads the per-column
+    ``pii_type`` tags to route NER redaction vs structured masking.  This closes
+    the scan -> tag -> redact loop at catalog scale.
+
+    Args:
+        catalog: Catalog to scan for sensitive tables.
+        schema: Optional schema filter.
+        min_level: Minimum sensitivity to redact (phi > pci > pii).
+        profiles: Mapping of sensitivity level -> RedactionConfig.  Defaults to
+            :data:`dbxredact.config.SENSITIVITY_PROFILES`.
+        output_catalog / output_schema: Destination for redacted output tables
+            (same table name + *output_suffix*).  **Both are required** --
+            run_table_redaction writes to a separate output table, not in place,
+            so a destination is mandatory (a clear error is raised if missing).
+        output_suffix: Appended to each output table name.
+        continue_on_error: If True (default), a failure on one table is logged
+            and skipped; the loop continues.  If False, the first error raises.
+        **table_redaction_kwargs: Forwarded to each run_table_redaction call
+            (e.g. masking_strategy, encryption_key, max_rows).
+
+    Returns:
+        Dict mapping each processed table name to a result dict:
+        ``{"level": str, "status": "ok"|"error", "output_table": str|None,
+        "error": str|None}``.
+    """
+    from .sensitivity import get_table_sensitivity_level, get_tables_by_sensitivity
+
+    if not (output_catalog and output_schema):
+        raise ValueError(
+            "run_catalog_redaction requires both output_catalog and output_schema. "
+            "Redacted tables are written to a separate destination (source tables "
+            "are never overwritten in place)."
+        )
+
+    profiles = profiles if profiles is not None else SENSITIVITY_PROFILES
+
+    tables = get_tables_by_sensitivity(spark, catalog, schema=schema, min_level=min_level)
+    logger.info(
+        "run_catalog_redaction: %d table(s) at/above '%s' in %s%s",
+        len(tables), min_level, catalog, f".{schema}" if schema else "",
+    )
+
+    results: dict = {}
+    for table in tables:
+        level = get_table_sensitivity_level(spark, table)
+        if level is None or level not in profiles:
+            msg = (
+                f"Skipping {table}: sensitivity level {level!r} has no profile "
+                f"(available: {sorted(profiles)})."
+            )
+            logger.warning(msg)
+            results[table] = {
+                "level": level, "status": "error",
+                "output_table": None, "error": msg,
+            }
+            if not continue_on_error:
+                raise ValueError(msg)
+            continue
+
+        _cat, _sch, _tbl = table.split(".")
+        output_table = f"{output_catalog}.{output_schema}.{_tbl}{output_suffix}"
+
+        logger.info("Redacting %s (level=%s) -> %s", table, level, output_table)
+        try:
+            run_table_redaction(
+                spark,
+                source_table=table,
+                output_table=output_table,
+                doc_id_column=doc_id_column,
+                config=profiles[level],
+                **table_redaction_kwargs,
+            )
+            results[table] = {
+                "level": level, "status": "ok",
+                "output_table": output_table, "error": None,
+            }
+        except Exception as e:  # noqa: BLE001 -- surface per-table failure, keep going
+            logger.error("Redaction failed for %s: %s", table, e)
+            results[table] = {
+                "level": level, "status": "error",
+                "output_table": output_table, "error": str(e),
+            }
+            if not continue_on_error:
+                raise
+
+    return results
 
 
 # ---------------------------------------------------------------------------

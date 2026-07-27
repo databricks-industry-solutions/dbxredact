@@ -34,6 +34,7 @@ from .config import (
     PROMPT_VERSION,
     PROMPT_VERSION_BY_LANGUAGE,
     RedactionConfig,
+    SENSITIVITY_PROFILES,
     _entity_schema,
     MIN_SCORE_THRESHOLD,
     MIN_GLINER_THRESHOLD,
@@ -112,6 +113,16 @@ from .metadata import (
     discover_pii_columns,
 )
 
+from .sensitivity import (
+    classify_table,
+    apply_sensitivity_tags,
+    build_sensitivity_tag_statements,
+    get_tables_by_sensitivity,
+    get_table_sensitivity_level,
+    TableSensitivity,
+    ColumnSensitivity,
+)
+
 from .active_learning import (
     compute_document_uncertainty,
     build_review_queue,
@@ -136,6 +147,7 @@ from .pipeline import (
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
     run_table_redaction,
+    run_catalog_redaction,
     run_ingestion_redaction_pipeline,
     OutputStrategy,
     OutputMode,
@@ -224,6 +236,15 @@ __all__ = [
     "get_protected_columns",
     "get_table_metadata",
     "discover_pii_columns",
+    # Sensitivity
+    "classify_table",
+    "apply_sensitivity_tags",
+    "build_sensitivity_tag_statements",
+    "get_tables_by_sensitivity",
+    "get_table_sensitivity_level",
+    "SENSITIVITY_PROFILES",
+    "TableSensitivity",
+    "ColumnSensitivity",
     # Active Learning
     "compute_document_uncertainty",
     "build_review_queue",
@@ -245,6 +266,7 @@ __all__ = [
     "run_redaction_pipeline_streaming",
     "run_redaction_pipeline_by_tag",
     "run_table_redaction",
+    "run_catalog_redaction",
     "run_ingestion_redaction_pipeline",
     "OutputStrategy",
     "OutputMode",
