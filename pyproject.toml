@@ -51,6 +51,11 @@ allow-direct-references = true
 [tool.hatch.build.targets.wheel]
 packages = ["src/dbxredact"]
 
+[tool.ruff]
+# Keep the pinned rev in .pre-commit-config.yaml in sync with the ruff version
+# the team runs. line-length is left at ruff's default (88).
+target-version = "py310"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-x -q"
