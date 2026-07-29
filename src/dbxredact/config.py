@@ -734,13 +734,19 @@ class RedactionConfig:
         return self.ner_backend == "privacy_filter"
 
     def __post_init__(self):
-        # Derive use_gliner from ner_backend for backward compat
+        # Keep use_gliner and ner_backend consistent. An explicitly set
+        # ner_backend drives use_gliner (backward compat); when ner_backend is
+        # left at its default ("none") but use_gliner=True was passed, honor the
+        # flag and reverse-derive ner_backend so both agree.
         if self.ner_backend == "gliner":
             object.__setattr__(self, "use_gliner", True)
         elif self.ner_backend == "privacy_filter":
             object.__setattr__(self, "use_gliner", False)
         elif self.ner_backend == "none":
-            object.__setattr__(self, "use_gliner", False)
+            if self.use_gliner:
+                object.__setattr__(self, "ner_backend", "gliner")
+            else:
+                object.__setattr__(self, "use_gliner", False)
 
         if self.language not in PROMPT_SKELETON_BY_LANGUAGE:
             raise ValueError(
