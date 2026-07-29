@@ -4,9 +4,9 @@ import json
 import logging
 from typing import List
 from fastapi import APIRouter, HTTPException
-from api.models.schemas import PipelineRunRequest, RunStatusResponse, JobHistoryItem
+from api.models.schemas import PipelineRunRequest, MetagenPIRequest, IngestionRunRequest, RunStatusResponse, JobHistoryItem
 from api.services.db import fetch_all, fetch_one, execute, _table, quote_table, validate_identifier, CATALOG, SCHEMA
-from api.services.jobs import trigger_pipeline_run, get_run_status, cancel_run, rerun_with_original_params
+from api.services.jobs import trigger_pipeline_run, trigger_metagen_pi_run, trigger_ingestion_run, get_run_status, cancel_run, rerun_with_original_params
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -477,3 +477,81 @@ async def table_info(table: str):
     row = fetch_one(f"SELECT count(*) as cnt FROM {qualified}")
     row_count = int(row["cnt"]) if row else 0
     return {"columns": column_names, "row_count": row_count}
+
+
+# ---------- Metagen PI Detection ----------
+
+@router.post("/run-metagen-pi", response_model=RunStatusResponse)
+async def run_metagen_pi(body: MetagenPIRequest):
+    """Trigger dbxmetagen PI detection job."""
+    notebook_params = {
+        "table_names": body.table_names,
+        "catalog_name": body.catalog_name,
+        "schema_name": body.schema_name,
+        "output_mode": body.output_mode,
+        "model": body.model,
+        "include_deterministic_pi": str(body.include_deterministic_pi).lower(),
+    }
+    run_id = trigger_metagen_pi_run(notebook_params)
+    status = get_run_status(run_id)
+
+    execute(
+        f"""INSERT INTO {_table('redact_job_history')}
+        (run_id, config_id, source_table, output_table, status, started_at, run_page_url, job_type)
+        VALUES (%(run_id)s, 'metagen_pi', %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp(), %(url)s, 'metagen_pi')""",
+        {"run_id": run_id, "source_table": body.table_names,
+         "output_table": f"{body.catalog_name}.{body.schema_name}.metadata_generation_log",
+         "url": status.get("run_page_url")},
+    )
+    return status
+
+
+# ---------- Ingestion Pipeline (AutoLoader) ----------
+
+@router.post("/run-ingestion", response_model=RunStatusResponse)
+async def run_ingestion(body: IngestionRunRequest):
+    """Trigger AutoLoader ingestion redaction pipeline."""
+    config = fetch_one(
+        f"SELECT * FROM {_table('redact_config')} WHERE config_id = %(config_id)s",
+        {"config_id": body.config_id},
+    )
+    if not config:
+        raise HTTPException(404, "Config not found")
+
+    notebook_params = {
+        "source_path": body.source_path,
+        "file_format": body.file_format,
+        "output_table": body.output_table,
+        "text_columns": ",".join(body.text_columns),
+        "structured_columns": json.dumps(body.structured_columns) if body.structured_columns else "",
+        "masking_strategy": body.masking_strategy or "mask",
+        "doc_id_column": body.doc_id_column,
+        "checkpoint_path": body.checkpoint_path or "",
+        "schema_location": body.schema_location or "",
+        "max_files_per_trigger": str(body.max_files_per_trigger),
+        "trigger_processing_time": body.trigger_processing_time or "",
+        "multi_column_strategy": body.multi_column_strategy,
+        "encryption_secret": config.get("encryption_secret") or "",
+        "use_presidio": str(config.get("use_presidio", True)).lower(),
+        "use_ai_query": str(config.get("use_ai_query", True)).lower(),
+        "use_gliner": str(config.get("use_gliner", False)).lower(),
+        "endpoint": config.get("endpoint", "databricks-gpt-oss-120b"),
+        "score_threshold": str(config.get("score_threshold", 0.5)),
+        "redaction_strategy": config.get("redaction_strategy", "generic"),
+        "alignment_mode": config.get("alignment_mode", "union"),
+        "gliner_model": config.get("gliner_model", "nvidia/gliner-PII"),
+        "gliner_threshold": str(float(config["gliner_threshold"]) if config.get("gliner_threshold") is not None else 0.2),
+    }
+
+    run_id = trigger_ingestion_run(notebook_params)
+    status = get_run_status(run_id)
+
+    execute(
+        f"""INSERT INTO {_table('redact_job_history')}
+        (run_id, config_id, source_table, output_table, status, started_at, run_page_url, job_type)
+        VALUES (%(run_id)s, %(config_id)s, %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp(), %(url)s, 'ingestion')""",
+        {"run_id": run_id, "config_id": body.config_id,
+         "source_table": body.source_path, "output_table": body.output_table,
+         "url": status.get("run_page_url")},
+    )
+    return status

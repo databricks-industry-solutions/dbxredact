@@ -102,6 +102,32 @@ class PipelineRunRequest(BaseModel):
     output_strategy: Literal["production", "validation"] = "production"
 
 
+class MetagenPIRequest(BaseModel):
+    table_names: str
+    catalog_name: str
+    schema_name: str
+    output_mode: Literal["tag", "knowledge_base"] = "tag"
+    model: str = "databricks-meta-llama-3-3-70b-instruct"
+    include_deterministic_pi: bool = True
+
+
+class IngestionRunRequest(BaseModel):
+    config_id: str
+    source_path: str
+    file_format: Literal["json", "csv", "parquet", "text"] = "json"
+    output_table: str
+    text_columns: List[str]
+    structured_columns: Optional[Dict[str, str]] = None
+    masking_strategy: Optional[str] = "mask"
+    doc_id_column: str = "doc_id"
+    checkpoint_path: Optional[str] = None
+    schema_location: Optional[str] = None
+    max_files_per_trigger: int = 50
+    trigger_processing_time: Optional[str] = None
+    multi_column_strategy: Literal["sequential", "concat"] = "sequential"
+    cluster_profile: str = "cpu_small"
+
+
 class RunStatusResponse(BaseModel):
     run_id: int
     state: Optional[str] = None

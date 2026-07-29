@@ -56,7 +56,7 @@ export default function HomePage() {
         </p>
       </div>
 
-      <ErrorBanner message={configsError || historyError || alError || auditError} />
+      <ErrorBanner message={configsError || historyError || alError || auditError || ""} />
 
       {/* Outcome-oriented stats */}
       {loadingAudit ? (

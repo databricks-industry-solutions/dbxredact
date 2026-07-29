@@ -12,9 +12,18 @@
 # COMMAND ----------
 
 dbutils.widgets.text("test_schema", "dbxredact_tests", "Test Schema")
+dbutils.widgets.text("test_catalog", "", "Test Catalog (blank = current)")
+# Use a custom (non-governed) tag key by default so this test is portable across
+# workspaces. Governed keys like 'data_classification' may have a tag policy that
+# only permits specific values (e.g. u-nnpi/cui/pii) and would reject 'protected'.
+dbutils.widgets.text("tag_name", "dbxredact_class", "UC tag key for tag-mode discovery")
+dbutils.widgets.text("tag_value", "protected", "UC tag value")
 
-test_catalog = spark.sql("SELECT current_catalog()").first()[0]
+_tc = dbutils.widgets.get("test_catalog").strip()
+test_catalog = _tc or spark.sql("SELECT current_catalog()").first()[0]
 test_schema = dbutils.widgets.get("test_schema")
+tag_name = dbutils.widgets.get("tag_name").strip() or "dbxredact_class"
+tag_value = dbutils.widgets.get("tag_value").strip() or "protected"
 
 # COMMAND ----------
 
@@ -30,8 +39,8 @@ try:
     tu.setup_test_environment()
     source_table = tu.create_tagged_test_table(
         "test_12_tagged",
-        tag_name="data_classification",
-        tag_value="protected",
+        tag_name=tag_name,
+        tag_value=tag_value,
     )
     output_table = tu._fqn("test_12_tag_output")
     tu.track_table(output_table)
@@ -42,8 +51,8 @@ try:
         spark=spark,
         source_table=source_table,
         output_table=output_table,
-        tag_name="data_classification",
-        tag_value="protected",
+        tag_name=tag_name,
+        tag_value=tag_value,
         doc_id_column="doc_id",
         use_presidio=True,
         use_ai_query=False,
@@ -64,7 +73,7 @@ try:
     tu.assert_greater(count, 0, f"Tag mode output has {count} rows")
     tu.assert_true("text_redacted" in out_df.columns, "text_redacted present in tag mode output")
 
-    known_pii = ["123-45-6789", "jane.doe@example.com"]
+    known_pii = ["457-55-5462", "jane.doe@example.com"]
     verify_no_pii_in_redacted(out_df, "text_redacted", known_pii)
 
     test_passed = True

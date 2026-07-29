@@ -12,8 +12,10 @@
 # COMMAND ----------
 
 dbutils.widgets.text("test_schema", "dbxredact_tests", "Test Schema")
+dbutils.widgets.text("test_catalog", "", "Test Catalog (blank = current)")
 
-test_catalog = spark.sql("SELECT current_catalog()").first()[0]
+_tc = dbutils.widgets.get("test_catalog").strip()
+test_catalog = _tc or spark.sql("SELECT current_catalog()").first()[0]
 test_schema = dbutils.widgets.get("test_schema")
 
 # COMMAND ----------

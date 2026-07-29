@@ -12,8 +12,10 @@
 # COMMAND ----------
 
 dbutils.widgets.text("test_schema", "dbxredact_tests", "Test Schema")
+dbutils.widgets.text("test_catalog", "", "Test Catalog (blank = current)")
 
-test_catalog = spark.sql("SELECT current_catalog()").first()[0]
+_tc = dbutils.widgets.get("test_catalog").strip()
+test_catalog = _tc or spark.sql("SELECT current_catalog()").first()[0]
 test_schema = dbutils.widgets.get("test_schema")
 
 # COMMAND ----------
@@ -62,7 +64,7 @@ try:
 
     # Spot-check: raw PII text should NOT be in audit table
     audit_text = " ".join(str(row.asDict()) for row in audit_df.collect())
-    for pii in ["123-45-6789", "jane.doe@example.com"]:
+    for pii in ["457-55-5462", "jane.doe@example.com"]:
         tu.assert_false(pii in audit_text, f"Raw PII '{pii}' not in audit table")
 
     test_passed = True

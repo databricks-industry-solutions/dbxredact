@@ -47,18 +47,25 @@ The built `dist/` directory is committed and synced to Databricks via DAB. Rebui
 
 ## Deployment
 
-```bash
-# Deploy to Databricks
-./deploy.sh dev        # with interactive confirms
-./deploy.sh dev -y     # skip confirms
+`databricks.yml` is a **static committed bundle** (there is no `databricks.yml.template` anymore). Deployment is a plain `databricks bundle deploy`, which works from the CLI and the workspace UI (Git Folder + Deploy button). Per-workspace values come from bundle variables; the wheel is built automatically by the bundle's `artifacts` hook (`uv build`).
 
-# Validate only (no deploy)
-./deploy.sh dev --validate-only
+```bash
+# Primary flow (CLI or workspace UI)
+mkdir -p .databricks/bundle/dev
+cp variable-overrides.example.json .databricks/bundle/dev/variable-overrides.json  # edit catalog/schema/sql_warehouse_id
+databricks bundle deploy -t dev              # builds wheel + deploys jobs and app
+databricks bundle run dbxredact_app -t dev   # creates + starts the app (and its SPN)
+./grant_app_permissions.sh -t dev            # grants the app SPN UC access (post-deploy, can't live in the bundle)
 ```
 
-Deployment requires a `dev.env` file (copy from `example.env`). Required vars: `DATABRICKS_HOST`, `CATALOG`, `SCHEMA`, `WAREHOUSE_ID`.
+Variables can also be supplied via `--var "catalog=...,schema=...,sql_warehouse_id=..."` or `BUNDLE_VAR_*` env vars. The workspace host comes from the CLI profile / `DATABRICKS_HOST`. Note: DAB only auto-loads `variable-overrides.json` from `.databricks/bundle/<target>/`, not the repo root.
 
-`deploy.sh` generates `databricks.yml` from `databricks.yml.template` by stamping env vars -- do not edit `databricks.yml` directly. The script builds the wheel, uploads it, runs `databricks bundle deploy`, and optionally grants UC permissions for the app service principal.
+`deploy.sh` is an **optional guided wrapper**: it reads a `dev.env`/`prod.env` (copy from `example.env`; vars `DATABRICKS_HOST`, `CATALOG`, `SCHEMA`, `WAREHOUSE_ID`, `DEPLOY_APP`), writes the `variable-overrides.json`, then runs validate → deploy → start app → grants with interactive confirms (`-y` to skip, `--validate-only` to stop after validate). It supports `DEPLOY_APP=false` for jobs-only by commenting out the `resources/app.yml` include during deploy. It is not required.
+
+**Key deployment facts:**
+- The wheel is built by the `artifacts` hook and synced by the bundle; jobs reference it by local path (`../dist/dbxredact-${var.package_version}-py3-none-any.whl`). There is no manual wheel upload to a UC volume.
+- `package_version` (in `databricks.yml`) must be kept in sync with `pyproject.toml`'s version.
+- UC grants to the app service principal live in `grant_app_permissions.sh`, not the bundle -- the SPN doesn't exist until the app is created.
 
 ## Architecture
 
@@ -96,7 +103,8 @@ Numbered pipeline: `0_load_benchmark_data` -> `1_benchmarking_detection` -> `2_b
 
 ### Databricks Asset Bundles
 
-- `databricks.yml.template` -- Bundle config with targets (dev, demo, prod)
+- `databricks.yml` -- Static committed bundle config with targets (dev, prod), the `artifacts` (uv build) hook, and `package_version` / `sql_warehouse_id` variables
+- `variable-overrides.example.json` -- Template users copy to `.databricks/bundle/<target>/variable-overrides.json`
 - `variables.yml` -- Runtime parameters (catalog, schema, detection settings, cluster types)
 - `resources/jobs.yml` -- Benchmark job + 6 pipeline variants (CPU/GPU x small/medium/large)
 - `resources/app.yml` -- App manifest with job resources, warehouse, permissions

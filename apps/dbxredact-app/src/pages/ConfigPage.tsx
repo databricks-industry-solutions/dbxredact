@@ -4,6 +4,7 @@ import ErrorBanner from "../components/ErrorBanner";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
 import { SkeletonRows } from "../components/Skeleton";
+import Button from "../components/Button";
 import { useToast } from "../hooks/useToast";
 import type { Config } from "../types";
 
@@ -25,6 +26,21 @@ const PROFILE_DESCRIPTIONS: Record<string, string> = {
   deep: "Maximum thoroughness for compliance-critical data. All detectors run with higher sensitivity to catch as much PII as possible, at the cost of more false positives and slower runtime. Use when missing PII is unacceptable (e.g. HIPAA, GDPR audits).",
   custom: "Configure detection methods and parameters manually.",
 };
+
+/** Returns an error string for invalid extra-params JSON, or "" when valid/empty. */
+function validateExtraParams(text: string): string {
+  if (!text.trim()) return "";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return "Invalid JSON";
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return "Must be a JSON object (not array or primitive)";
+  }
+  return "";
+}
 
 const DEFAULTS = {
   name: "default",
@@ -76,24 +92,15 @@ export default function ConfigPage() {
   }
 
   async function save() {
-    setSaving(true);
-    let parsedExtra: Record<string, unknown> | null = null;
-    if (extraParamsText.trim()) {
-      try {
-        const parsed = JSON.parse(extraParamsText);
-        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-          setExtraParamsError("Must be a JSON object (not array or primitive)");
-          setSaving(false);
-          return;
-        }
-        parsedExtra = parsed;
-        setExtraParamsError("");
-      } catch {
-        setExtraParamsError("Invalid JSON");
-        setSaving(false);
-        return;
-      }
+    const extraErr = validateExtraParams(extraParamsText);
+    if (extraErr) {
+      setExtraParamsError(extraErr);
+      return;
     }
+    setSaving(true);
+    const parsedExtra: Record<string, unknown> | null = extraParamsText.trim()
+      ? (JSON.parse(extraParamsText) as Record<string, unknown>)
+      : null;
     const payload = { ...form, extra_params: parsedExtra };
     try {
       if (editingId) {
@@ -201,7 +208,7 @@ export default function ConfigPage() {
 
       <div className="card p-5 mb-8 grid grid-cols-2 gap-4 max-w-2xl">
         <div className="col-span-2">
-          <label className="block text-sm font-medium mb-1.5">Name</label>
+          <label className="block text-sm font-medium mb-1.5">Name <span className="text-red-500">*</span></label>
           <input className="input-field" value={form.name}
             onChange={(e) => set("name", e.target.value)} />
         </div>
@@ -244,6 +251,11 @@ export default function ConfigPage() {
             </select>
           </div>
         </div>
+        {isPreset && (
+          <p className="col-span-2 text-xs text-gray-500 dark:text-gray-400 -mt-2">
+            Detectors are set by the <span className="font-medium">{form.detection_profile === "fast" ? "Fast Mode" : "Deep Search"}</span> preset. Switch Detection Profile to <span className="font-medium">Custom</span> to edit them.
+          </p>
+        )}
         {form.ner_backend === "privacy_filter" && (
           <p className="col-span-2 text-xs text-amber-600 dark:text-amber-400 -mt-2">
             Privacy Filter works best on GPU clusters. It supports non-English languages but accuracy may be lower than English.
@@ -310,12 +322,14 @@ export default function ConfigPage() {
           )}
         </div>
 
-        {/* Advanced settings */}
-        <div className="col-span-2 border-t pt-3 mt-1">
+        {/* Advanced settings -- secondary, collapsed by default */}
+        <div className="col-span-2 border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
           <button type="button"
-            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+            className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center gap-1"
             onClick={() => setShowAdvanced(!showAdvanced)}>
-            {showAdvanced ? "Hide" : "Show"} Advanced Settings
+            <span className="text-xs">{showAdvanced ? "▾" : "▸"}</span>
+            {showAdvanced ? "Hide" : "Show"} advanced settings
+            {!showAdvanced && <span className="text-xs font-normal text-gray-400">(optional — sensible defaults applied)</span>}
           </button>
         </div>
         {showAdvanced && (
@@ -390,7 +404,7 @@ export default function ConfigPage() {
                   <textarea className="input-field font-mono text-xs w-full" rows={4}
                     placeholder='{"custom_key": "value"}'
                     value={extraParamsText}
-                    onChange={(e) => { setExtraParamsText(e.target.value); setExtraParamsError(""); }} />
+                    onChange={(e) => { setExtraParamsText(e.target.value); setExtraParamsError(validateExtraParams(e.target.value)); }} />
                   {extraParamsError && <p className="text-xs text-red-500 mt-1">{extraParamsError}</p>}
                   <p className="text-xs text-gray-400 mt-1">Passed as additional notebook parameters at runtime.</p>
                 </div>
@@ -399,13 +413,15 @@ export default function ConfigPage() {
           </>
         )}
 
-        <div className="col-span-2 pt-2 flex gap-2">
-          <button className="btn-primary" disabled={saving || !form.name} onClick={save}>
-            {saving ? "Saving..." : editingId ? "Update Config" : "Save Config"}
-          </button>
+        <div className="col-span-2 pt-2 flex gap-2 items-center">
+          <Button variant="primary" loading={saving} loadingText="Saving..."
+            disabled={!form.name || !!extraParamsError} onClick={save}>
+            {editingId ? "Update Config" : "Save Config"}
+          </Button>
           {editingId && (
-            <button className="btn-secondary" onClick={cancelEdit}>Cancel Edit</button>
+            <Button variant="secondary" onClick={cancelEdit}>Cancel Edit</Button>
           )}
+          {!form.name && <span className="text-xs text-gray-500 dark:text-gray-400">Enter a name to save.</span>}
         </div>
       </div>
 

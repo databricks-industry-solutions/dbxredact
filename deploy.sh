@@ -1,10 +1,31 @@
 #!/bin/bash
-# Deploy dbxredact to Databricks
+# Optional guided wrapper for deploying dbxredact to Databricks.
+#
+# You do NOT need this script. `databricks.yml` is a committed static bundle, so
+# the plain flow works from the CLI or the workspace UI:
+#   mkdir -p .databricks/bundle/dev
+#   cp variable-overrides.example.json .databricks/bundle/dev/variable-overrides.json  # edit values
+#   databricks bundle deploy -t dev
+#   databricks bundle run dbxredact_app -t dev
+#   ./grant_app_permissions.sh -t dev
+#
+# This wrapper is a convenience for users who prefer the .env flow and interactive
+# confirmations, and for jobs-only deploys (DEPLOY_APP=false). It:
+#   1. reads a dev.env / prod.env file,
+#   2. writes .databricks/bundle/<target>/variable-overrides.json from it (the path
+#      DAB auto-loads), so the bundle picks up catalog/schema/warehouse,
+#   3. runs `databricks bundle validate` / `deploy`,
+#   4. runs grant_app_permissions.sh and `databricks bundle run dbxredact_app`.
+#
+# The wheel is built automatically by the bundle's `artifacts` hook (uv build), and
+# the React frontend dist/ is committed -- neither is built or uploaded here.
+#
 # Usage: ./deploy.sh [dev|prod] [--validate-only] [--yes|-y]
 
 set -euo pipefail
 
-# Bridge pip index config to UV_INDEX_URL for internal PyPI proxies
+# Bridge pip index config to UV_INDEX_URL for internal PyPI proxies (the bundle's
+# `uv build` artifact hook inherits this).
 if [ -z "${UV_INDEX_URL:-}" ]; then
     _pip_idx=$(pip3 config get global.index-url 2>/dev/null || true)
     [ -n "$_pip_idx" ] && export UV_INDEX_URL="$_pip_idx"
@@ -73,11 +94,6 @@ source "${ENV_FILE}"
 set +a
 
 # Validate required variables
-if [ -z "${DATABRICKS_HOST:-}" ]; then
-    echo "Error: DATABRICKS_HOST not set in ${ENV_FILE}"
-    exit 1
-fi
-
 if [ -z "${CATALOG:-}" ]; then
     echo "Error: CATALOG not set in ${ENV_FILE}"
     exit 1
@@ -96,77 +112,67 @@ if [ -z "${WAREHOUSE_ID:-}" ] && [ "${DEPLOY_APP}" != "false" ]; then
     exit 1
 fi
 
-# Get package version from pyproject.toml (single source of truth)
+# Export the workspace host when provided (otherwise the CLI profile /
+# DATABRICKS_HOST env var is used, same as a plain bundle deploy).
+if [ -n "${DATABRICKS_HOST:-}" ]; then
+    export DATABRICKS_HOST
+fi
+
 PACKAGE_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-VOLUME_PATH="/Volumes/${CATALOG}/${SCHEMA}/wheels"
-WHEEL_FILE="dbxredact-${PACKAGE_VERSION}-py3-none-any.whl"
 
 echo ""
-echo "  Host:          ${DATABRICKS_HOST}"
+echo "  Host:          ${DATABRICKS_HOST:-<from CLI profile>}"
 echo "  Catalog:       ${CATALOG}"
 echo "  Schema:        ${SCHEMA}"
-echo "  Warehouse ID:  ${WAREHOUSE_ID}"
+echo "  Warehouse ID:  ${WAREHOUSE_ID:-<none>}"
 echo "  Version:       ${PACKAGE_VERSION}"
-echo "  Volume:        ${VOLUME_PATH}"
-echo "  Wheel:         ${WHEEL_FILE}"
 echo "  Deploy app:    ${DEPLOY_APP}"
 echo ""
 
-# Generate databricks.yml from template
-if confirm "Generate databricks.yml from template for target '${TARGET}' on ${DATABRICKS_HOST}"; then
-    if [ ! -f "databricks.yml.template" ]; then
-        echo "Error: databricks.yml.template not found"
-        exit 1
-    fi
-    sed -e "s|__DATABRICKS_HOST__|${DATABRICKS_HOST}|g" \
-        -e "s|__CATALOG__|${CATALOG}|g" \
-        -e "s|__SCHEMA__|${SCHEMA}|g" \
-        -e "s|__WAREHOUSE_ID__|${WAREHOUSE_ID}|g" \
-        -e "s|__PACKAGE_VERSION__|${PACKAGE_VERSION}|g" \
-        databricks.yml.template > databricks.yml
-    if [ "${DEPLOY_APP}" = "false" ]; then
+# Write the bundle variable-overrides file DAB auto-loads for this target. This is
+# what carries catalog/schema/warehouse into the static databricks.yml.
+OVERRIDE_DIR=".databricks/bundle/${TARGET}"
+OVERRIDE_FILE="${OVERRIDE_DIR}/variable-overrides.json"
+if confirm "Write bundle variable overrides to ${OVERRIDE_FILE}"; then
+    mkdir -p "${OVERRIDE_DIR}"
+    python3 - "$OVERRIDE_FILE" "$CATALOG" "$SCHEMA" "${WAREHOUSE_ID:-}" "$PACKAGE_VERSION" <<'PY'
+import json, sys
+path, catalog, schema, warehouse, version = sys.argv[1:6]
+overrides = {"catalog": catalog, "schema": schema, "package_version": version}
+if warehouse:
+    overrides["sql_warehouse_id"] = warehouse
+with open(path, "w") as f:
+    json.dump(overrides, f, indent=2)
+    f.write("\n")
+PY
+    echo "Wrote ${OVERRIDE_FILE}"
+fi
+
+# Jobs-only mode: comment out the app include so the app is not deployed.
+# We edit a copy-safe way and restore on exit.
+APP_INCLUDE_TOGGLED=false
+restore_app_include() {
+    if [ "${APP_INCLUDE_TOGGLED}" = true ]; then
         if [[ "$OSTYPE" == darwin* ]]; then
-            sed -i '' '/resources\/app\.yml/d' databricks.yml
+            sed -i '' 's|^  # - resources/app.yml  # (disabled by deploy.sh DEPLOY_APP=false)|  - resources/app.yml  # Comment out to skip app deployment (jobs-only)|' databricks.yml
         else
-            sed -i '/resources\/app\.yml/d' databricks.yml
+            sed -i 's|^  # - resources/app.yml  # (disabled by deploy.sh DEPLOY_APP=false)|  - resources/app.yml  # Comment out to skip app deployment (jobs-only)|' databricks.yml
         fi
-        echo "Generated databricks.yml (app excluded)"
+    fi
+}
+trap 'restore_app_include; cleanup' EXIT
+
+if [ "${DEPLOY_APP}" = "false" ]; then
+    echo "DEPLOY_APP=false -- temporarily disabling the app include for this deploy."
+    if [[ "$OSTYPE" == darwin* ]]; then
+        sed -i '' 's|^  - resources/app.yml  # Comment out to skip app deployment (jobs-only)|  # - resources/app.yml  # (disabled by deploy.sh DEPLOY_APP=false)|' databricks.yml
     else
-        echo "Generated databricks.yml"
+        sed -i 's|^  - resources/app.yml  # Comment out to skip app deployment (jobs-only)|  # - resources/app.yml  # (disabled by deploy.sh DEPLOY_APP=false)|' databricks.yml
     fi
+    APP_INCLUDE_TOGGLED=true
 fi
 
-# Build wheel
-WHEEL_PATH="dist/${WHEEL_FILE}"
-if confirm "Build wheel with uv (version ${PACKAGE_VERSION})"; then
-    uv build
-    echo "Built wheel: ${WHEEL_PATH}"
-fi
-
-# Build frontend (dist/ is deployed with the app, not built at startup)
-if [ "${DEPLOY_APP}" != "false" ]; then
-    if [ -d "apps/dbxredact-app/dist" ] && [ -f "apps/dbxredact-app/dist/index.html" ]; then
-        echo "Frontend dist/ already exists -- skipping build (delete dist/ to force rebuild)"
-    elif confirm "Build frontend (apps/dbxredact-app/src)"; then
-        (cd apps/dbxredact-app/src && npm install --no-audit --no-fund && npm run build)
-        echo "Built frontend: apps/dbxredact-app/dist/"
-    fi
-fi
-
-# Upload wheel to volume
-if confirm "Upload ${WHEEL_FILE} to ${VOLUME_PATH}/${WHEEL_FILE}"; then
-    if ! databricks fs cp "${WHEEL_PATH}" "dbfs:${VOLUME_PATH}/${WHEEL_FILE}" --overwrite; then
-        echo ""
-        echo "Error: Failed to upload wheel to ${VOLUME_PATH}"
-        echo ""
-        echo "Check that the volume exists. Create it with:"
-        echo "  CREATE VOLUME IF NOT EXISTS ${CATALOG}.${SCHEMA}.wheels"
-        exit 1
-    fi
-    echo "Uploaded wheel to ${VOLUME_PATH}/${WHEEL_FILE}"
-fi
-
-# Validate bundle
+# Validate bundle (builds the wheel via the artifacts hook as part of validate/deploy)
 if confirm "Validate Databricks bundle for target '${TARGET}'"; then
     databricks bundle validate -t "${TARGET}"
 fi
@@ -177,94 +183,27 @@ if [ "$VALIDATE_ONLY" == "--validate-only" ]; then
     exit 0
 fi
 
-# Deploy bundle
-if confirm "Deploy Databricks bundle to target '${TARGET}' on ${DATABRICKS_HOST}"; then
+# Deploy bundle (uv build runs automatically here)
+if confirm "Deploy Databricks bundle to target '${TARGET}'"; then
     databricks bundle deploy -t "${TARGET}"
     echo ""
     echo "=== Deployment Complete ==="
     echo "Target: ${TARGET}"
-    echo "Host: ${DATABRICKS_HOST}"
-    echo "Wheel: ${VOLUME_PATH}/${WHEEL_FILE}"
 fi
 
-# Grant UC permissions to app service principal
-APP_NAME="dbxredact-app"
-if [ "${DEPLOY_APP}" = "false" ]; then
-    echo "Skipping app UC grants (DEPLOY_APP=false)"
-elif confirm "Grant UC permissions to app service principal '${APP_NAME}' for ${CATALOG}.${SCHEMA}"; then
-    echo "Fetching service principal for app '${APP_NAME}'..."
-
-    APP_JSON=$(databricks apps get "${APP_NAME}" --output json 2>&1) || {
-        echo "ERROR: Failed to get app info: ${APP_JSON}"
-        echo "The app may not exist yet -- it will be created by 'bundle run' below."
-        echo "Re-run this script after the first deploy to grant permissions."
-        APP_JSON=""
-    }
-
-    if [ -n "${APP_JSON}" ]; then
-        SPN_ID=$(echo "${APP_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_id',''))")
-        echo "App service principal ID: ${SPN_ID}"
-
-        if [ -z "${SPN_ID}" ]; then
-            echo "ERROR: service_principal_id not found in app response."
-            echo "Full response: ${APP_JSON}"
-            exit 1
-        fi
-
-        SPN_JSON=$(databricks service-principals get "${SPN_ID}" --output json 2>&1) || {
-            echo "ERROR: Failed to get service principal: ${SPN_JSON}"
-            exit 1
-        }
-        APP_ID=$(echo "${SPN_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('applicationId',''))")
-
-        if [ -z "${APP_ID}" ]; then
-            echo "ERROR: application_id not found for SPN ${SPN_ID}."
-            echo "Full response: ${SPN_JSON}"
-            exit 1
-        fi
-
-        echo "Service principal application_id: ${APP_ID}"
-        echo "Granting UC permissions..."
-
-        GRANT_STATEMENTS=(
-            "GRANT USE CATALOG ON CATALOG \`${CATALOG}\` TO \`${APP_ID}\`"
-            "GRANT USE SCHEMA ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
-            "GRANT CREATE TABLE ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
-            "GRANT SELECT ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
-            "GRANT MODIFY ON SCHEMA \`${CATALOG}\`.\`${SCHEMA}\` TO \`${APP_ID}\`"
-        )
-
-        GRANT_FAILED=false
-        for STMT in "${GRANT_STATEMENTS[@]}"; do
-            echo "  Running: ${STMT}"
-            RESULT=$(databricks api post /api/2.0/sql/statements \
-                --json "{\"warehouse_id\": \"${WAREHOUSE_ID}\", \"statement\": \"${STMT}\", \"wait_timeout\": \"30s\"}" 2>&1)
-            STATUS=$(echo "${RESULT}" | python3 -c "import sys,json; d=json.load(sys.stdin); s=d.get('status',{}); print(s.get('state','UNKNOWN'))" 2>/dev/null || echo "PARSE_ERROR")
-            if [ "${STATUS}" = "SUCCEEDED" ]; then
-                echo "    OK"
-            else
-                echo "    FAILED (status: ${STATUS})"
-                GRANT_FAILED=true
-            fi
-        done
-        if [ "${GRANT_FAILED}" = true ]; then
-            echo ""
-            echo "WARNING: Some UC grants failed. This is common when your user does not"
-            echo "have permission to grant USE CATALOG or manage schema-level grants."
-            echo "The deployment will continue. You or a catalog admin can apply the"
-            echo "missing grants manually later. The app needs these permissions to"
-            echo "read/write tables in ${CATALOG}.${SCHEMA}."
-        else
-            echo "All grants applied successfully."
-        fi
-    fi
-fi
-
-# Start/redeploy the app
+# Start/redeploy the app (creates the app + its service principal on first run)
 if [ "${DEPLOY_APP}" = "false" ]; then
     echo "Skipping app start (DEPLOY_APP=false)"
 elif confirm "Start/redeploy app 'dbxredact_app' on target '${TARGET}'"; then
     databricks bundle run dbxredact_app -t "${TARGET}"
+fi
+
+# Grant UC permissions to the app service principal (needs the app SPN to exist)
+if [ "${DEPLOY_APP}" = "false" ]; then
+    echo "Skipping app UC grants (DEPLOY_APP=false)"
+elif confirm "Grant UC permissions to app service principal for ${CATALOG}.${SCHEMA}"; then
+    CATALOG="${CATALOG}" SCHEMA="${SCHEMA}" WAREHOUSE_ID="${WAREHOUSE_ID}" \
+        ./grant_app_permissions.sh -t "${TARGET}"
 fi
 
 echo ""

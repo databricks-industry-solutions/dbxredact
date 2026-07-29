@@ -91,10 +91,12 @@ def _mock_fetch_all(sql, params=None):
         return [_BLOCK_ENTRY]
     if "redact_safe_list" in sql_lower:
         return [_SAFE_ENTRY]
-    if "redact_config" in sql_lower:
-        return [_CONFIG_ROW]
+    # Check job_history before config: the /history routes JOIN both tables, and
+    # the response is a job-history row (not a config row).
     if "redact_job_history" in sql_lower:
         return [_JOB_HISTORY]
+    if "redact_config" in sql_lower:
+        return [_CONFIG_ROW]
     if "redact_annotations" in sql_lower:
         return [_ANNOTATION]
     if "redact_active_learn_queue" in sql_lower:
@@ -492,6 +494,63 @@ class TestPipelineRoutes:
         assert resp.status_code == 200
         assert resp.json()["ai_query_cost_usd"] == 0.0
 
+    @patch("api.routes.pipeline.trigger_metagen_pi_run", return_value=700)
+    @patch("api.routes.pipeline.get_run_status", return_value={
+        "run_id": 700, "state": "RUNNING", "result_state": None,
+        "start_time": 1000, "end_time": None, "run_page_url": "https://example.com",
+    })
+    @patch("api.routes.pipeline.execute", side_effect=_mock_execute)
+    def test_run_metagen_pi_returns_status(self, mock_exec, __, mock_trigger):
+        resp = client.post("/api/pipeline/run-metagen-pi", json={
+            "table_names": "cat.sch.tbl",
+            "catalog_name": "cat",
+            "schema_name": "sch",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["run_id"] == 700
+
+        params = mock_trigger.call_args[0][0]
+        assert params["table_names"] == "cat.sch.tbl"
+        assert params["output_mode"] == "tag"
+        assert params["include_deterministic_pi"] == "true"
+        # A metagen_pi run is recorded in job history.
+        insert_calls = [c for c in mock_exec.call_args_list if "redact_job_history" in str(c)]
+        assert len(insert_calls) >= 1
+
+    @patch("api.routes.pipeline.trigger_ingestion_run", return_value=800)
+    @patch("api.routes.pipeline.get_run_status", return_value={
+        "run_id": 800, "state": "RUNNING", "result_state": None,
+        "start_time": 1000, "end_time": None, "run_page_url": "https://example.com",
+    })
+    @patch("api.routes.pipeline.execute", side_effect=_mock_execute)
+    @patch("api.routes.pipeline.fetch_one", side_effect=_mock_fetch_one)
+    def test_run_ingestion_returns_status(self, _, __, ___, mock_trigger):
+        resp = client.post("/api/pipeline/run-ingestion", json={
+            "config_id": "cfg-1",
+            "source_path": "/Volumes/cat/sch/vol/incoming",
+            "output_table": "cat.sch.tbl_redacted",
+            "text_columns": ["note", "summary"],
+        })
+        assert resp.status_code == 200
+        assert resp.json()["run_id"] == 800
+
+        params = mock_trigger.call_args[0][0]
+        assert params["source_path"] == "/Volumes/cat/sch/vol/incoming"
+        assert params["text_columns"] == "note,summary"
+        # Detector settings are pulled from the referenced config.
+        assert params["use_presidio"] == "true"
+        assert params["endpoint"] == "databricks-gpt-oss-120b"
+
+    @patch("api.routes.pipeline.fetch_one", return_value=None)
+    def test_run_ingestion_404_when_config_missing(self, _):
+        resp = client.post("/api/pipeline/run-ingestion", json={
+            "config_id": "nonexistent",
+            "source_path": "/Volumes/cat/sch/vol/incoming",
+            "output_table": "cat.sch.tbl_redacted",
+            "text_columns": ["note"],
+        })
+        assert resp.status_code == 404
+
 
 # ===================================================================
 # Admin routes
@@ -594,11 +653,17 @@ class TestSchemaValidation:
         })
         assert resp.status_code == 422
 
-    def test_config_create_gliner_threshold_min(self):
+    @patch("api.routes.config.execute", side_effect=_mock_execute)
+    @patch("api.routes.config.fetch_one", return_value=None)
+    def test_config_create_gliner_threshold_coerced(self, _, __):
+        # gliner_threshold validation is intentionally lenient (see commit
+        # "relax gliner_threshold validation -- coerce invalid values to default"):
+        # an out-of-range value is coerced to the 0.2 default rather than rejected.
         resp = client.post("/api/config/", json={
             "name": "bad", "gliner_threshold": 0.01,
         })
-        assert resp.status_code == 422
+        assert resp.status_code == 201
+        assert resp.json()["gliner_threshold"] == 0.2
 
     def test_pipeline_run_requires_config_id(self):
         resp = client.post("/api/pipeline/run", json={

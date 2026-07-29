@@ -7,13 +7,27 @@
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC Install the spaCy model Presidio needs (en_core_web_lg, MIT). The analyzer
+# MAGIC falls back trf -> lg -> md -> sm, so lg satisfies the default. Restart so
+# MAGIC the freshly installed model is importable.
+
+# COMMAND ----------
+
+# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl -q
+# MAGIC %restart_python
+
+# COMMAND ----------
+
 # MAGIC %run ./test_utils
 
 # COMMAND ----------
 
 dbutils.widgets.text("test_schema", "dbxredact_tests", "Test Schema")
+dbutils.widgets.text("test_catalog", "", "Test Catalog (blank = current)")
 
-test_catalog = spark.sql("SELECT current_catalog()").first()[0]
+_tc = dbutils.widgets.get("test_catalog").strip()
+test_catalog = _tc or spark.sql("SELECT current_catalog()").first()[0]
 test_schema = dbutils.widgets.get("test_schema")
 
 # COMMAND ----------
@@ -36,7 +50,7 @@ try:
     spark.sql(f"""
         INSERT INTO {source_fqn} VALUES
         ('d1', 'John Smith lives in Springfield at 742 Evergreen Terrace'),
-        ('d2', 'Acme Corp hired Jane Doe SSN 123-45-6789'),
+        ('d2', 'Acme Corp hired Jane Doe SSN 457-55-5462'),
         ('d3', 'Clean text with no PII here')
     """)
     tu.track_table(source_fqn)
@@ -75,7 +89,7 @@ try:
                         "Safe-listed 'Springfield' preserved in redacted output")
 
     # But SSNs should still be redacted (not safe-listed)
-    tu.assert_false("123-45-6789" in all_redacted,
+    tu.assert_false("457-55-5462" in all_redacted,
                      "SSN still redacted despite entity filter")
 
     test_passed = True

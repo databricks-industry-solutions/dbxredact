@@ -18,6 +18,7 @@ export interface Config {
   presidio_pattern_only?: boolean;
   language?: string;
   translate_to?: string;
+  encryption_secret?: string;
   extra_params?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -158,4 +159,30 @@ export interface Annotation {
   corrected_type?: string;
   corrected_value?: string;
   detection_method?: string;
+}
+
+export interface MetagenPIRequest {
+  table_names: string;
+  catalog_name: string;
+  schema_name: string;
+  output_mode: "tag" | "knowledge_base";
+  model: string;
+  include_deterministic_pi: boolean;
+}
+
+export interface IngestionRunRequest {
+  config_id: string;
+  source_path: string;
+  file_format: "json" | "csv" | "parquet" | "text";
+  output_table: string;
+  text_columns: string[];
+  structured_columns?: Record<string, string>;
+  masking_strategy?: string;
+  doc_id_column: string;
+  checkpoint_path?: string;
+  schema_location?: string;
+  max_files_per_trigger: number;
+  trigger_processing_time?: string;
+  multi_column_strategy: "sequential" | "concat";
+  cluster_profile: string;
 }

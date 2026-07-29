@@ -6,14 +6,18 @@
 #
 # DAG structure -- tests are grouped into parallel waves:
 #
-#   Wave A (fast, no LLM):       test_01, test_02           -- fast_cluster
-#   Wave B (Presidio only):      test_03..test_06           -- presidio_cluster
-#   Wave C (AI Query):           test_07..test_09           -- full_cluster
-#   Wave D (advanced features):  test_10..test_14           -- full_cluster
-#   Wave E (E2E):                test_e2e_cpu, test_e2e_gpu -- full_cluster / gpu_cluster
+#   Wave A (fast, no LLM):       test_01, test_02              -- fast_cluster
+#   Wave B (Presidio only):      test_03..test_06, test_15     -- presidio_cluster
+#   Wave C (AI Query):           test_07..test_09, test_16     -- full_cluster
+#   Wave D (advanced features):  test_10..test_14              -- full_cluster
+#   Wave E (E2E):                test_e2e_cpu, test_e2e_gpu    -- full_cluster / gpu_cluster
 #
 # test_01 gates Waves B/C/D/E. Wave D depends on test_03 (Presidio works).
 # Wave C is independent of Wave B.
+#
+# All notebooks accept a test_catalog job parameter (blank = the cluster's current
+# catalog). Pass test_catalog=<name> at run time to aim the suite at a catalog,
+# e.g. test_catalog=eswanson_demo. No workspace values are committed here.
 
 resources:
   jobs:
@@ -23,6 +27,8 @@ resources:
       parameters:
         - name: test_schema
           default: "dbxredact_tests"
+        - name: test_catalog
+          default: ""
         - name: endpoint
           default: "databricks-gpt-oss-120b"
 
@@ -87,6 +93,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_01_imports_and_config.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
           libraries:
             - whl: ../../dist/*.whl
 
@@ -99,6 +106,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_02_non_string_column.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
           libraries:
             - whl: ../../dist/*.whl
 
@@ -115,6 +123,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_03_presidio_detection.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
           libraries:
             - whl: ../../dist/*.whl
 
@@ -127,6 +136,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_04_presidio_redaction_typed.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
           libraries:
             - whl: ../../dist/*.whl
 
@@ -139,6 +149,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_05_presidio_redaction_generic.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
           libraries:
             - whl: ../../dist/*.whl
 
@@ -151,6 +162,20 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_06_validation_output.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_15_table_masking
+          max_retries: 1
+          depends_on:
+            - task_key: test_01_imports_and_config  # structured masking needs no detector/spaCy
+          job_cluster_key: presidio_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_15_table_masking.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
           libraries:
             - whl: ../../dist/*.whl
 
@@ -167,6 +192,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_07_ai_query_detection.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
               endpoint: "{{job.parameters.endpoint}}"
           libraries:
             - whl: ../../dist/*.whl
@@ -180,6 +206,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_08_ensemble_detection.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
               endpoint: "{{job.parameters.endpoint}}"
           libraries:
             - whl: ../../dist/*.whl
@@ -193,6 +220,21 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_09_consensus_alignment.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
+              endpoint: "{{job.parameters.endpoint}}"
+          libraries:
+            - whl: ../../dist/*.whl
+
+        - task_key: test_16_ingestion_formats
+          max_retries: 1
+          depends_on:
+            - task_key: test_07_ai_query_detection
+          job_cluster_key: full_cluster
+          notebook_task:
+            notebook_path: ../../notebooks/integration_tests/test_16_ingestion_formats.py
+            base_parameters:
+              test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
               endpoint: "{{job.parameters.endpoint}}"
           libraries:
             - whl: ../../dist/*.whl
@@ -210,6 +252,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_10_max_rows.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
           libraries:
             - whl: ../../dist/*.whl
 
@@ -222,6 +265,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_11_streaming_pipeline.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
           libraries:
             - whl: ../../dist/*.whl
 
@@ -234,6 +278,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_12_tag_mode.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
           libraries:
             - whl: ../../dist/*.whl
 
@@ -246,6 +291,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_13_audit_table.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
           libraries:
             - whl: ../../dist/*.whl
 
@@ -258,6 +304,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_14_entity_filter.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
           libraries:
             - whl: ../../dist/*.whl
 
@@ -274,6 +321,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_e2e_cpu.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
               endpoint: "{{job.parameters.endpoint}}"
           libraries:
             - whl: ../../dist/*.whl
@@ -287,6 +335,7 @@ resources:
             notebook_path: ../../notebooks/integration_tests/test_e2e_gpu.py
             base_parameters:
               test_schema: "{{job.parameters.test_schema}}"
+              test_catalog: "{{job.parameters.test_catalog}}"
               endpoint: "{{job.parameters.endpoint}}"
           libraries:
             - whl: ../../dist/*.whl

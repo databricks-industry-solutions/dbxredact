@@ -307,3 +307,69 @@ resources:
             spark_conf:
               spark.task.resource.gpu.amount: "0.25"
           libraries: *pipeline_libs
+
+    # -- Metagen PI Detection --------------------------------------------------
+    metagen_pi_detection:
+      name: "[${bundle.target}] dbxredact - Metagen PI Detection"
+      tasks:
+        - task_key: run_pi_detection
+          notebook_task:
+            notebook_path: ../notebooks/5_metagen_pi_detection.py
+            base_parameters:
+              table_names: ""
+              catalog_name: ${var.catalog}
+              schema_name: ${var.schema}
+              output_mode: "tag"
+              model: "databricks-meta-llama-3-3-70b-instruct"
+              include_deterministic_pi: "true"
+          new_cluster:
+            spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
+            node_type_id: ${var.cpu_node_type}
+            num_workers: 0
+            data_security_mode: SINGLE_USER
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: "local[*]"
+            custom_tags:
+              ResourceClass: SingleNode
+
+    # -- Ingestion Pipeline (AutoLoader) ---------------------------------------
+    redaction_ingestion_cpu_small:
+      name: "[${bundle.target}] dbxredact - Ingestion Pipeline (CPU Small)"
+      tasks:
+        - task_key: run_ingestion
+          notebook_task:
+            notebook_path: ../notebooks/6_ingestion_pipeline.py
+            base_parameters:
+              source_path: ""
+              file_format: "json"
+              output_table: ""
+              text_columns: ""
+              structured_columns: ""
+              masking_strategy: "mask"
+              doc_id_column: "doc_id"
+              checkpoint_path: ""
+              schema_location: ""
+              max_files_per_trigger: "50"
+              trigger_processing_time: ""
+              multi_column_strategy: "sequential"
+              encryption_secret: ""
+              use_presidio: "true"
+              use_ai_query: "true"
+              use_gliner: "false"
+              endpoint: "databricks-gpt-oss-120b"
+              score_threshold: "0.5"
+              redaction_strategy: "generic"
+              alignment_mode: "union"
+              gliner_model: ${var.gliner_model}
+              gliner_threshold: "0.2"
+          new_cluster:
+            spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
+            node_type_id: ${var.cpu_node_type}
+            num_workers: 2
+            data_security_mode: SINGLE_USER
+          libraries: *pipeline_libs

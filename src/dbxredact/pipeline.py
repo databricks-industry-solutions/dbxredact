@@ -1173,9 +1173,14 @@ def run_redaction_pipeline_streaming(
     else:
         stream_df = _select_output_columns(stream_df, doc_id_column, text_column, output_strategy)
 
-    # Ensure output table exists for MERGE INTO (create empty if needed)
+    # Ensure output table exists for MERGE INTO (create empty if needed).
+    # Build the empty table from a *static* DataFrame with the streaming
+    # schema -- batch .write is illegal on a streaming DataFrame (Spark 4:
+    # CALL_ON_STREAMING_DATASET_UNSUPPORTED).
     if not _is_in_place and not spark.catalog.tableExists(output_table):
-        stream_df.limit(0).write.format("delta").option("mergeSchema", "true").saveAsTable(output_table)
+        spark.createDataFrame([], stream_df.schema).write.format("delta").option(
+            "mergeSchema", "true"
+        ).saveAsTable(output_table)
 
     # Use foreachBatch with MERGE INTO to handle deduplication and updates.
     _doc_id_col = doc_id_column
@@ -2228,11 +2233,25 @@ def run_ingestion_redaction_pipeline(
     if file_format == "text" and len(text_columns) == 1 and "value" in stream_df.columns:
         stream_df = stream_df.withColumnRenamed("value", text_columns[0])
 
-    from pyspark.sql.functions import sha2, concat, monotonically_increasing_id
+    # Derive a stable doc_id from the file path + row content. monotonically_increasing_id()
+    # is NOT supported on streaming DataFrames (Spark 4), and a content-based hash is both
+    # streaming-safe and idempotent when a file is re-ingested (same content -> same id ->
+    # MERGE updates in place rather than duplicating).
+    from pyspark.sql.functions import sha2, concat_ws
+    _id_source_cols = [
+        c for c in stream_df.columns
+        if c not in ("_metadata", "_rescued_data", doc_id_column)
+    ]
     stream_df = stream_df.withColumn(
         doc_id_column,
-        sha2(concat(col("_metadata.file_path"), lit("::"),
-                     monotonically_increasing_id().cast("string")), 256),
+        sha2(
+            concat_ws(
+                "::",
+                col("_metadata.file_path"),
+                *[col(c).cast("string") for c in _id_source_cols],
+            ),
+            256,
+        ),
     )
 
     if include_source_metadata:
@@ -2315,7 +2334,11 @@ def run_ingestion_redaction_pipeline(
     stream_df = stream_df.drop(*_drop_cols)
 
     if not spark.catalog.tableExists(output_table):
-        stream_df.limit(0).write.format("delta").option("mergeSchema", "true").saveAsTable(output_table)
+        # Static DataFrame with the streaming schema -- batch .write cannot be
+        # called on a streaming DataFrame (Spark 4: CALL_ON_STREAMING_DATASET_UNSUPPORTED).
+        spark.createDataFrame([], stream_df.schema).write.format("delta").option(
+            "mergeSchema", "true"
+        ).saveAsTable(output_table)
 
     _batch_stats: list = []
     write_batch_fn = _make_write_batch(

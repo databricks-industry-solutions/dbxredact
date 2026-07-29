@@ -47,11 +47,13 @@ def get_columns_by_tag(
     _validate_identifier(tag_name, "tag_name")
     _validate_identifier(tag_value, "tag_value")
 
+    # NOTE: system.information_schema.column_tags uses catalog_name/schema_name
+    # (NOT table_catalog/table_schema like information_schema.columns).
     query = f"""
     SELECT column_name
     FROM system.information_schema.column_tags
-    WHERE table_catalog = '{catalog}'
-      AND table_schema = '{schema}'
+    WHERE catalog_name = '{catalog}'
+      AND schema_name = '{schema}'
       AND table_name = '{table}'
       AND tag_name = '{tag_name}'
       AND tag_value = '{tag_value}'
@@ -107,11 +109,12 @@ def get_table_metadata(
         for row in columns_df.collect()
     }
 
+    # column_tags uses catalog_name/schema_name (unlike the columns view above).
     tags_query = f"""
     SELECT column_name, tag_name, tag_value
     FROM system.information_schema.column_tags
-    WHERE table_catalog = '{catalog}'
-      AND table_schema = '{schema}'
+    WHERE catalog_name = '{catalog}'
+      AND schema_name = '{schema}'
       AND table_name = '{table}'
     """
 

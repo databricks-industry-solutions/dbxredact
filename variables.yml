@@ -1,5 +1,5 @@
 variables:
-  # --- Used by databricks.yml.template ---
+  # --- Used by databricks.yml (prod target) ---
   current_user:
     description: "Current user for production run_as"
     default: ""

@@ -1,0 +1,59 @@
+bundle:
+  name: dbxredact
+  databricks_cli_version: ">=0.283.0"
+
+# Deployment is a plain `databricks bundle deploy` -- no deploy.sh required.
+# Per-workspace values (catalog, schema, warehouse) come from bundle variables;
+# the workspace host comes from your CLI profile (-p) / DATABRICKS_HOST env var,
+# or the workspace itself when deploying from the UI.
+#
+# Set the required variables (catalog, schema, sql_warehouse_id) via any of:
+#   - a gitignored .databricks/bundle/<target>/variable-overrides.json  <-- easiest;
+#     DAB auto-loads this exact path for the matching target, no flags needed.
+#     Copy variable-overrides.example.json there and fill in your values:
+#       mkdir -p .databricks/bundle/dev
+#       cp variable-overrides.example.json .databricks/bundle/dev/variable-overrides.json
+#   - --var "catalog=...,schema=...,sql_warehouse_id=..." on the CLI, OR
+#   - BUNDLE_VAR_catalog / BUNDLE_VAR_schema / BUNDLE_VAR_sql_warehouse_id env vars
+# NOTE: a plain repo-root variable-overrides.json is NOT auto-loaded by DAB --
+# it must live under .databricks/bundle/<target>/variable-overrides.json.
+#
+# deploy.sh remains as an optional guided wrapper (build + deploy + UC grants +
+# app start, plus DEPLOY_APP=false for jobs-only). It is no longer a prerequisite.
+
+variables:
+  package_version:
+    description: "Package version for wheel deployment (matches pyproject.toml)"
+    default: "0.3.1"
+  sql_warehouse_id:
+    description: "SQL Warehouse ID for the management app"
+    default: ""
+
+include:
+  - resources/jobs.yml
+  - resources/app.yml  # Comment out to skip app deployment (jobs-only)
+  - variables.yml
+  # - resources/tests/integration_tests.job.yml  # Uncomment to deploy the pre-release sanity-check job (see README)
+
+artifacts:
+  default:
+    type: whl
+    build: uv build
+    path: .
+    files:
+      - source: dist/dbxredact-${var.package_version}-py3-none-any.whl
+
+targets:
+  dev:
+    mode: development
+    default: true
+
+  prod:
+    mode: production
+    workspace:
+      root_path: ${var.current_working_directory}
+    permissions:
+      - user_name: ${var.current_user}
+        level: CAN_MANAGE
+    run_as:
+      user_name: ${var.current_user}

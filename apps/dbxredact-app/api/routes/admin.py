@@ -48,7 +48,7 @@ async def deep_health():
 
     # 3. Job env vars
     job_env = {}
-    for var in ("PIPELINE_JOB_NAME", "BENCHMARK_JOB_NAME"):
+    for var in ("PIPELINE_JOB_NAME", "BENCHMARK_JOB_NAME", "METAGEN_PI_JOB_NAME", "INGESTION_JOB_NAME"):
         val = os.environ.get(var, "")
         job_env[var] = "set" if val else "missing"
     checks["job_env"] = job_env

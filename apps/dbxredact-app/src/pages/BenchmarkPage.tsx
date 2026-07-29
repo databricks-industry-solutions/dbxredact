@@ -5,6 +5,7 @@ import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } fr
 import ErrorBanner from "../components/ErrorBanner";
 import DataTable, { type Column } from "../components/DataTable";
 import { SkeletonRows } from "../components/Skeleton";
+import Badge, { statusToVariant } from "../components/Badge";
 import { useToast } from "../hooks/useToast";
 import type { Config, RunStatus, JobHistoryItem } from "../types";
 import { TERMINAL_STATES } from "../constants";
@@ -101,11 +102,7 @@ export default function BenchmarkPage() {
     { key: "config_id", header: "Config", render: (h) => <span className="text-xs">{h.config_name || String(h.config_id || "").slice(0, 8)}</span> },
     { key: "source_table", header: "Source" },
     { key: "status", header: "Status", render: (h) => (
-      <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${
-        h.status === "RUNNING" ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
-        : h.status === "SUCCESS" ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300"
-        : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
-      }`}>{h.status}</span>
+      <Badge variant={statusToVariant(h.status)}>{h.status}</Badge>
     )},
     { key: "started_at", header: "Started", render: (h) => <span className="text-gray-500 dark:text-gray-400">{h.started_at}</span> },
     { key: "run_page_url", header: "", sortable: false, searchable: false, render: (h) =>

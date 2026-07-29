@@ -11,6 +11,8 @@ _client: Optional[WorkspaceClient] = None
 
 PIPELINE_JOB_NAME = os.environ.get("PIPELINE_JOB_NAME", "dbxredact - Redaction Pipeline")
 BENCHMARK_JOB_NAME = os.environ.get("BENCHMARK_JOB_NAME", "dbxredact - Redaction Benchmark")
+METAGEN_PI_JOB_NAME = os.environ.get("METAGEN_PI_JOB_NAME", "dbxredact - Metagen PI Detection")
+INGESTION_JOB_NAME = os.environ.get("INGESTION_JOB_NAME", "dbxredact - Ingestion Pipeline")
 
 PROFILE_SUFFIXES = {
     "cpu_small": "(CPU Small)",
@@ -70,6 +72,50 @@ def _get_benchmark_job_id() -> int:
 
 def trigger_pipeline_run(notebook_params: Optional[Dict[str, str]] = None, cluster_profile: str = "cpu_small") -> int:
     job_id = _get_pipeline_job_id(cluster_profile)
+    w = _get_client()
+    response = w.jobs.run_now(job_id=job_id, notebook_params=notebook_params or {})
+    return response.run_id
+
+
+_metagen_pi_job_id: Optional[int] = None
+_ingestion_job_id: Optional[int] = None
+
+
+def _get_metagen_pi_job_id() -> int:
+    global _metagen_pi_job_id
+    if _metagen_pi_job_id is not None:
+        return _metagen_pi_job_id
+    w = _get_client()
+    for job in w.jobs.list():
+        if job.settings and job.settings.name and METAGEN_PI_JOB_NAME in job.settings.name:
+            _metagen_pi_job_id = job.job_id
+            logger.info("Found metagen PI job: %s (id=%d)", job.settings.name, _metagen_pi_job_id)
+            return _metagen_pi_job_id
+    raise RuntimeError(f"No job matching '{METAGEN_PI_JOB_NAME}' found")
+
+
+def _get_ingestion_job_id() -> int:
+    global _ingestion_job_id
+    if _ingestion_job_id is not None:
+        return _ingestion_job_id
+    w = _get_client()
+    for job in w.jobs.list():
+        if job.settings and job.settings.name and INGESTION_JOB_NAME in job.settings.name:
+            _ingestion_job_id = job.job_id
+            logger.info("Found ingestion job: %s (id=%d)", job.settings.name, _ingestion_job_id)
+            return _ingestion_job_id
+    raise RuntimeError(f"No job matching '{INGESTION_JOB_NAME}' found")
+
+
+def trigger_metagen_pi_run(notebook_params: Optional[Dict[str, str]] = None) -> int:
+    job_id = _get_metagen_pi_job_id()
+    w = _get_client()
+    response = w.jobs.run_now(job_id=job_id, notebook_params=notebook_params or {})
+    return response.run_id
+
+
+def trigger_ingestion_run(notebook_params: Optional[Dict[str, str]] = None) -> int:
+    job_id = _get_ingestion_job_id()
     w = _get_client()
     response = w.jobs.run_now(job_id=job_id, notebook_params=notebook_params or {})
     return response.run_id

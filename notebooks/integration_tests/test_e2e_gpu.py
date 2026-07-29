@@ -7,14 +7,27 @@
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC Install the spaCy model (Presidio) and GLiNER (optional extra, not in the
+# MAGIC base wheel). Restart so both are importable.
+
+# COMMAND ----------
+
+# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl "gliner>=0.2.0,<1.0.0" -q
+# MAGIC %restart_python
+
+# COMMAND ----------
+
 # MAGIC %run ./test_utils
 
 # COMMAND ----------
 
 dbutils.widgets.text("test_schema", "dbxredact_tests", "Test Schema")
+dbutils.widgets.text("test_catalog", "", "Test Catalog (blank = current)")
 dbutils.widgets.text("endpoint", "databricks-gpt-oss-120b", "Model Endpoint")
 
-test_catalog = spark.sql("SELECT current_catalog()").first()[0]
+_tc = dbutils.widgets.get("test_catalog").strip()
+test_catalog = _tc or spark.sql("SELECT current_catalog()").first()[0]
 test_schema = dbutils.widgets.get("test_schema")
 endpoint = dbutils.widgets.get("endpoint")
 
@@ -77,7 +90,7 @@ try:
     total = out_df.select(spark_sum("_entity_count")).collect()[0][0] or 0
     tu.assert_greater(total, 5, f"3-detector ensemble found {total} entities")
 
-    known_pii = ["123-45-6789", "987-65-4321", "jane.doe@example.com"]
+    known_pii = ["457-55-5462", "262-78-4510", "jane.doe@example.com"]
     verify_no_pii_in_redacted(out_df, "text_redacted", known_pii)
 
     test_passed = True

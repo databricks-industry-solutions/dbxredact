@@ -418,6 +418,20 @@ def run_detection(
 
     prompt_skeleton = PROMPT_SKELETON_BY_LANGUAGE.get(language, PHI_PROMPT_SKELETON)
 
+    # Cast the text column to string up front so detectors never receive a
+    # non-string (e.g. int) pandas Series -- Arrow rejects int64 -> string in
+    # the pandas UDFs. Doing it once here covers Presidio/AI/GLiNER uniformly.
+    from pyspark.sql.functions import col as _col
+    from pyspark.sql.types import StringType as _StringType
+    if text_column in df.columns and not isinstance(
+        df.schema[text_column].dataType, _StringType
+    ):
+        logger.warning(
+            "Column '%s' is %s, not string -- casting to string for detection.",
+            text_column, df.schema[text_column].dataType.simpleString(),
+        )
+        df = df.withColumn(text_column, _col(text_column).cast("string"))
+
     # Repartition once; all detectors will use _repartition=False
     n_parts = _smart_partitions(df, num_cores, row_count=row_count)
     result_df = df.repartition(n_parts)

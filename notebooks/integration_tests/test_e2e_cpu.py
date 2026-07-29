@@ -7,14 +7,28 @@
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC Install the spaCy model Presidio needs (en_core_web_lg, MIT). The analyzer
+# MAGIC falls back trf -> lg -> md -> sm, so lg satisfies the default. Restart so
+# MAGIC the freshly installed model is importable.
+
+# COMMAND ----------
+
+# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl -q
+# MAGIC %restart_python
+
+# COMMAND ----------
+
 # MAGIC %run ./test_utils
 
 # COMMAND ----------
 
 dbutils.widgets.text("test_schema", "dbxredact_tests", "Test Schema")
+dbutils.widgets.text("test_catalog", "", "Test Catalog (blank = current)")
 dbutils.widgets.text("endpoint", "databricks-gpt-oss-120b", "Model Endpoint")
 
-test_catalog = spark.sql("SELECT current_catalog()").first()[0]
+_tc = dbutils.widgets.get("test_catalog").strip()
+test_catalog = _tc or spark.sql("SELECT current_catalog()").first()[0]
 test_schema = dbutils.widgets.get("test_schema")
 endpoint = dbutils.widgets.get("endpoint")
 
@@ -62,7 +76,7 @@ try:
 
     # --- Validate PII removal ---
     known_pii = [
-        "123-45-6789", "987-65-4321", "jane.doe@example.com",
+        "457-55-5462", "262-78-4510", "jane.doe@example.com",
         "John Smith", "Alice Johnson", "Bob Williams", "Mary Garcia",
     ]
     verify_no_pii_in_redacted(out_df, "text_redacted", known_pii)
