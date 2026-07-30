@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS {prefix}.redact_config (
     created_at TIMESTAMP,
     updated_at TIMESTAMP
 )
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 print(f"Created {prefix}.redact_config")
 
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS {prefix}.redact_block_list (
     notes STRING,
     created_at TIMESTAMP
 )
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 print(f"Created {prefix}.redact_block_list")
 
@@ -72,6 +74,7 @@ CREATE TABLE IF NOT EXISTS {prefix}.redact_safe_list (
     notes STRING,
     created_at TIMESTAMP
 )
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 print(f"Created {prefix}.redact_safe_list")
 
@@ -131,6 +134,7 @@ CREATE TABLE IF NOT EXISTS {prefix}.redact_ab_tests (
     created_at TIMESTAMP,
     completed_at TIMESTAMP
 )
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 print(f"Created {prefix}.redact_ab_tests")
 
@@ -147,6 +151,7 @@ CREATE TABLE IF NOT EXISTS {prefix}.redact_active_learn_queue (
     created_at TIMESTAMP,
     reviewed_at TIMESTAMP
 )
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 print(f"Created {prefix}.redact_active_learn_queue")
 
