@@ -193,6 +193,42 @@ Ground-truth annotations may not be perfect -- some edge cases (3-letter hospita
 - Use **block lists** to force-flag known entities that detectors miss, and **safe lists** to suppress recurring false positives.
 - Re-run benchmarks after config changes to measure the actual impact.
 
+## Built-in alternative: ai_mask
+
+Databricks also has a built-in SQL function, `ai_mask`, that masks sensitive values in text inside a query, with no library, cluster, or model endpoint to deploy. It runs on Databricks SQL warehouses (not SQL Classic) and on Databricks Runtime clusters, in regions that support AI Functions. For requirements, syntax, and the full classifier list, see the `ai_mask` reference for [AWS](https://docs.databricks.com/aws/en/sql/language-manual/functions/ai_mask), [Azure](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/ai_mask), and [GCP](https://docs.databricks.com/gcp/en/sql/language-manual/functions/ai_mask).
+
+**Version 1.0**, the default, available on AWS, Azure and GCP, takes plain-language labels and replaces each match with `[MASKED]`:
+
+```sql
+SELECT
+  note_id,
+  ai_mask(note_text, array('person', 'email', 'phone', 'date of birth')) AS note_masked
+FROM catalog.schema.notes;
+```
+
+**Version 2.0** (Beta, on AWS US regions; the reference lists all supported regions) uses a Databricks-built detection model with a fixed set of classifiers, such as `NAME`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, and `US_SSN`, and replaces each value with a typed placeholder such as `[NAME]`. Opt in per call with `options => map('version', '2.0')`, and omit the classifier list to use the default set. A call without that option runs version 1.0, which reads classifier names as plain labels and returns `[MASKED]`. The result is a `VARIANT`; read `response` for the masked text and `error_message` for rows that could not be processed:
+
+```sql
+SELECT
+  note_id,
+  masked:response::string AS note_masked,
+  masked:error_message::string AS mask_error
+FROM (
+  SELECT
+    note_id,
+    ai_mask(
+      note_text,
+      array('NAME', 'EMAIL_ADDRESS', 'PHONE_NUMBER', 'US_SSN'),
+      options => map('version', '2.0')
+    ) AS masked
+  FROM catalog.schema.notes
+);
+```
+
+Version 2.0 isn't available on workspaces with the compliance security profile; use version 1.0 there. Beta behavior can change before general availability.
+
+**When to use dbxredact instead.** `ai_mask` returns masked text, not entity spans, so it does not feed this accelerator's alignment, block / safe lists, evaluation, or review app. Use dbxredact when you need entity-level output, an ensemble of detectors, block / safe lists, benchmarking against your own labeled data, your own model or endpoint (for example a fine-tuned GLiNER), or typed placeholders on Azure or GCP. Both work on text only; extract text from images or scanned documents first. As with any redaction approach, validate the output on your own data (see [Compliance and Responsibility](#compliance-and-responsibility)).
+
 ## Cluster Profiles
 
 Six pre-configured job variants ship with the bundle:
