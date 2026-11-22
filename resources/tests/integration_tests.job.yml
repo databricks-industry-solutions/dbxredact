@@ -17,7 +17,7 @@
 #
 # All notebooks accept a test_catalog job parameter (blank = the cluster's current
 # catalog). Pass test_catalog=<name> at run time to aim the suite at a catalog,
-# e.g. test_catalog=eswanson_demo. No workspace values are committed here.
+# e.g. test_catalog=<your_catalog>. No workspace values are committed here.
 
 resources:
   jobs:

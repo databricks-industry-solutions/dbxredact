@@ -662,7 +662,7 @@ databricks bundle deploy -t dev
 
 # 3. Run it, parameterizing the catalog at run time (nothing workspace-specific is committed):
 databricks bundle run integration_tests -t dev \
-  --params test_catalog=eswanson_demo,test_schema=dbxredact_tests,endpoint=databricks-gpt-oss-120b
+  --params test_catalog=<your_catalog>,test_schema=dbxredact_tests,endpoint=databricks-gpt-oss-120b
 ```
 
 `test_catalog` defaults to blank, in which case each notebook falls back to the cluster's
