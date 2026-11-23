@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { useGet, apiPost } from "../hooks/useApi";
 import TablePicker, { type TableRef, emptyTableRef, toQualified, isComplete } from "../components/TablePicker";
 import ErrorBanner from "../components/ErrorBanner";
+import { SkeletonRows } from "../components/Skeleton";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
 import { useToast } from "../hooks/useToast";
 import type { ActiveLearnItem, ActiveLearnStats } from "../types";
 
 export default function ActiveLearnPage() {
-  const { data: queue, refetch: refetchQueue, error: queueError } = useGet<ActiveLearnItem[]>("/active-learn/queue?status=pending");
+  const { data: queue, loading: queueLoading, refetch: refetchQueue, error: queueError } = useGet<ActiveLearnItem[]>("/active-learn/queue?status=pending");
   const { data: stats, refetch: refetchStats, error: statsError } = useGet<ActiveLearnStats>("/active-learn/stats");
   const [detectionTable, setDetectionTable] = useState<TableRef>(emptyTableRef);
   const [topK, setTopK] = useState(100);
@@ -84,24 +85,18 @@ export default function ActiveLearnPage() {
         onCancel={() => setReviewTarget(null)}
       />
       <ErrorBanner message={error} onDismiss={() => setError("")} />
-      <h2 className="page-title">Active Learning</h2>
-      <p className="page-desc">
-        Active learning identifies the documents where the detection model is <b>least confident</b> and
-        queues them for human review. This focuses labeling effort where it matters most -- on
-        ambiguous cases that, once corrected, provide the highest-value training signal.
-      </p>
-
-      <div className="card p-4 mb-6">
-        <div className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed space-y-1">
-          <p><b>How it works:</b> The system explodes the entity arrays from a detection table, computes
-            the average and minimum confidence scores per document, and ranks documents by ascending
-            confidence. The top-K lowest-confidence documents are added to the review queue.</p>
-          <p><b>Workflow:</b> 1) Point to any detection results table. 2) Set how many documents to queue.
-            3) Click "Build Queue." 4) Review queued documents in priority order on this page (or on the Review tab for
-            richer annotation). 5) Annotations are saved to the unified <code>redact_annotations</code> table and
-            can be used for evaluation benchmarks or model fine-tuning.</p>
+      <div className="mb-6 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 p-4 flex items-start gap-3">
+        <span className="text-xs font-bold px-2 py-0.5 rounded bg-indigo-600 text-white shrink-0 mt-0.5">Preview</span>
+        <div className="text-sm text-indigo-800 dark:text-indigo-200">
+          Active Learning is in preview. Queue building works; inline entity correction is coming in a future release.
+          Use the <a href="/labels" className="underline font-medium">Labeling page</a> for detailed annotation.
         </div>
       </div>
+      <h2 className="page-title">Active Learning</h2>
+      <p className="page-desc">
+        Identifies documents where the detection model is least confident and queues them for human review,
+        focusing labeling effort where it matters most.
+      </p>
 
       {stats && (
         <div className="grid grid-cols-4 gap-4 mb-6">
@@ -124,8 +119,11 @@ export default function ActiveLearnPage() {
         <div className="flex gap-3 items-end">
           <div className="w-32">
             <label className="block text-sm font-medium mb-1.5">Top K</label>
-            <input type="number" className="input-field" value={topK}
-              onChange={(e) => setTopK(parseInt(e.target.value))} />
+            <input type="number" className="input-field" min={1} value={topK}
+              onChange={(e) => {
+                const v = parseInt(e.target.value);
+                if (!isNaN(v) && v > 0) setTopK(v);
+              }} />
           </div>
           <button className="btn-primary" disabled={building || !hasTable} onClick={buildQueue}>
             {building ? "Building..." : "Build Queue"}
@@ -134,12 +132,17 @@ export default function ActiveLearnPage() {
       </div>
 
       <h3 className="text-lg font-semibold mb-3">Review Queue</h3>
-      <DataTable<ActiveLearnItem & Record<string, unknown>>
-        data={(queue ?? []) as (ActiveLearnItem & Record<string, unknown>)[]}
-        rowKey={(item) => item.doc_id}
-        emptyMessage="No items in queue. Build a queue from detection results to get started."
-        columns={queueColumns}
-      />
+      <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">
+        "Mark Reviewed" removes a document from the pending queue. Entity-level corrections are not yet captured here -- use the Review page for detailed annotation.
+      </p>
+      {queueLoading ? <SkeletonRows rows={4} /> : (
+        <DataTable<ActiveLearnItem & Record<string, unknown>>
+          data={(queue ?? []) as (ActiveLearnItem & Record<string, unknown>)[]}
+          rowKey={(item) => item.doc_id}
+          emptyMessage="No items in queue. Build a queue from detection results to get started."
+          columns={queueColumns}
+        />
+      )}
     </div>
   );
 }

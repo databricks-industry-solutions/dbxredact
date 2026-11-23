@@ -3,27 +3,44 @@ import { useGet, apiPost, apiPut, apiDelete } from "../hooks/useApi";
 import ErrorBanner from "../components/ErrorBanner";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable, { type Column } from "../components/DataTable";
+import { SkeletonRows } from "../components/Skeleton";
+import Button from "../components/Button";
 import { useToast } from "../hooks/useToast";
 import type { Config } from "../types";
 
 const PROFILE_PRESETS: Record<string, Partial<typeof DEFAULTS>> = {
   fast: {
-    use_presidio: true, use_ai_query: true, use_gliner: true,
+    use_presidio: true, use_ai_query: true, use_gliner: true, ner_backend: "gliner",
     reasoning_effort: "low", gliner_max_words: 256, presidio_model_size: "lg",
-    presidio_pattern_only: true,
+    presidio_pattern_only: true, score_threshold: 0.7,
   },
   deep: {
-    use_presidio: true, use_ai_query: true, use_gliner: true,
+    use_presidio: true, use_ai_query: true, use_gliner: true, ner_backend: "gliner",
     reasoning_effort: "medium", gliner_max_words: 256, presidio_model_size: "trf",
-    presidio_pattern_only: false,
+    presidio_pattern_only: false, score_threshold: 0.5,
   },
 };
 
 const PROFILE_DESCRIPTIONS: Record<string, string> = {
-  fast: "AI Query + GLiNER + Presidio (pattern-only). Highest accuracy (F1~0.86) and precision (P~0.92). Pattern-only Presidio adds deterministic regex backup (SSN, phone, MRN, dates) without spaCy. Best for routine redaction and large-scale batch jobs.",
-  deep: "All three detectors with fine-grained GLiNER chunking and medium LLM reasoning. Maximum recall (R~0.95) for compliance-critical workloads. Slower and more expensive.",
+  fast: "Best for most workloads. Uses all three detection methods (AI Query, NER model, Presidio regex) with settings optimized for speed and high precision -- minimizes false positives so clean data stays clean. Recommended for routine redaction and large tables.",
+  deep: "Maximum thoroughness for compliance-critical data. All detectors run with higher sensitivity to catch as much PII as possible, at the cost of more false positives and slower runtime. Use when missing PII is unacceptable (e.g. HIPAA, GDPR audits).",
   custom: "Configure detection methods and parameters manually.",
 };
+
+/** Returns an error string for invalid extra-params JSON, or "" when valid/empty. */
+function validateExtraParams(text: string): string {
+  if (!text.trim()) return "";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return "Invalid JSON";
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return "Must be a JSON object (not array or primitive)";
+  }
+  return "";
+}
 
 const DEFAULTS = {
   name: "default",
@@ -31,16 +48,21 @@ const DEFAULTS = {
   use_presidio: true,
   use_ai_query: true,
   use_gliner: true,
+  ner_backend: "gliner" as "none" | "gliner" | "privacy_filter",
   endpoint: "databricks-gpt-oss-120b",
-  score_threshold: 0.5,
+  score_threshold: 0.7,
   gliner_model: "nvidia/gliner-PII",
   gliner_threshold: 0.2,
   redaction_strategy: "typed",
   alignment_mode: "union",
   reasoning_effort: "low",
   gliner_max_words: 256,
-  presidio_model_size: "trf",
+  presidio_model_size: "lg",
   presidio_pattern_only: true,
+  language: "en",
+  translate_to: "none",
+  encryption_secret: "",
+  extra_params: null as Record<string, unknown> | null,
 };
 
 export default function ConfigPage() {
@@ -49,6 +71,8 @@ export default function ConfigPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [extraParamsText, setExtraParamsText] = useState("");
+  const [extraParamsError, setExtraParamsError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Config | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const { toast } = useToast();
@@ -68,16 +92,26 @@ export default function ConfigPage() {
   }
 
   async function save() {
+    const extraErr = validateExtraParams(extraParamsText);
+    if (extraErr) {
+      setExtraParamsError(extraErr);
+      return;
+    }
     setSaving(true);
+    const parsedExtra: Record<string, unknown> | null = extraParamsText.trim()
+      ? (JSON.parse(extraParamsText) as Record<string, unknown>)
+      : null;
+    const payload = { ...form, extra_params: parsedExtra };
     try {
       if (editingId) {
-        await apiPut(`/config/${editingId}`, form);
+        await apiPut(`/config/${editingId}`, payload);
         toast("Config updated");
       } else {
-        await apiPost("/config/", form);
+        await apiPost("/config/", payload);
         toast("Config saved");
       }
       setForm(DEFAULTS);
+      setExtraParamsText("");
       setEditingId(null);
       refetch();
     } catch (e: unknown) {
@@ -88,12 +122,15 @@ export default function ConfigPage() {
 
   function startEdit(c: Config) {
     setEditingId(c.config_id);
+    setExtraParamsText(c.extra_params ? JSON.stringify(c.extra_params, null, 2) : "");
+    setExtraParamsError("");
     setForm({
       name: c.name,
       detection_profile: c.detection_profile || "custom",
       use_presidio: c.use_presidio,
       use_ai_query: c.use_ai_query,
       use_gliner: c.use_gliner,
+      ner_backend: c.ner_backend || (c.use_gliner ? "gliner" : "none"),
       endpoint: c.endpoint,
       score_threshold: c.score_threshold,
       gliner_model: c.gliner_model,
@@ -104,6 +141,10 @@ export default function ConfigPage() {
       gliner_max_words: c.gliner_max_words || 256,
       presidio_model_size: c.presidio_model_size || "trf",
       presidio_pattern_only: c.presidio_pattern_only ?? true,
+      language: c.language || "en",
+      translate_to: c.translate_to || "none",
+      encryption_secret: c.encryption_secret || "",
+      extra_params: c.extra_params || null,
     });
     setShowAdvanced(true);
   }
@@ -111,6 +152,8 @@ export default function ConfigPage() {
   function cancelEdit() {
     setEditingId(null);
     setForm(DEFAULTS);
+    setExtraParamsText("");
+    setExtraParamsError("");
   }
 
   async function confirmDelete() {
@@ -132,7 +175,10 @@ export default function ConfigPage() {
     )},
     { key: "use_presidio", header: "Presidio", render: (c) => c.use_presidio ? "Y" : "-", sortable: false, searchable: false },
     { key: "use_ai_query", header: "AI", render: (c) => c.use_ai_query ? "Y" : "-", sortable: false, searchable: false },
-    { key: "use_gliner", header: "GLiNER", render: (c) => c.use_gliner ? "Y" : "-", sortable: false, searchable: false },
+    { key: "ner_backend", header: "NER", render: (c) => {
+      const nb = c.ner_backend || (c.use_gliner ? "gliner" : "none");
+      return nb === "none" ? "-" : nb === "gliner" ? "GLiNER" : "Privacy Filter";
+    }, sortable: false, searchable: false },
     { key: "redaction_strategy", header: "Strategy", render: (c) => (
       <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">{c.redaction_strategy}</span>
     )},
@@ -162,7 +208,7 @@ export default function ConfigPage() {
 
       <div className="card p-5 mb-8 grid grid-cols-2 gap-4 max-w-2xl">
         <div className="col-span-2">
-          <label className="block text-sm font-medium mb-1.5">Name</label>
+          <label className="block text-sm font-medium mb-1.5">Name <span className="text-red-500">*</span></label>
           <input className="input-field" value={form.name}
             onChange={(e) => set("name", e.target.value)} />
         </div>
@@ -186,7 +232,6 @@ export default function ConfigPage() {
           {[
             { key: "use_presidio", label: "Presidio" },
             { key: "use_ai_query", label: "AI Query" },
-            { key: "use_gliner", label: "GLiNER" },
           ].map(({ key, label }) => (
             <label key={key} className={`flex items-center gap-2 text-sm ${isPreset ? "opacity-60" : "cursor-pointer"}`}>
               <input type="checkbox" className="rounded" checked={form[key as keyof typeof form] as boolean}
@@ -195,7 +240,27 @@ export default function ConfigPage() {
               {label}
             </label>
           ))}
+          <div className="flex items-center gap-2 text-sm">
+            <label className="font-medium">NER Backend:</label>
+            <select className="input-field py-0.5 px-2 text-sm w-auto" value={form.ner_backend}
+              disabled={isPreset}
+              onChange={(e) => { set("ner_backend", e.target.value); set("use_gliner", e.target.value === "gliner"); }}>
+              <option value="none">None</option>
+              <option value="gliner">GLiNER</option>
+              <option value="privacy_filter">Privacy Filter</option>
+            </select>
+          </div>
         </div>
+        {isPreset && (
+          <p className="col-span-2 text-xs text-gray-500 dark:text-gray-400 -mt-2">
+            Detectors are set by the <span className="font-medium">{form.detection_profile === "fast" ? "Fast Mode" : "Deep Search"}</span> preset. Switch Detection Profile to <span className="font-medium">Custom</span> to edit them.
+          </p>
+        )}
+        {form.ner_backend === "privacy_filter" && (
+          <p className="col-span-2 text-xs text-amber-600 dark:text-amber-400 -mt-2">
+            Privacy Filter works best on GPU clusters. It supports non-English languages but accuracy may be lower than English.
+          </p>
+        )}
 
         <div>
           <label className="block text-sm font-medium mb-1.5">Endpoint</label>
@@ -204,7 +269,7 @@ export default function ConfigPage() {
         </div>
         <div>
           <label className="block text-sm font-medium mb-1.5">Score Threshold</label>
-          <input type="number" step={0.05} min={0} max={1} className="input-field"
+          <input type="number" step={0.05} min={0.1} max={0.95} className="input-field"
             value={form.score_threshold} onChange={(e) => set("score_threshold", parseFloat(e.target.value))} />
         </div>
         <div>
@@ -224,12 +289,47 @@ export default function ConfigPage() {
           </select>
         </div>
 
-        {/* Advanced settings */}
-        <div className="col-span-2 border-t pt-3 mt-1">
+        {/* Language settings */}
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Document Language</label>
+          <select className="input-field" value={form.language}
+            onChange={(e) => {
+              const lang = e.target.value;
+              set("language", lang);
+              if (form.translate_to === lang) set("translate_to", "none");
+            }}>
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+          </select>
+          {form.language === "es" && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+              Presidio and GLiNER are English-only and will be disabled. Privacy Filter and AI Query remain active (Privacy Filter accuracy may be reduced).
+            </p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Translate After Redaction</label>
+          <select className="input-field" value={form.translate_to}
+            disabled={form.language === "en"}
+            onChange={(e) => set("translate_to", e.target.value)}>
+            <option value="none">None</option>
+            <option value="en">English</option>
+          </select>
+          {form.translate_to !== "none" && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+              Adds translation + review pass (~3x AI Query cost). Note: in-place output mode only persists the redacted column -- translation and review columns are not saved.
+            </p>
+          )}
+        </div>
+
+        {/* Advanced settings -- secondary, collapsed by default */}
+        <div className="col-span-2 border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
           <button type="button"
-            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+            className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center gap-1"
             onClick={() => setShowAdvanced(!showAdvanced)}>
-            {showAdvanced ? "Hide" : "Show"} Advanced Settings
+            <span className="text-xs">{showAdvanced ? "▾" : "▸"}</span>
+            {showAdvanced ? "Hide" : "Show"} advanced settings
+            {!showAdvanced && <span className="text-xs font-normal text-gray-400">(optional — sensible defaults applied)</span>}
           </button>
         </div>
         {showAdvanced && (
@@ -244,13 +344,7 @@ export default function ConfigPage() {
                 <option value="high">High</option>
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">GLiNER Max Words</label>
-              <input type="number" step={64} min={128} max={1024} className="input-field"
-                value={form.gliner_max_words}
-                disabled={isPreset}
-                onChange={(e) => set("gliner_max_words", parseInt(e.target.value))} />
-            </div>
+            {!form.presidio_pattern_only && (
             <div>
               <label className="block text-sm font-medium mb-1.5">Presidio Model</label>
               <select className="input-field" value={form.presidio_model_size}
@@ -260,6 +354,7 @@ export default function ConfigPage() {
                 <option value="lg">en_core_web_lg (faster)</option>
               </select>
             </div>
+            )}
             <div>
               <label className={`flex items-center gap-2 text-sm mt-2 ${isPreset ? "opacity-60" : "cursor-pointer"}`}>
                 <input type="checkbox" className="rounded" checked={form.presidio_pattern_only}
@@ -268,34 +363,70 @@ export default function ConfigPage() {
                 Presidio Pattern-Only (regex-only, no spaCy NER)
               </label>
             </div>
+            {form.ner_backend === "gliner" && (<>
             <div>
-              <label className="block text-sm font-medium mb-1.5">GLiNER Model</label>
-              <input className="input-field" value={form.gliner_model}
+              <label className="block text-sm font-medium mb-1.5">NER Model</label>
+              <select className="input-field" value={form.gliner_model}
                 disabled={isPreset}
-                onChange={(e) => set("gliner_model", e.target.value)} />
+                onChange={(e) => set("gliner_model", e.target.value)}>
+                <option value="nvidia/gliner-PII">nvidia/gliner-PII (best accuracy)</option>
+                <option value="urchade/gliner_multi_pii-v1">urchade/gliner_multi_pii-v1 (Apache 2.0)</option>
+              </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5">GLiNER Threshold</label>
+              <label className="block text-sm font-medium mb-1.5">NER Confidence Threshold</label>
               <input type="number" step={0.05} min={0.05} max={1} className="input-field"
                 value={form.gliner_threshold}
                 disabled={isPreset}
                 onChange={(e) => set("gliner_threshold", parseFloat(e.target.value))} />
             </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">NER Max Words (chunk size)</label>
+              <input type="number" step={64} min={128} max={1024} className="input-field"
+                value={form.gliner_max_words}
+                disabled={isPreset}
+                onChange={(e) => set("gliner_max_words", parseInt(e.target.value))} />
+            </div>
+            </>)}
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Encryption Secret</label>
+              <input type="text" className="input-field font-mono text-xs" placeholder="scope/key"
+                value={form.encryption_secret}
+                onChange={(e) => set("encryption_secret", e.target.value)} />
+              <p className="text-xs text-gray-400 mt-1">Databricks Secret Scope reference (scope/key). Only used when Encrypt (AES) is selected as masking strategy on the Run page.</p>
+            </div>
+            <div className="col-span-2 border-t pt-3 mt-1">
+              <details>
+                <summary className="text-sm text-blue-600 dark:text-blue-400 cursor-pointer select-none">
+                  Extra Parameters (JSON)
+                </summary>
+                <div className="mt-2">
+                  <textarea className="input-field font-mono text-xs w-full" rows={4}
+                    placeholder='{"custom_key": "value"}'
+                    value={extraParamsText}
+                    onChange={(e) => { setExtraParamsText(e.target.value); setExtraParamsError(validateExtraParams(e.target.value)); }} />
+                  {extraParamsError && <p className="text-xs text-red-500 mt-1">{extraParamsError}</p>}
+                  <p className="text-xs text-gray-400 mt-1">Passed as additional notebook parameters at runtime.</p>
+                </div>
+              </details>
+            </div>
           </>
         )}
 
-        <div className="col-span-2 pt-2 flex gap-2">
-          <button className="btn-primary" disabled={saving || !form.name} onClick={save}>
-            {saving ? "Saving..." : editingId ? "Update Config" : "Save Config"}
-          </button>
+        <div className="col-span-2 pt-2 flex gap-2 items-center">
+          <Button variant="primary" loading={saving} loadingText="Saving..."
+            disabled={!form.name || !!extraParamsError} onClick={save}>
+            {editingId ? "Update Config" : "Save Config"}
+          </Button>
           {editingId && (
-            <button className="btn-secondary" onClick={cancelEdit}>Cancel Edit</button>
+            <Button variant="secondary" onClick={cancelEdit}>Cancel Edit</Button>
           )}
+          {!form.name && <span className="text-xs text-gray-500 dark:text-gray-400">Enter a name to save.</span>}
         </div>
       </div>
 
       {loading ? (
-        <p className="text-sm text-gray-500">Loading...</p>
+        <SkeletonRows rows={4} />
       ) : (
         <DataTable<Config & Record<string, unknown>>
           data={(configs ?? []) as (Config & Record<string, unknown>)[]}

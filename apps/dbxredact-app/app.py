@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 import uuid
 
 from fastapi import FastAPI, Request
@@ -10,12 +11,19 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.routes import api_router
-from api.services.db import execute, fetch_one, _table, CATALOG, SCHEMA, WAREHOUSE_ID, DatabaseError
+from api.services.db import execute, fetch_one, fetch_all, _table, CATALOG, SCHEMA, WAREHOUSE_ID, DatabaseError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="dbxredact", version="0.1.2")
+def _get_version() -> str:
+    try:
+        from importlib.metadata import version
+        return version("dbxredact")
+    except Exception:
+        return "0.0.0-dev"
+
+app = FastAPI(title="dbxredact", version=_get_version())
 
 _allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
@@ -28,7 +36,7 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api")
 
 
-_DEBUG = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
+_DEBUG = os.environ.get("DEBUG", "false").lower() in ("1", "true", "yes")
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "90"))
 
 
@@ -40,8 +48,9 @@ async def database_error_handler(request: Request, exc: DatabaseError):
 
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):
-    logger.error("Unhandled error on %s: %s: %s", request.url.path, type(exc).__name__, exc)
-    detail = str(exc) if _DEBUG else "Internal server error"
+    cid = str(uuid.uuid4())[:8]
+    logger.error("Unhandled error [%s] on %s: %s: %s", cid, request.url.path, type(exc).__name__, exc)
+    detail = f"[{cid}] {type(exc).__name__}: {exc}" if _DEBUG else f"Internal server error (ref: {cid})"
     return JSONResponse(status_code=500, content={"error": detail})
 
 
@@ -68,6 +77,9 @@ TABLE_DDLS = [
         gliner_model STRING, gliner_threshold DOUBLE, redaction_strategy STRING,
         alignment_mode STRING, reasoning_effort STRING, gliner_max_words INT,
         presidio_model_size STRING, presidio_pattern_only BOOLEAN,
+        ner_backend STRING DEFAULT 'none',
+        language STRING DEFAULT 'en', translate_to STRING DEFAULT 'none',
+        encryption_secret STRING DEFAULT '',
         extra_params STRING, created_at TIMESTAMP, updated_at TIMESTAMP
     )""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_block_list (
@@ -87,7 +99,8 @@ TABLE_DDLS = [
     TBLPROPERTIES ('delta.deletedFileRetentionDuration' = 'interval 90 days')""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_job_history (
         run_id BIGINT, config_id STRING, source_table STRING, output_table STRING,
-        status STRING, cost_estimate_usd DOUBLE, started_at TIMESTAMP, completed_at TIMESTAMP
+        status STRING, cost_estimate_usd DOUBLE, started_at TIMESTAMP, completed_at TIMESTAMP,
+        run_page_url STRING, job_type STRING
     )""",
     f"""CREATE TABLE IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.redact_ab_tests (
         test_id STRING, name STRING, config_a_id STRING, config_b_id STRING,
@@ -117,6 +130,7 @@ DEFAULT_CONFIG = {
     "use_presidio": True,
     "use_ai_query": True,
     "use_gliner": True,
+    "ner_backend": "gliner",
     "endpoint": "databricks-gpt-oss-120b",
     "score_threshold": 0.5,
     "gliner_model": "nvidia/gliner-PII",
@@ -127,7 +141,115 @@ DEFAULT_CONFIG = {
     "gliner_max_words": 256,
     "presidio_model_size": "trf",
     "presidio_pattern_only": True,
+    "language": "en",
+    "translate_to": "none",
 }
+
+
+_schema_ready = threading.Event()
+
+
+def _run_table_setup():
+    """Create tables, run migrations, seed defaults. Runs in a background thread
+    so the app starts serving immediately (SQL warehouse cold-start can take minutes)."""
+    try:
+        for ddl in TABLE_DDLS:
+            try:
+                execute(ddl)
+            except Exception as e:
+                logger.error("Failed to create table: %s", e)
+        _migrations = [
+            f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (cost_estimate_usd DOUBLE)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (detection_profile STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (reasoning_effort STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (gliner_max_words INT)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_model_size STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_pattern_only BOOLEAN)",
+            f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (run_page_url STRING)",
+            f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (job_type STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (ner_backend STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (language STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (translate_to STRING)",
+            f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (encryption_secret STRING)",
+        ]
+        logger.info("Running %d column migrations...", len(_migrations))
+        for col_ddl in _migrations:
+            try:
+                execute(col_ddl)
+                logger.info("Migration OK: %s", col_ddl.split("(")[0].strip())
+            except Exception as e:
+                if "already exists" in str(e).lower() or "FIELDS_ALREADY_EXISTS" in str(e):
+                    pass
+                else:
+                    logger.error("Migration FAILED: %s — %s", col_ddl, e)
+        # Backfill nulls for newly-added columns
+        _backfills = [
+            f"UPDATE {_table('redact_config')} SET language = 'en' WHERE language IS NULL",
+            f"UPDATE {_table('redact_config')} SET translate_to = 'none' WHERE translate_to IS NULL",
+            f"UPDATE {_table('redact_config')} SET ner_backend = 'none' WHERE ner_backend IS NULL",
+            f"UPDATE {_table('redact_config')} SET encryption_secret = '' WHERE encryption_secret IS NULL",
+        ]
+        for backfill in _backfills:
+            try:
+                execute(backfill)
+            except Exception:
+                pass
+        # Verify critical columns
+        try:
+            cols = fetch_all(f"DESCRIBE TABLE {_table('redact_config')}")
+            col_names = {r.get("col_name", "").lower() for r in cols}
+            missing = {"language", "translate_to", "ner_backend", "encryption_secret"} - col_names
+            if missing:
+                logger.error("CRITICAL: redact_config missing columns after migration: %s", missing)
+            else:
+                logger.info("redact_config schema verified: all required columns present")
+        except Exception as e:
+            logger.error("Failed to verify redact_config schema: %s", e)
+        # Seed default config if table is empty
+        try:
+            row = fetch_one(f"SELECT count(*) as cnt FROM {_table('redact_config')}")
+            if row and int(row.get("cnt", 0)) == 0:
+                execute(
+                    f"""INSERT INTO {_table('redact_config')}
+                    (config_id, name, detection_profile, use_presidio, use_ai_query, use_gliner,
+                     ner_backend, endpoint, score_threshold, gliner_model, gliner_threshold,
+                     redaction_strategy, alignment_mode, reasoning_effort, gliner_max_words,
+                     presidio_model_size, presidio_pattern_only, language, translate_to,
+                     extra_params, created_at, updated_at)
+                    VALUES (%(config_id)s, %(name)s, %(detection_profile)s, %(use_presidio)s,
+                            %(use_ai_query)s, %(use_gliner)s, %(ner_backend)s, %(endpoint)s,
+                            %(score_threshold)s, %(gliner_model)s, %(gliner_threshold)s,
+                            %(redaction_strategy)s, %(alignment_mode)s, %(reasoning_effort)s,
+                            %(gliner_max_words)s, %(presidio_model_size)s, %(presidio_pattern_only)s,
+                            %(language)s, %(translate_to)s,
+                            NULL, current_timestamp(), current_timestamp())""",
+                    DEFAULT_CONFIG,
+                )
+                logger.info("Seeded default config")
+        except Exception as e:
+            logger.error("Failed to seed default config: %s", e)
+        # Governance: warn about stale PII data
+        for pii_table in ("redact_annotations", "redact_ground_truths"):
+            try:
+                stale = fetch_one(
+                    f"SELECT count(*) as cnt, min(created_at) as oldest "
+                    f"FROM {_table(pii_table)} "
+                    f"WHERE created_at < current_timestamp() - INTERVAL {RETENTION_DAYS} DAY"
+                )
+                cnt = int(stale.get("cnt", 0)) if stale else 0
+                if cnt > 0:
+                    logger.warning(
+                        "GOVERNANCE: %s has %d rows older than %d days (oldest: %s). "
+                        "These contain raw PII. Call POST /api/admin/purge-annotations to clean up.",
+                        pii_table, cnt, RETENTION_DAYS, stale.get("oldest"),
+                    )
+            except Exception:
+                pass
+        logger.info("Table setup complete")
+    except Exception as e:
+        logger.error("Table setup failed: %s", e)
+    finally:
+        _schema_ready.set()
 
 
 @app.on_event("startup")
@@ -136,64 +258,33 @@ async def on_startup():
         logger.warning("ALLOWED_ORIGINS not set -- CORS allows all origins. Set ALLOWED_ORIGINS for production.")
     if not os.environ.get("DATABRICKS_WAREHOUSE_ID"):
         logger.warning("DATABRICKS_WAREHOUSE_ID not set -- skipping table setup")
+        _schema_ready.set()
         return
-    for ddl in TABLE_DDLS:
-        try:
-            execute(ddl)
-        except Exception as e:
-            logger.error("Failed to create table: %s", e)
-    # Migrate pre-existing tables that may lack newer columns
-    for col_ddl in [
-        f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (cost_estimate_usd DOUBLE)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (detection_profile STRING)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (reasoning_effort STRING)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (gliner_max_words INT)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_model_size STRING)",
-        f"ALTER TABLE {_table('redact_config')} ADD COLUMNS (presidio_pattern_only BOOLEAN)",
-        f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (run_page_url STRING)",
-        f"ALTER TABLE {_table('redact_job_history')} ADD COLUMNS (job_type STRING)",
-    ]:
-        try:
-            execute(col_ddl)
-        except Exception:
-            pass  # column already exists
+    thread = threading.Thread(target=_run_table_setup, daemon=True)
+    thread.start()
+    logger.info("Table setup running in background -- app is serving requests")
+
+
+@app.get("/api/health")
+async def health_check():
+    """Schema diagnostic endpoint -- reports setup status and missing columns."""
+    ready = _schema_ready.is_set()
+    if not ready:
+        return {"status": "initializing", "detail": "Table setup still running (warehouse may be starting)"}
     try:
-        row = fetch_one(f"SELECT count(*) as cnt FROM {_table('redact_config')}")
-        if row and int(row.get("cnt", 0)) == 0:
-            execute(
-                f"""INSERT INTO {_table('redact_config')}
-                (config_id, name, detection_profile, use_presidio, use_ai_query, use_gliner,
-                 endpoint, score_threshold, gliner_model, gliner_threshold, redaction_strategy,
-                 alignment_mode, reasoning_effort, gliner_max_words, presidio_model_size,
-                 presidio_pattern_only, extra_params, created_at, updated_at)
-                VALUES (%(config_id)s, %(name)s, %(detection_profile)s, %(use_presidio)s,
-                        %(use_ai_query)s, %(use_gliner)s, %(endpoint)s, %(score_threshold)s,
-                        %(gliner_model)s, %(gliner_threshold)s, %(redaction_strategy)s,
-                        %(alignment_mode)s, %(reasoning_effort)s, %(gliner_max_words)s,
-                        %(presidio_model_size)s, %(presidio_pattern_only)s,
-                        NULL, current_timestamp(), current_timestamp())""",
-                DEFAULT_CONFIG,
-            )
-            logger.info("Seeded default config")
+        cols = fetch_all(f"DESCRIBE TABLE {_table('redact_config')}")
+        col_names = {r.get("col_name", "").lower() for r in cols}
+        required = {"language", "translate_to", "ner_backend", "encryption_secret"}
+        missing = required - col_names
+        return {
+            "status": "ok" if not missing else "degraded",
+            "columns_found": len(col_names),
+            "missing_required": sorted(missing) if missing else None,
+            "catalog": CATALOG,
+            "schema": SCHEMA,
+        }
     except Exception as e:
-        logger.error("Failed to seed default config: %s", e)
-    # Warn if PII-bearing tables have stale data beyond retention period
-    for pii_table in ("redact_annotations", "redact_ground_truths"):
-        try:
-            stale = fetch_one(
-                f"SELECT count(*) as cnt, min(created_at) as oldest "
-                f"FROM {_table(pii_table)} "
-                f"WHERE created_at < current_timestamp() - INTERVAL {RETENTION_DAYS} DAY"
-            )
-            cnt = int(stale.get("cnt", 0)) if stale else 0
-            if cnt > 0:
-                logger.warning(
-                    "GOVERNANCE: %s has %d rows older than %d days (oldest: %s). "
-                    "These contain raw PII. Call POST /api/admin/purge-annotations to clean up.",
-                    pii_table, cnt, RETENTION_DAYS, stale.get("oldest"),
-                )
-        except Exception:
-            pass
+        return {"status": "error", "detail": str(e)}
 
 
 # ---------------------------------------------------------------------------

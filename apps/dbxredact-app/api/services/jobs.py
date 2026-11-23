@@ -11,6 +11,8 @@ _client: Optional[WorkspaceClient] = None
 
 PIPELINE_JOB_NAME = os.environ.get("PIPELINE_JOB_NAME", "dbxredact - Redaction Pipeline")
 BENCHMARK_JOB_NAME = os.environ.get("BENCHMARK_JOB_NAME", "dbxredact - Redaction Benchmark")
+METAGEN_PI_JOB_NAME = os.environ.get("METAGEN_PI_JOB_NAME", "dbxredact - Metagen PI Detection")
+INGESTION_JOB_NAME = os.environ.get("INGESTION_JOB_NAME", "dbxredact - Ingestion Pipeline")
 
 PROFILE_SUFFIXES = {
     "cpu_small": "(CPU Small)",
@@ -75,6 +77,50 @@ def trigger_pipeline_run(notebook_params: Optional[Dict[str, str]] = None, clust
     return response.run_id
 
 
+_metagen_pi_job_id: Optional[int] = None
+_ingestion_job_id: Optional[int] = None
+
+
+def _get_metagen_pi_job_id() -> int:
+    global _metagen_pi_job_id
+    if _metagen_pi_job_id is not None:
+        return _metagen_pi_job_id
+    w = _get_client()
+    for job in w.jobs.list():
+        if job.settings and job.settings.name and METAGEN_PI_JOB_NAME in job.settings.name:
+            _metagen_pi_job_id = job.job_id
+            logger.info("Found metagen PI job: %s (id=%d)", job.settings.name, _metagen_pi_job_id)
+            return _metagen_pi_job_id
+    raise RuntimeError(f"No job matching '{METAGEN_PI_JOB_NAME}' found")
+
+
+def _get_ingestion_job_id() -> int:
+    global _ingestion_job_id
+    if _ingestion_job_id is not None:
+        return _ingestion_job_id
+    w = _get_client()
+    for job in w.jobs.list():
+        if job.settings and job.settings.name and INGESTION_JOB_NAME in job.settings.name:
+            _ingestion_job_id = job.job_id
+            logger.info("Found ingestion job: %s (id=%d)", job.settings.name, _ingestion_job_id)
+            return _ingestion_job_id
+    raise RuntimeError(f"No job matching '{INGESTION_JOB_NAME}' found")
+
+
+def trigger_metagen_pi_run(notebook_params: Optional[Dict[str, str]] = None) -> int:
+    job_id = _get_metagen_pi_job_id()
+    w = _get_client()
+    response = w.jobs.run_now(job_id=job_id, notebook_params=notebook_params or {})
+    return response.run_id
+
+
+def trigger_ingestion_run(notebook_params: Optional[Dict[str, str]] = None) -> int:
+    job_id = _get_ingestion_job_id()
+    w = _get_client()
+    response = w.jobs.run_now(job_id=job_id, notebook_params=notebook_params or {})
+    return response.run_id
+
+
 def trigger_benchmark_run(job_parameters: Optional[Dict[str, str]] = None) -> int:
     job_id = _get_benchmark_job_id()
     w = _get_client()
@@ -98,3 +144,22 @@ def get_run_status(run_id: int) -> Dict[str, Any]:
 def cancel_run(run_id: int) -> None:
     w = _get_client()
     w.jobs.cancel_run(run_id=run_id)
+
+
+def rerun_with_original_params(run_id: int) -> Dict[str, Any]:
+    """Submit a fresh run using the same job + notebook_params as the original run."""
+    w = _get_client()
+    original = w.jobs.get_run(run_id=run_id)
+    job_id = original.job_id
+
+    params: Dict[str, str] = {}
+    if original.tasks:
+        task = original.tasks[0]
+        if task.notebook_task and task.notebook_task.base_parameters:
+            params = dict(task.notebook_task.base_parameters)
+
+    if original.overriding_parameters and original.overriding_parameters.notebook_params:
+        params.update(original.overriding_parameters.notebook_params)
+
+    response = w.jobs.run_now(job_id=job_id, notebook_params=params)
+    return {"run_id": response.run_id, **get_run_status(response.run_id)}

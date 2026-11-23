@@ -4,9 +4,9 @@ import json
 import logging
 from typing import List
 from fastapi import APIRouter, HTTPException
-from api.models.schemas import PipelineRunRequest, RunStatusResponse, JobHistoryItem
+from api.models.schemas import PipelineRunRequest, MetagenPIRequest, IngestionRunRequest, RunStatusResponse, JobHistoryItem
 from api.services.db import fetch_all, fetch_one, execute, _table, quote_table, validate_identifier, CATALOG, SCHEMA
-from api.services.jobs import trigger_pipeline_run, get_run_status, cancel_run
+from api.services.jobs import trigger_pipeline_run, trigger_metagen_pi_run, trigger_ingestion_run, get_run_status, cancel_run, rerun_with_original_params
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -30,12 +30,23 @@ async def run_pipeline(body: PipelineRunRequest):
             text_column=body.text_column,
             endpoint=config.get("endpoint", "databricks-gpt-oss-120b"),
             max_rows=body.max_rows or 10000,
+            cluster_profile=body.cluster_profile,
+            use_gliner=str(config.get("use_gliner", False)).lower() == "true",
+            use_ai_query=str(config.get("use_ai_query", True)).lower() == "true",
+            detection_profile=config.get("detection_profile", "fast"),
         )
         if est["estimated_cost_usd"] > body.max_cost_usd:
             raise HTTPException(
                 400,
                 f"Estimated cost ${est['estimated_cost_usd']:.4f} exceeds limit ${body.max_cost_usd:.4f}",
             )
+
+    is_multi_column = body.redaction_scope in ("full_table", "tagged_columns")
+
+    if is_multi_column and is_in_place:
+        raise HTTPException(400, f"{body.redaction_scope} scope cannot be combined with in_place output mode")
+    if is_multi_column and body.refresh_approach == "incremental":
+        raise HTTPException(400, f"{body.redaction_scope} scope does not support incremental refresh")
 
     notebook_params = {
         "source_table": body.source_table,
@@ -45,7 +56,7 @@ async def run_pipeline(body: PipelineRunRequest):
         "detection_profile": config.get("detection_profile", "fast"),
         "use_presidio": str(config.get("use_presidio", True)).lower(),
         "use_ai_query": str(config.get("use_ai_query", True)).lower(),
-        "use_gliner": str(config.get("use_gliner", False)).lower(),
+        "ner_backend": config.get("ner_backend") or "none",
         "endpoint": config.get("endpoint", ""),
         "score_threshold": str(config.get("score_threshold", 0.5)),
         "redaction_strategy": config.get("redaction_strategy", "typed"),
@@ -53,9 +64,12 @@ async def run_pipeline(body: PipelineRunRequest):
         "reasoning_effort": config.get("reasoning_effort", "low"),
         "gliner_model": config.get("gliner_model", "nvidia/gliner-PII"),
         "gliner_max_words": str(config.get("gliner_max_words", 256)),
-        "gliner_threshold": str(config.get("gliner_threshold", 0.2)),
+        "gliner_threshold": str(float(config["gliner_threshold"]) if config.get("gliner_threshold") is not None else 0.2),
         "presidio_model_size": config.get("presidio_model_size", "trf"),
         "presidio_pattern_only": str(config.get("presidio_pattern_only", False)).lower(),
+        "language": config.get("language") or "en",
+        "translate_to": config.get("translate_to") or "none",
+        "encryption_secret": config.get("encryption_secret") or "",
         "max_rows": str(body.max_rows or 10000),
         "refresh_approach": body.refresh_approach,
         "safe_list_table": f"{CATALOG}.{SCHEMA}.redact_safe_list",
@@ -64,10 +78,39 @@ async def run_pipeline(body: PipelineRunRequest):
         "confirm_destructive": "true" if is_in_place else "false",
         "allow_consensus_redaction": "true" if config.get("alignment_mode", "union") == "consensus" else "false",
         "audit_table": f"{CATALOG}.{SCHEMA}.redact_audit_log",
+        "output_strategy": body.output_strategy,
+        "confirm_validation_output": "true" if body.output_strategy == "validation" else "false",
     }
-    ep = config.get("extra_params")
-    if ep:
-        notebook_params["extra_params"] = json.dumps(ep) if not isinstance(ep, str) else ep
+
+    if body.redaction_scope == "full_table":
+        notebook_params["input_mode"] = "full_table"
+        notebook_params["masking_strategy"] = body.masking_strategy or "mask"
+        if body.text_columns is not None or body.structured_columns is not None:
+            extra = {}
+            if body.text_columns:
+                extra["text_columns"] = body.text_columns
+            if body.structured_columns:
+                extra["structured_columns"] = body.structured_columns
+        else:
+            all_cols = await discover_all_columns(body.source_table)
+            extra = {
+                "text_columns": all_cols["text_columns"],
+                "structured_columns": {c: "unknown" for c in all_cols["non_text_columns"]},
+            }
+        notebook_params["extra_params"] = json.dumps(extra)
+    elif body.redaction_scope == "tagged_columns":
+        notebook_params["input_mode"] = "full_table"
+        notebook_params["masking_strategy"] = body.masking_strategy or "mask"
+        extra = {}
+        if body.text_columns:
+            extra["text_columns"] = body.text_columns
+        if body.structured_columns:
+            extra["structured_columns"] = body.structured_columns
+        notebook_params["extra_params"] = json.dumps(extra)
+    else:
+        ep = config.get("extra_params")
+        if ep:
+            notebook_params["extra_params"] = json.dumps(ep) if not isinstance(ep, str) else ep
 
     run_id = trigger_pipeline_run(notebook_params, cluster_profile=body.cluster_profile)
     status = get_run_status(run_id)
@@ -161,14 +204,39 @@ async def cancel_pipeline(run_id: int):
     )
 
 
+@router.post("/retry/{run_id}", response_model=RunStatusResponse)
+async def retry_pipeline(run_id: int):
+    """Submit a new run using the same job + params as the original failed run."""
+    original = fetch_one(
+        f"SELECT config_id, source_table, output_table FROM {_table('redact_job_history')} WHERE run_id = %(run_id)s",
+        {"run_id": run_id},
+    )
+    result = rerun_with_original_params(run_id)
+    new_run_id = result["run_id"]
+
+    if original:
+        execute(
+            f"""INSERT INTO {_table('redact_job_history')}
+            (run_id, config_id, source_table, output_table, status, started_at, run_page_url, job_type)
+            VALUES (%(run_id)s, %(config_id)s, %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp(), %(url)s, 'pipeline')""",
+            {"run_id": new_run_id, "config_id": original.get("config_id"),
+             "source_table": original.get("source_table"), "output_table": original.get("output_table"),
+             "url": result.get("run_page_url")},
+        )
+
+    return result
+
+
 @router.get("/history", response_model=List[JobHistoryItem])
 async def pipeline_history(limit: int = 50, offset: int = 0):
     limit = max(1, min(limit, 500))
     offset = max(0, offset)
     rows = fetch_all(
-        f"""SELECT * FROM {_table('redact_job_history')}
-        WHERE job_type = 'pipeline' OR job_type IS NULL
-        ORDER BY started_at DESC LIMIT %(limit)s OFFSET %(offset)s""",
+        f"""SELECT j.*, COALESCE(c.name, j.config_id) as config_name
+        FROM {_table('redact_job_history')} j
+        LEFT JOIN {_table('redact_config')} c ON j.config_id = c.config_id
+        WHERE j.job_type = 'pipeline' OR j.job_type IS NULL
+        ORDER BY j.started_at DESC LIMIT %(limit)s OFFSET %(offset)s""",
         {"limit": limit, "offset": offset},
     )
     return _reconcile_stale_rows(rows)
@@ -298,6 +366,108 @@ async def cost_estimate(
     }
 
 
+_STRING_TYPES = {"string", "varchar", "char", "text"}
+
+
+@router.get("/discover-all-columns")
+async def discover_all_columns(table: str):
+    """Return all columns split into text (string-typed) and non-text, excluding doc_id candidates."""
+    qualified = quote_table(table)
+    parts = qualified.replace("`", "").split(".")
+    if len(parts) != 3:
+        raise HTTPException(400, "Table must be fully qualified: catalog.schema.table")
+    cat, sch, tbl = parts
+    for p in (cat, sch, tbl):
+        validate_identifier(p)
+
+    cols = fetch_all(
+        f"SELECT column_name, data_type FROM system.information_schema.columns "
+        f"WHERE table_catalog = '{cat}' AND table_schema = '{sch}' AND table_name = '{tbl}'"
+    )
+    text_columns = []
+    non_text_columns = []
+    doc_id_candidates = []
+    for r in cols:
+        name, dtype = r["column_name"], r["data_type"].lower()
+        if name.endswith("_id") or name == "doc_id":
+            doc_id_candidates.append(name)
+            continue
+        if dtype in _STRING_TYPES:
+            text_columns.append(name)
+        else:
+            non_text_columns.append(name)
+
+    return {
+        "text_columns": text_columns,
+        "non_text_columns": non_text_columns,
+        "doc_id_candidates": doc_id_candidates,
+    }
+
+
+@router.get("/discover-columns")
+async def discover_columns(table: str):
+    """Discover PII columns via UC tags. Mirrors src/dbxredact/metadata.discover_pii_columns."""
+    qualified = quote_table(table)
+    parts = qualified.replace("`", "").split(".")
+    if len(parts) != 3:
+        raise HTTPException(400, "Table must be fully qualified: catalog.schema.table")
+    cat, sch, tbl = parts
+    for p in (cat, sch, tbl):
+        validate_identifier(p)
+
+    cols = fetch_all(
+        f"SELECT column_name, data_type FROM system.information_schema.columns "
+        f"WHERE table_catalog = '{cat}' AND table_schema = '{sch}' AND table_name = '{tbl}'"
+    )
+    col_types = {r["column_name"]: r["data_type"].lower() for r in cols}
+
+    try:
+        tags_rows = fetch_all(
+            f"SELECT column_name, tag_name, tag_value FROM system.information_schema.column_tags "
+            f"WHERE table_catalog = '{cat}' AND table_schema = '{sch}' AND table_name = '{tbl}'"
+        )
+    except Exception:
+        tags_rows = []
+
+    col_tags: dict[str, dict[str, str]] = {}
+    for r in tags_rows:
+        col_tags.setdefault(r["column_name"], {})[r["tag_name"]] = r["tag_value"]
+
+    text_columns: list[str] = []
+    structured_columns: dict[str, str] = {}
+    untagged_columns: list[str] = []
+    doc_id_candidates: list[str] = []
+    warnings: list[str] = []
+
+    for col_name, dtype in col_types.items():
+        tags = col_tags.get(col_name, {})
+        is_protected = tags.get("data_classification") == "protected"
+        pii_type = tags.get("pii_type")
+
+        if is_protected:
+            if pii_type and pii_type != "free_text":
+                structured_columns[col_name] = pii_type
+            elif dtype in _STRING_TYPES:
+                text_columns.append(col_name)
+            else:
+                warnings.append(
+                    f"Column '{col_name}' is tagged protected but has no pii_type "
+                    f"and is {dtype} type -- skipped"
+                )
+        else:
+            untagged_columns.append(col_name)
+            if col_name.endswith("_id") or col_name == "doc_id":
+                doc_id_candidates.append(col_name)
+
+    return {
+        "text_columns": text_columns,
+        "structured_columns": structured_columns,
+        "untagged_columns": untagged_columns,
+        "doc_id_candidates": doc_id_candidates,
+        "warnings": warnings,
+    }
+
+
 @router.get("/table-info")
 async def table_info(table: str):
     """Return column names and row count for a UC table."""
@@ -307,3 +477,81 @@ async def table_info(table: str):
     row = fetch_one(f"SELECT count(*) as cnt FROM {qualified}")
     row_count = int(row["cnt"]) if row else 0
     return {"columns": column_names, "row_count": row_count}
+
+
+# ---------- Metagen PI Detection ----------
+
+@router.post("/run-metagen-pi", response_model=RunStatusResponse)
+async def run_metagen_pi(body: MetagenPIRequest):
+    """Trigger dbxmetagen PI detection job."""
+    notebook_params = {
+        "table_names": body.table_names,
+        "catalog_name": body.catalog_name,
+        "schema_name": body.schema_name,
+        "output_mode": body.output_mode,
+        "model": body.model,
+        "include_deterministic_pi": str(body.include_deterministic_pi).lower(),
+    }
+    run_id = trigger_metagen_pi_run(notebook_params)
+    status = get_run_status(run_id)
+
+    execute(
+        f"""INSERT INTO {_table('redact_job_history')}
+        (run_id, config_id, source_table, output_table, status, started_at, run_page_url, job_type)
+        VALUES (%(run_id)s, 'metagen_pi', %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp(), %(url)s, 'metagen_pi')""",
+        {"run_id": run_id, "source_table": body.table_names,
+         "output_table": f"{body.catalog_name}.{body.schema_name}.metadata_generation_log",
+         "url": status.get("run_page_url")},
+    )
+    return status
+
+
+# ---------- Ingestion Pipeline (AutoLoader) ----------
+
+@router.post("/run-ingestion", response_model=RunStatusResponse)
+async def run_ingestion(body: IngestionRunRequest):
+    """Trigger AutoLoader ingestion redaction pipeline."""
+    config = fetch_one(
+        f"SELECT * FROM {_table('redact_config')} WHERE config_id = %(config_id)s",
+        {"config_id": body.config_id},
+    )
+    if not config:
+        raise HTTPException(404, "Config not found")
+
+    notebook_params = {
+        "source_path": body.source_path,
+        "file_format": body.file_format,
+        "output_table": body.output_table,
+        "text_columns": ",".join(body.text_columns),
+        "structured_columns": json.dumps(body.structured_columns) if body.structured_columns else "",
+        "masking_strategy": body.masking_strategy or "mask",
+        "doc_id_column": body.doc_id_column,
+        "checkpoint_path": body.checkpoint_path or "",
+        "schema_location": body.schema_location or "",
+        "max_files_per_trigger": str(body.max_files_per_trigger),
+        "trigger_processing_time": body.trigger_processing_time or "",
+        "multi_column_strategy": body.multi_column_strategy,
+        "encryption_secret": config.get("encryption_secret") or "",
+        "use_presidio": str(config.get("use_presidio", True)).lower(),
+        "use_ai_query": str(config.get("use_ai_query", True)).lower(),
+        "use_gliner": str(config.get("use_gliner", False)).lower(),
+        "endpoint": config.get("endpoint", "databricks-gpt-oss-120b"),
+        "score_threshold": str(config.get("score_threshold", 0.5)),
+        "redaction_strategy": config.get("redaction_strategy", "generic"),
+        "alignment_mode": config.get("alignment_mode", "union"),
+        "gliner_model": config.get("gliner_model", "nvidia/gliner-PII"),
+        "gliner_threshold": str(float(config["gliner_threshold"]) if config.get("gliner_threshold") is not None else 0.2),
+    }
+
+    run_id = trigger_ingestion_run(notebook_params)
+    status = get_run_status(run_id)
+
+    execute(
+        f"""INSERT INTO {_table('redact_job_history')}
+        (run_id, config_id, source_table, output_table, status, started_at, run_page_url, job_type)
+        VALUES (%(run_id)s, %(config_id)s, %(source_table)s, %(output_table)s, 'RUNNING', current_timestamp(), %(url)s, 'ingestion')""",
+        {"run_id": run_id, "config_id": body.config_id,
+         "source_table": body.source_path, "output_table": body.output_table,
+         "url": status.get("run_page_url")},
+    )
+    return status

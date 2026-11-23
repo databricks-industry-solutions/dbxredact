@@ -27,12 +27,16 @@ def _config_to_job_params(config: dict) -> dict[str, str]:
         "use_presidio": str(config.get("use_presidio", "true")).lower(),
         "use_ai_query": str(config.get("use_ai_query", "true")).lower(),
         "use_gliner": str(config.get("use_gliner", "false")).lower(),
+        "ner_backend": config.get("ner_backend") or "none",
         "score_threshold": str(config.get("score_threshold", "0.5")),
         "detection_profile": config.get("detection_profile") or "fast",
         "reasoning_effort": config.get("reasoning_effort") or "low",
+        "gliner_model": config.get("gliner_model") or "nvidia/gliner-PII",
         "gliner_max_words": str(config.get("gliner_max_words", 256)),
         "presidio_model_size": config.get("presidio_model_size") or "trf",
         "presidio_pattern_only": str(config.get("presidio_pattern_only", "false")).lower(),
+        "gliner_threshold": str(float(config["gliner_threshold"]) if config.get("gliner_threshold") is not None else 0.2),
+        "redaction_strategy": config.get("redaction_strategy") or "typed",
     }
 
 
@@ -103,9 +107,11 @@ async def benchmark_history(limit: int = 50, offset: int = 0):
     limit = max(1, min(limit, 500))
     offset = max(0, offset)
     rows = fetch_all(
-        f"""SELECT * FROM {_table('redact_job_history')}
-        WHERE job_type = 'benchmark'
-        ORDER BY started_at DESC LIMIT %(limit)s OFFSET %(offset)s""",
+        f"""SELECT j.*, COALESCE(c.name, j.config_id) as config_name
+        FROM {_table('redact_job_history')} j
+        LEFT JOIN {_table('redact_config')} c ON j.config_id = c.config_id
+        WHERE j.job_type = 'benchmark'
+        ORDER BY j.started_at DESC LIMIT %(limit)s OFFSET %(offset)s""",
         {"limit": limit, "offset": offset},
     )
     for row in rows:

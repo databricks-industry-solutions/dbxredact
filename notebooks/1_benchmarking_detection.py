@@ -9,6 +9,8 @@
 # MAGIC - **AI Query**: LLM-based detection using Databricks AI endpoints
 # MAGIC - **GLiNER**: NER-based detection using GLiNER models
 # MAGIC
+# MAGIC **Note:** Benchmarking is English-only. For non-English detection, use the pipeline notebook.
+# MAGIC
 # MAGIC **Outputs:**
 # MAGIC - Detection results with entity positions and types
 # MAGIC - Aligned entities (when using multiple methods)
@@ -23,14 +25,36 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl
-# MAGIC # For faster CPU inference at the cost of lower NER accuracy:
-# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
-# MAGIC # %pip install https://github.com/explosion/spacy-models/releases/download/es_core_news_lg-3.8.0/es_core_news_lg-3.8.0-py3-none-any.whl
 # MAGIC # For interactive use (not running via DAB job), also uncomment one of the following:
 # MAGIC # %pip install /Workspace/<path-to-bundle>/artifacts/dbxredact-0.1.2-py3-none-any.whl
 # MAGIC # %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
-# MAGIC %restart_python
+
+# COMMAND ----------
+
+_needs_restart = False
+_presidio = dbutils.widgets.get("use_presidio") == "true"
+_presidio_ppo = dbutils.widgets.get("presidio_pattern_only") == "true"
+_ner = dbutils.widgets.get("ner_backend").strip()
+_model_size = dbutils.widgets.get("presidio_model_size").strip() or "trf"
+
+if _presidio and not _presidio_ppo:
+    if _model_size == "lg":
+        %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl -q
+    elif _model_size == "md":
+        %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl -q
+    else:
+        %pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl -q
+    _needs_restart = True
+
+if _ner == "gliner":
+    %pip install "gliner>=0.2.0,<1.0.0" -q
+    _needs_restart = True
+elif _ner == "privacy_filter":
+    %pip install git+https://github.com/openai/privacy-filter.git -q
+    _needs_restart = True
+
+if _needs_restart:
+    %restart_python
 
 # COMMAND ----------
 
@@ -74,10 +98,10 @@ dbutils.widgets.dropdown(
     label="5. Use AI Query Detection",
 )
 dbutils.widgets.dropdown(
-    name="use_gliner",
-    defaultValue="true",
-    choices=["true", "false"],
-    label="6. Use GLiNER Detection",
+    name="ner_backend",
+    defaultValue="gliner",
+    choices=["gliner", "privacy_filter", "none"],
+    label="6. NER Backend",
 )
 dbutils.widgets.text(
     name="endpoint",
@@ -118,6 +142,11 @@ dbutils.widgets.text(
     label="14. GLiNER Max Words (chunk size)",
 )
 dbutils.widgets.text(
+    name="gliner_model",
+    defaultValue="nvidia/gliner-PII",
+    label="15. GLiNER Model Name",
+)
+dbutils.widgets.text(
     name="safe_list_table",
     defaultValue="",
     label="15. Safe List Table (optional, fully qualified)",
@@ -126,6 +155,22 @@ dbutils.widgets.text(
     name="block_list_table",
     defaultValue="",
     label="16. Block List Table (optional, fully qualified)",
+)
+dbutils.widgets.dropdown(
+    name="presidio_pattern_only",
+    defaultValue="false",
+    choices=["true", "false"],
+    label="17. Presidio Pattern-Only (skip NER)",
+)
+dbutils.widgets.text(
+    name="gliner_threshold",
+    defaultValue="0.2",
+    label="18. GLiNER Threshold",
+)
+dbutils.widgets.text(
+    name="presidio_model_size",
+    defaultValue="",
+    label="19. Presidio Model Size (lg, trf, or empty for default)",
 )
 
 detection_profile = dbutils.widgets.get("detection_profile")
@@ -140,7 +185,7 @@ if "your_catalog" in source_table or "your_schema" in source_table:
     )
 use_presidio = dbutils.widgets.get("use_presidio") == "true"
 use_ai_query = dbutils.widgets.get("use_ai_query") == "true"
-use_gliner = dbutils.widgets.get("use_gliner") == "true"
+ner_backend = dbutils.widgets.get("ner_backend").strip()
 endpoint = dbutils.widgets.get("endpoint")
 score_threshold = float(dbutils.widgets.get("presidio_score_threshold"))
 num_cores = int(dbutils.widgets.get("num_cores"))
@@ -156,20 +201,31 @@ max_rows_str = dbutils.widgets.get("max_rows")
 max_rows = None if max_rows_str == "0" else int(max_rows_str)
 reasoning_effort = dbutils.widgets.get("reasoning_effort")
 gliner_max_words = int(dbutils.widgets.get("gliner_max_words"))
+gliner_model = dbutils.widgets.get("gliner_model").strip()
 safe_list_table = dbutils.widgets.get("safe_list_table").strip()
 block_list_table = dbutils.widgets.get("block_list_table").strip()
 
-# Profile overrides
-presidio_pattern_only = False
+presidio_pattern_only = dbutils.widgets.get("presidio_pattern_only") == "true"
+_gt_raw = dbutils.widgets.get("gliner_threshold").strip()
+gliner_threshold = float(_gt_raw) if _gt_raw else 0.2
+if gliner_threshold < 0.05:
+    gliner_threshold = 0.2
+presidio_model_size = dbutils.widgets.get("presidio_model_size").strip() or None
+
+# Profile overrides (don't touch presidio_pattern_only -- let widget/job param control it)
 if detection_profile == "fast":
-    use_presidio, use_ai_query, use_gliner = True, True, True
+    use_presidio, use_ai_query = True, True
+    if ner_backend == "none":
+        ner_backend = "gliner"
     reasoning_effort, gliner_max_words = "low", 256
-    presidio_pattern_only = True
-    print("Profile: Fast Mode -- AI Query + GLiNER + Presidio (pattern-only), reasoning=low, max_words=256")
+    _ppo = "pattern-only" if presidio_pattern_only else "full NER"
+    print(f"Profile: Fast Mode -- AI Query + {ner_backend} + Presidio ({_ppo}), reasoning=low, max_words=256")
 elif detection_profile == "deep":
-    use_presidio, use_ai_query, use_gliner = True, True, True
+    use_presidio, use_ai_query = True, True
+    if ner_backend == "none":
+        ner_backend = "gliner"
     reasoning_effort, gliner_max_words = "medium", 256
-    print("Profile: Deep Search -- all detectors, reasoning=medium, max_words=256")
+    print(f"Profile: Deep Search -- all detectors ({ner_backend}), reasoning=medium, max_words=256")
 
 entity_filter = None
 if safe_list_table or block_list_table:
@@ -186,7 +242,8 @@ if safe_list_table or block_list_table:
         print(f"Loaded block list: {len(ef.block_list)} exact, {len(ef.block_patterns)} patterns")
     entity_filter = ef
 
-if not any([use_presidio, use_ai_query, use_gliner]):
+_ner_active = ner_backend in ("gliner", "privacy_filter")
+if not any([use_presidio, use_ai_query, _ner_active]):
     raise ValueError("At least one detection method must be enabled.")
 if not 0.0 <= score_threshold <= 1.0:
     raise ValueError(f"Presidio score threshold must be in [0.0, 1.0], got {score_threshold}")
@@ -237,14 +294,17 @@ if max_rows and source_df_count > max_rows:
 config = RedactionConfig(
     use_presidio=use_presidio,
     use_ai_query=use_ai_query,
-    use_gliner=use_gliner,
+    ner_backend=ner_backend,
     endpoint=endpoint if use_ai_query else None,
     score_threshold=score_threshold,
+    gliner_model=gliner_model,
     gliner_max_words=gliner_max_words,
+    gliner_threshold=gliner_threshold,
     num_cores=num_cores,
     alignment_mode=alignment_mode,
     reasoning_effort=reasoning_effort,
     presidio_pattern_only=presidio_pattern_only,
+    presidio_model_size=presidio_model_size,
     entity_filter=entity_filter,
 )
 
@@ -304,12 +364,12 @@ if use_ai_query and "ai_results_struct" in results_df.columns:
 
 # COMMAND ----------
 
-if use_gliner and "gliner_results_struct" in results_df.columns:
-    print("=== GLiNER Results ===")
-    gliner_summary = results_df.selectExpr(
+if _ner_active and "gliner_results_struct" in results_df.columns:
+    print(f"=== NER Results ({ner_backend}) ===")
+    ner_summary = results_df.selectExpr(
         f"{doc_id_column}", "SIZE(gliner_results_struct) as entity_count"
     )
-    display(gliner_summary)
+    display(ner_summary)
 
 # COMMAND ----------
 

@@ -17,19 +17,30 @@ from .config import (
     PRESIDIO_ENTITY_TYPES,
     LABEL_ENUMS,
     PHI_PROMPT_SKELETON,
+    PHI_PROMPT_SKELETON_ES,
+    PROMPT_SKELETON_BY_LANGUAGE,
+    SUPPORTED_LANGUAGES,
+    TRANSLATION_PROMPT_SKELETON,
+    REVIEW_PROMPT_SKELETON,
     ENTITY_TYPES_TO_IGNORE,
     ENTITY_TEXT_IGNORE_PATTERNS,
     should_ignore_entity,
     GLINER_LABEL_MAP,
+    GLINER_MODEL_PRESETS,
+    get_gliner_preset,
     DEFAULT_GLINER_THRESHOLD,
     JUDGE_PROMPT_SKELETON,
     NEXT_ACTION_PROMPT_SKELETON,
     PROMPT_VERSION,
+    PROMPT_VERSION_BY_LANGUAGE,
     RedactionConfig,
+    SENSITIVITY_PROFILES,
     _entity_schema,
     MIN_SCORE_THRESHOLD,
     MIN_GLINER_THRESHOLD,
 )
+
+from .translation import translate_column
 
 from .utils import (
     is_fuzzy_match,
@@ -77,6 +88,9 @@ from .detection import (
     run_gliner_detection,
     run_detection,
 )
+from .privacy_filter_detector import (
+    run_privacy_filter_detection,
+)
 
 from .redaction import (
     redact_text,
@@ -86,10 +100,27 @@ from .redaction import (
     RedactionStrategy,
 )
 
+from .masking import (
+    apply_structured_masking,
+    MaskingStrategy,
+    MASKING_RULES,
+)
+
 from .metadata import (
     get_columns_by_tag,
     get_protected_columns,
     get_table_metadata,
+    discover_pii_columns,
+)
+
+from .sensitivity import (
+    classify_table,
+    apply_sensitivity_tags,
+    build_sensitivity_tag_statements,
+    get_tables_by_sensitivity,
+    get_table_sensitivity_level,
+    TableSensitivity,
+    ColumnSensitivity,
 )
 
 from .active_learning import (
@@ -115,6 +146,9 @@ from .pipeline import (
     run_redaction_pipeline,
     run_redaction_pipeline_streaming,
     run_redaction_pipeline_by_tag,
+    run_table_redaction,
+    run_catalog_redaction,
+    run_ingestion_redaction_pipeline,
     OutputStrategy,
     OutputMode,
     AlignmentMode,
@@ -131,14 +165,23 @@ __all__ = [
     "PRESIDIO_ENTITY_TYPES",
     "LABEL_ENUMS",
     "PHI_PROMPT_SKELETON",
+    "PHI_PROMPT_SKELETON_ES",
+    "PROMPT_SKELETON_BY_LANGUAGE",
+    "SUPPORTED_LANGUAGES",
+    "TRANSLATION_PROMPT_SKELETON",
+    "REVIEW_PROMPT_SKELETON",
+    "translate_column",
     "ENTITY_TYPES_TO_IGNORE",
     "ENTITY_TEXT_IGNORE_PATTERNS",
     "should_ignore_entity",
     "GLINER_LABEL_MAP",
+    "GLINER_MODEL_PRESETS",
+    "get_gliner_preset",
     "DEFAULT_GLINER_THRESHOLD",
     "JUDGE_PROMPT_SKELETON",
     "NEXT_ACTION_PROMPT_SKELETON",
     "PROMPT_VERSION",
+    "PROMPT_VERSION_BY_LANGUAGE",
     "RedactionConfig",
     "_entity_schema",
     "MIN_SCORE_THRESHOLD",
@@ -176,6 +219,7 @@ __all__ = [
     "run_presidio_detection",
     "run_ai_query_detection",
     "run_gliner_detection",
+    "run_privacy_filter_detection",
     "run_detection",
     # Redaction
     "redact_text",
@@ -183,10 +227,24 @@ __all__ = [
     "create_redaction_audit_udf",
     "create_redacted_table",
     "RedactionStrategy",
+    # Masking
+    "apply_structured_masking",
+    "MaskingStrategy",
+    "MASKING_RULES",
     # Metadata
     "get_columns_by_tag",
     "get_protected_columns",
     "get_table_metadata",
+    "discover_pii_columns",
+    # Sensitivity
+    "classify_table",
+    "apply_sensitivity_tags",
+    "build_sensitivity_tag_statements",
+    "get_tables_by_sensitivity",
+    "get_table_sensitivity_level",
+    "SENSITIVITY_PROFILES",
+    "TableSensitivity",
+    "ColumnSensitivity",
     # Active Learning
     "compute_document_uncertainty",
     "build_review_queue",
@@ -207,6 +265,9 @@ __all__ = [
     "run_redaction_pipeline",
     "run_redaction_pipeline_streaming",
     "run_redaction_pipeline_by_tag",
+    "run_table_redaction",
+    "run_catalog_redaction",
+    "run_ingestion_redaction_pipeline",
     "OutputStrategy",
     "OutputMode",
     "AlignmentMode",

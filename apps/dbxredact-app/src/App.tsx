@@ -12,6 +12,7 @@ import ListsPage from "./pages/ListsPage";
 import LabelPage from "./pages/LabelPage";
 import ABTestPage from "./pages/ABTestPage";
 import ActiveLearnPage from "./pages/ActiveLearnPage";
+import AdminPage from "./pages/AdminPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 class AppErrorBoundary extends Component<
@@ -68,6 +69,7 @@ export default function App() {
             <Route path="labels" element={<LabelPage />} />
             <Route path="ab-tests" element={<ABTestPage />} />
             <Route path="active-learn" element={<ActiveLearnPage />} />
+            <Route path="admin" element={<AdminPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>

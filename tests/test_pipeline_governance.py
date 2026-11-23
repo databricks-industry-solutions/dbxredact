@@ -120,7 +120,7 @@ class TestNoDetectorRaises:
             )
 
     def test_all_disabled_via_config_raises(self):
-        cfg = RedactionConfig(use_presidio=False, use_ai_query=False, use_gliner=False)
+        cfg = RedactionConfig(use_presidio=False, use_ai_query=False, use_gliner=False, ner_backend="none")
         with pytest.raises(ValueError, match="At least one detection method"):
             run_redaction_pipeline(
                 spark=MagicMock(),
@@ -161,7 +161,7 @@ class TestApplyConfig:
         """Every RedactionConfig field that exists in local_vars gets overwritten."""
         from dataclasses import fields as dc_fields
         cfg = RedactionConfig(
-            use_presidio=False, use_ai_query=False, use_gliner=True,
+            use_presidio=False, use_ai_query=False, ner_backend="gliner",
             score_threshold=0.9, redaction_strategy="typed",
             output_mode="in_place", confirm_destructive=True,
         )
@@ -225,7 +225,7 @@ class TestApplyConfigOverride:
     """Config fields unconditionally override matching kwargs."""
 
     def test_config_overrides_explicit_kwargs(self):
-        cfg = RedactionConfig(use_presidio=False, use_ai_query=False, use_gliner=True)
+        cfg = RedactionConfig(use_presidio=False, use_ai_query=False, ner_backend="gliner")
         result = _apply_config(cfg, {
             "use_presidio": True,
             "use_ai_query": True,

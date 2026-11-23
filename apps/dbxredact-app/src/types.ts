@@ -5,6 +5,7 @@ export interface Config {
   use_presidio: boolean;
   use_ai_query: boolean;
   use_gliner: boolean;
+  ner_backend?: "none" | "gliner" | "privacy_filter";
   endpoint: string;
   score_threshold: number;
   gliner_model: string;
@@ -15,6 +16,9 @@ export interface Config {
   gliner_max_words?: number;
   presidio_model_size?: string;
   presidio_pattern_only?: boolean;
+  language?: string;
+  translate_to?: string;
+  encryption_secret?: string;
   extra_params?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -32,6 +36,7 @@ export interface RunStatus {
 export interface JobHistoryItem {
   run_id: number;
   config_id: string;
+  config_name?: string;
   source_table: string;
   output_table: string;
   status: string;
@@ -127,6 +132,20 @@ export interface Finding {
   explanation?: string;
 }
 
+export interface DiscoverColumnsResponse {
+  text_columns: string[];
+  structured_columns: Record<string, string>;
+  untagged_columns: string[];
+  doc_id_candidates: string[];
+  warnings: string[];
+}
+
+export interface DiscoverAllColumnsResponse {
+  text_columns: string[];
+  non_text_columns: string[];
+  doc_id_candidates: string[];
+}
+
 export interface Annotation {
   annotation_id?: string;
   doc_id: string;
@@ -140,4 +159,30 @@ export interface Annotation {
   corrected_type?: string;
   corrected_value?: string;
   detection_method?: string;
+}
+
+export interface MetagenPIRequest {
+  table_names: string;
+  catalog_name: string;
+  schema_name: string;
+  output_mode: "tag" | "knowledge_base";
+  model: string;
+  include_deterministic_pi: boolean;
+}
+
+export interface IngestionRunRequest {
+  config_id: string;
+  source_path: string;
+  file_format: "json" | "csv" | "parquet" | "text";
+  output_table: string;
+  text_columns: string[];
+  structured_columns?: Record<string, string>;
+  masking_strategy?: string;
+  doc_id_column: string;
+  checkpoint_path?: string;
+  schema_location?: string;
+  max_files_per_trigger: number;
+  trigger_processing_time?: string;
+  multi_column_strategy: "sequential" | "concat";
+  cluster_profile: string;
 }

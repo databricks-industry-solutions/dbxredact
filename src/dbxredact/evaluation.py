@@ -38,8 +38,8 @@ def _match_condition(
         match_mode:
             "strict"  - Original full-containment with -1 tolerance.
                         det.start <= gt.begin AND det.end >= gt.end - 1
-            "overlap" - Standard interval overlap.
-                        det.start < gt.end AND det.end > gt.begin
+            "overlap" - Interval overlap (inclusive boundaries).
+                        det.start <= gt.end AND det.end >= gt.begin
     """
     gt_chunk = lower(col(f"{gt_prefix}.{chunk_column}"))
     det_entity = lower(col(f"{det_prefix}.{entity_column}"))
@@ -47,9 +47,12 @@ def _match_condition(
         col(f"{det_prefix}.{doc_id_column}") == col(f"{gt_prefix}.{doc_id_column}")
     ) & (contains(gt_chunk, det_entity) | contains(det_entity, gt_chunk))
     if match_mode == "overlap":
+        # Non-strict inequalities so overlap is always a superset of strict
+        # (strict has a -1 tolerance on gt.end that would otherwise create
+        #  cases where strict matches but overlap doesn't).
         position = (
-            col(f"{det_prefix}.{start_column}") < col(f"{gt_prefix}.{end_column}")
-        ) & (col(f"{det_prefix}.{end_column}") > col(f"{gt_prefix}.{begin_column}"))
+            col(f"{det_prefix}.{start_column}") <= col(f"{gt_prefix}.{end_column}")
+        ) & (col(f"{det_prefix}.{end_column}") >= col(f"{gt_prefix}.{begin_column}"))
     else:  # strict
         position = (
             col(f"{det_prefix}.{start_column}") <= col(f"{gt_prefix}.{begin_column}")
@@ -214,6 +217,15 @@ def _calculate_metrics_inner(
         else 0.0
     )
 
+    grand_total = tp + fp + tn + fn
+    if grand_total > 0 and tn / grand_total > 0.99:
+        logger.warning(
+            "TN is %.1f%% of total counts -- accuracy/specificity/NPV are inflated "
+            "by character-level counting and should not be used for detection quality "
+            "assessment. Use precision/recall/F1 instead.",
+            100.0 * tn / grand_total,
+        )
+
     return {
         "true_positives": tp,
         "false_positives": fp,
@@ -251,16 +263,24 @@ def format_contingency_table(metrics: Dict[str, Any]) -> pd.DataFrame:
 
 
 def format_metrics_summary(metrics: Dict[str, Any]) -> pd.DataFrame:
-    """Format key metrics as a summary DataFrame."""
+    """Format key metrics as a summary DataFrame.
+
+    Accuracy, Specificity, and NPV are labelled "(char-level)" because they
+    are computed from character-level true-negative counts and are typically
+    inflated to ~1.0 regardless of detection quality.
+    """
     summary_data = {
-        "Metric": ["Accuracy", "Precision", "Recall", "Specificity", "NPV", "F1 Score"],
+        "Metric": [
+            "Precision", "Recall", "F1 Score",
+            "Accuracy (char-level)", "Specificity (char-level)", "NPV (char-level)",
+        ],
         "Value": [
-            metrics["accuracy"],
             metrics["precision"],
             metrics["recall"],
+            metrics["f1_score"],
+            metrics["accuracy"],
             metrics["specificity"],
             metrics["npv"],
-            metrics["f1_score"],
         ],
     }
 
@@ -295,7 +315,19 @@ def metrics_to_long_format(
         "false_positives",
         "true_negatives",
         "false_negatives",
+        "token_precision",
+        "token_recall",
+        "token_f1_score",
+        "token_true_positives",
+        "token_false_positives",
+        "token_false_negatives",
     ]
+
+    _CHAR_LEVEL_METRICS = {
+        "accuracy", "specificity", "npv", "true_negatives",
+        "token_precision", "token_recall", "token_f1_score",
+        "token_true_positives", "token_false_positives", "token_false_negatives",
+    }
 
     rows = []
     timestamp = datetime.datetime.now()
@@ -307,6 +339,7 @@ def metrics_to_long_format(
                 "method_name": method_name,
                 "metric_name": metric_name,
                 "metric_value": float(metrics[metric_name]),
+                "metric_basis": "character" if metric_name in _CHAR_LEVEL_METRICS else "entity",
                 "timestamp": timestamp,
             }
             if run_metadata:
@@ -459,8 +492,8 @@ def analyze_errors(
         | contains(col(entity_column), col(chunk_column))
     )
     if match_mode == "overlap":
-        pos_cond = (col(start_column) < col("gt_end")) & (
-            col("det_end") > col(begin_column)
+        pos_cond = (col(start_column) <= col("gt_end")) & (
+            col("det_end") >= col(begin_column)
         )
     else:  # strict
         pos_cond = (col(start_column) <= col(begin_column)) & (
@@ -657,8 +690,8 @@ def diagnose_strict_failures(
         contains(lower(col(f"gt.{chunk_column}")), lower(col(f"det.{entity_column}")))
         | contains(lower(col(f"det.{entity_column}")), lower(col(f"gt.{chunk_column}")))
     )
-    overlap_pos = (col(f"det.{start_column}") < col(f"gt.{end_column}")) & (
-        col(f"det.{end_column}") > col(f"gt.{begin_column}")
+    overlap_pos = (col(f"det.{start_column}") <= col(f"gt.{end_column}")) & (
+        col(f"det.{end_column}") >= col(f"gt.{begin_column}")
     )
 
     strict_ok = (col(f"det.{start_column}") <= col(f"gt.{begin_column}")) & (

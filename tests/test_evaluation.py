@@ -3,7 +3,7 @@
 import pytest
 from pyspark.sql import Row
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType
-from dbxredact.evaluation import calculate_metrics, diagnose_strict_failures, _validate_metric_name
+from dbxredact.evaluation import calculate_metrics, diagnose_strict_failures, evaluate_detection, _validate_metric_name
 
 _EVAL_ROW_SCHEMA = StructType(
     [
@@ -103,6 +103,16 @@ class TestCalculateMetrics:
         assert m["false_negatives"] == 1
         assert m["precision"] == 0.5
         assert m["recall"] == 0.5
+
+    def test_tn_dominance_warning(self, spark, _eval_schema):
+        """When total_tokens is huge, a warning about inflated char-level metrics is logged."""
+        from unittest.mock import patch
+        rows = [_make_eval_row("d1", 0, 5, "John", "d1", 0, 5, "John")]
+        df = spark.createDataFrame(rows)
+        with patch("dbxredact.evaluation.logger") as mock_logger:
+            calculate_metrics(df, total_tokens=1_000_000, **_eval_schema)
+            mock_logger.warning.assert_called_once()
+            assert "inflated" in mock_logger.warning.call_args[0][0]
 
 
 # ---------------------------------------------------------------------------
@@ -247,3 +257,53 @@ class TestValidateMetricName:
     def test_rejects_empty(self):
         with pytest.raises(ValueError):
             _validate_metric_name("")
+
+
+class TestMetricsToLongFormat:
+
+    def test_metric_basis_field(self):
+        from dbxredact.evaluation import metrics_to_long_format
+        metrics = {
+            "accuracy": 0.99, "precision": 0.8, "recall": 0.7,
+            "specificity": 0.99, "npv": 0.99, "f1_score": 0.74,
+            "true_positives": 5, "false_positives": 1,
+            "true_negatives": 9999, "false_negatives": 2,
+        }
+        df = metrics_to_long_format(metrics, "ds", "method")
+        basis_map = dict(zip(df["metric_name"], df["metric_basis"]))
+        assert basis_map["precision"] == "entity"
+        assert basis_map["recall"] == "entity"
+        assert basis_map["f1_score"] == "entity"
+        assert basis_map["accuracy"] == "character"
+        assert basis_map["specificity"] == "character"
+        assert basis_map["npv"] == "character"
+        assert basis_map["true_negatives"] == "character"
+        assert basis_map["true_positives"] == "entity"
+
+
+class TestEvaluateDetectionMatchModes:
+    """Verify strict vs overlap match modes in evaluate_detection + calculate_metrics."""
+
+    def _eval(self, spark, gt_rows, det_rows, match_mode):
+        gt = _make_gt_df(spark, gt_rows)
+        det = _make_det_df(spark, det_rows)
+        eval_df = evaluate_detection(gt, det, match_mode=match_mode)
+        return calculate_metrics(eval_df, total_tokens=100)
+
+    def test_strict_match_exact(self, spark):
+        m = self._eval(spark, [("d1", 5, 10, "hello")], [("d1", 5, 10, "hello")], "strict")
+        assert m["recall"] == 1.0
+        assert m["precision"] == 1.0
+
+    def test_overlap_match_partial(self, spark):
+        m = self._eval(spark, [("d1", 5, 10, "hello")], [("d1", 7, 12, "llo")], "overlap")
+        assert m["recall"] == 1.0
+
+    def test_strict_rejects_partial(self, spark):
+        m = self._eval(spark, [("d1", 5, 10, "hello")], [("d1", 7, 12, "llo")], "strict")
+        assert m["recall"] == 0.0
+
+    def test_boundary_adjacent_overlap(self, spark):
+        """Spans that share an endpoint (det.end == gt.begin) should match with overlap."""
+        m = self._eval(spark, [("d1", 10, 15, "world")], [("d1", 5, 10, "world")], "overlap")
+        assert m["recall"] == 1.0

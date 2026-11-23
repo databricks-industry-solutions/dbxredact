@@ -12,23 +12,69 @@ class ConfigCreate(BaseModel):
     use_presidio: bool = True
     use_ai_query: bool = True
     use_gliner: bool = False
+    ner_backend: Literal["none", "gliner", "privacy_filter"] = "none"
     endpoint: str = "databricks-gpt-oss-120b"
     score_threshold: float = Field(0.5, ge=0.1, le=1.0)
     gliner_model: str = "nvidia/gliner-PII"
-    gliner_threshold: float = Field(0.2, ge=0.05, le=1.0)
+    gliner_threshold: Optional[float] = 0.2
     redaction_strategy: str = "typed"
     alignment_mode: str = "union"
     reasoning_effort: Optional[str] = "low"
     gliner_max_words: Optional[int] = 256
     presidio_model_size: Optional[str] = "trf"
     presidio_pattern_only: Optional[bool] = False
+    language: str = "en"
+    translate_to: Optional[str] = "none"
+    encryption_secret: Optional[str] = ""
     extra_params: Optional[Dict[str, Any]] = None
+
+    @field_validator("gliner_threshold", mode="before")
+    @classmethod
+    def coerce_gliner_threshold(cls, v):
+        if v is None or v == "":
+            return 0.2
+        v = float(v)
+        return v if 0.05 <= v <= 1.0 else 0.2
 
 
 class ConfigResponse(ConfigCreate):
+    model_config = {"from_attributes": True}
     config_id: str
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+    @field_validator("ner_backend", mode="before")
+    @classmethod
+    def coerce_ner_backend(cls, v):
+        return v if v else "none"
+
+    @field_validator("use_presidio", "use_ai_query", "use_gliner", "presidio_pattern_only", mode="before")
+    @classmethod
+    def coerce_bool(cls, v):
+        if isinstance(v, str):
+            return v.lower() in ("true", "1", "yes")
+        return bool(v) if v is not None else False
+
+    @field_validator("score_threshold", mode="before")
+    @classmethod
+    def coerce_score_threshold(cls, v):
+        if v is None:
+            return 0.5
+        return float(v)
+
+    @field_validator("gliner_threshold", mode="before")
+    @classmethod
+    def coerce_gliner_threshold(cls, v):
+        if v is None:
+            return 0.2
+        return float(v)
+
+    @field_validator("gliner_max_words", mode="before")
+    @classmethod
+    def coerce_optional_int(cls, v):
+        if v is None or v == "":
+            return None
+        return int(v)
 
     @field_validator("extra_params", mode="before")
     @classmethod
@@ -41,6 +87,7 @@ class ConfigResponse(ConfigCreate):
 class PipelineRunRequest(BaseModel):
     config_id: str
     source_table: str
+    redaction_scope: Literal["single_column", "tagged_columns", "full_table"] = "single_column"
     text_column: str = "text"
     doc_id_column: str = "doc_id"
     output_table: Optional[str] = None
@@ -49,6 +96,36 @@ class PipelineRunRequest(BaseModel):
     cluster_profile: str = "cpu_small"
     refresh_approach: str = "full"
     output_mode: Literal["separate", "in_place"] = "separate"
+    text_columns: Optional[List[str]] = None
+    structured_columns: Optional[Dict[str, str]] = None
+    masking_strategy: Optional[str] = "mask"
+    output_strategy: Literal["production", "validation"] = "production"
+
+
+class MetagenPIRequest(BaseModel):
+    table_names: str
+    catalog_name: str
+    schema_name: str
+    output_mode: Literal["tag", "knowledge_base"] = "tag"
+    model: str = "databricks-meta-llama-3-3-70b-instruct"
+    include_deterministic_pi: bool = True
+
+
+class IngestionRunRequest(BaseModel):
+    config_id: str
+    source_path: str
+    file_format: Literal["json", "csv", "parquet", "text"] = "json"
+    output_table: str
+    text_columns: List[str]
+    structured_columns: Optional[Dict[str, str]] = None
+    masking_strategy: Optional[str] = "mask"
+    doc_id_column: str = "doc_id"
+    checkpoint_path: Optional[str] = None
+    schema_location: Optional[str] = None
+    max_files_per_trigger: int = 50
+    trigger_processing_time: Optional[str] = None
+    multi_column_strategy: Literal["sequential", "concat"] = "sequential"
+    cluster_profile: str = "cpu_small"
 
 
 class RunStatusResponse(BaseModel):
@@ -63,6 +140,7 @@ class RunStatusResponse(BaseModel):
 class JobHistoryItem(BaseModel):
     run_id: int
     config_id: str
+    config_name: Optional[str] = None
     source_table: str
     output_table: str
     status: str

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { TERMINAL_STATES } from "../constants";
 
 interface SidebarLink {
   to: string;
@@ -40,6 +41,12 @@ const sections: SidebarSection[] = [
       { to: "/active-learn", label: "Active Learning", preview: true },
     ],
   },
+  {
+    label: "Administration",
+    links: [
+      { to: "/admin", label: "Admin" },
+    ],
+  },
 ];
 
 function Hamburger({ onClick }: { onClick: () => void }) {
@@ -52,7 +59,6 @@ function Hamburger({ onClick }: { onClick: () => void }) {
   );
 }
 
-const TERMINAL_STATES = ["TERMINATED", "SUCCESS", "SKIPPED", "INTERNAL_ERROR"];
 const POLL_INTERVAL = 30_000;
 
 interface RunStatusInfo {

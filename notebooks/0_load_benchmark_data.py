@@ -45,7 +45,17 @@ if "your_catalog" in target_table or "your_schema" in target_table:
 
 # COMMAND ----------
 
-df = spark.read.csv(csv_path, header=True, inferSchema=True)
+# multiLine + escape are required: the benchmark text column holds clinical
+# notes with embedded newlines and quotes. Without these, quoted multi-line
+# records get split across rows (text leaks into doc_id, most text goes null).
+df = (
+    spark.read
+    .option("header", True)
+    .option("inferSchema", True)
+    .option("multiLine", True)
+    .option("escape", '"')
+    .csv(csv_path)
+)
 print(f"Loaded {df.count()} rows from {csv_path}")
 print(f"Schema:")
 df.printSchema()

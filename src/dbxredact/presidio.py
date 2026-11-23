@@ -28,7 +28,7 @@ def format_presidio_batch_results(
             ans["doc_id"] = doc_ids[i]
             ans["entity"] = original_texts[i][res_ent.start : res_ent.end]
 
-            if ans.get("score", 0) > score_threshold and not should_ignore_entity(
+            if ans.get("score", 0) >= score_threshold and not should_ignore_entity(
                 ans.get("entity", ""), ans.get("entity_type", "")
             ):
                 findings.append({

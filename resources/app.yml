@@ -8,7 +8,7 @@ resources:
         command:
           - sh
           - -c
-          - pip install -r requirements.txt && npm install && npm run build && uvicorn app:app --host 0.0.0.0 --port 8000
+          - pip install -r requirements.txt && uvicorn app:app --host 0.0.0.0 --port 8000
         env:
           - name: DATABRICKS_WAREHOUSE_ID
             value: ${var.sql_warehouse_id}
@@ -20,6 +20,10 @@ resources:
             value: dbxredact - Redaction Pipeline
           - name: BENCHMARK_JOB_NAME
             value: dbxredact - Redaction Benchmark
+          - name: METAGEN_PI_JOB_NAME
+            value: dbxredact - Metagen PI Detection
+          - name: INGESTION_JOB_NAME
+            value: dbxredact - Ingestion Pipeline
       resources:
         - name: "sql-warehouse"
           sql_warehouse:
@@ -52,4 +56,12 @@ resources:
         - name: "benchmark-job"
           job:
             id: ${resources.jobs.redaction_benchmark.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "metagen-pi-job"
+          job:
+            id: ${resources.jobs.metagen_pi_detection.id}
+            permission: "CAN_MANAGE_RUN"
+        - name: "ingestion-cpu-small"
+          job:
+            id: ${resources.jobs.redaction_ingestion_cpu_small.id}
             permission: "CAN_MANAGE_RUN"

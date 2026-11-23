@@ -17,12 +17,24 @@ resources:
           default: "true"
         - name: use_gliner
           default: "true"
+        - name: ner_backend
+          default: "gliner"
         - name: score_threshold
           default: "0.5"
         - name: reasoning_effort
           default: ${var.reasoning_effort}
+        - name: gliner_model
+          default: ${var.gliner_model}
         - name: gliner_max_words
           default: ${var.gliner_max_words}
+        - name: gliner_threshold
+          default: "0.2"
+        - name: redaction_strategy
+          default: "typed"
+        - name: presidio_model_size
+          default: "trf"
+        - name: presidio_pattern_only
+          default: "false"
       job_clusters:
         - job_cluster_key: benchmark_cluster
           new_cluster:
@@ -49,9 +61,15 @@ resources:
               use_presidio: "{{job.parameters.use_presidio}}"
               use_ai_query: "{{job.parameters.use_ai_query}}"
               use_gliner: "{{job.parameters.use_gliner}}"
+              ner_backend: "{{job.parameters.ner_backend}}"
               presidio_score_threshold: "{{job.parameters.score_threshold}}"
               reasoning_effort: "{{job.parameters.reasoning_effort}}"
+              gliner_model: "{{job.parameters.gliner_model}}"
               gliner_max_words: "{{job.parameters.gliner_max_words}}"
+              gliner_threshold: "{{job.parameters.gliner_threshold}}"
+              redaction_strategy: "{{job.parameters.redaction_strategy}}"
+              presidio_model_size: "{{job.parameters.presidio_model_size}}"
+              presidio_pattern_only: "{{job.parameters.presidio_pattern_only}}"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
@@ -78,6 +96,7 @@ resources:
             base_parameters:
               detection_table: "{{job.parameters.source_table}}_detection_results"
               output_table: "{{job.parameters.source_table}}_redacted"
+              redaction_strategy: "{{job.parameters.redaction_strategy}}"
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
@@ -122,21 +141,51 @@ resources:
           libraries:
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
+    # -- Benchmark data loader -------------------------------------------------
+    load_pii_masking_300k:
+      name: "[${bundle.target}] dbxredact - Load pii-masking-300k"
+      tasks:
+        - task_key: load_data
+          new_cluster:
+            spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
+            node_type_id: ${var.cpu_node_type}
+            num_workers: 0
+            data_security_mode: SINGLE_USER
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: "local[*]"
+            custom_tags:
+              ResourceClass: SingleNode
+          notebook_task:
+            notebook_path: ../notebooks/0b_load_pii_masking_300k.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              table_prefix: "pii_masking_300k"
+
+    # -- Pipeline jobs --------------------------------------------------------
+    # The 6 pipeline variants share identical notebook + base_parameters.
+    # YAML anchors eliminate the duplication; only cluster size & type differ.
+
     redaction_pipeline_cpu_small:
       name: "[${bundle.target}] dbxredact - Redaction Pipeline (CPU Small)"
       tasks:
         - task_key: run_redaction
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
-            base_parameters:
+            base_parameters: &pipeline_base_params
               source_table: ""
               text_column: ""
               output_table: ""
               doc_id_column: "doc_id"
+              input_mode: "table_column"
+              masking_strategy: "mask"
               detection_profile: ${var.detection_profile}
               use_presidio: "true"
               use_ai_query: "true"
-              use_gliner: "true"
+              ner_backend: "gliner"
               redaction_strategy: "typed"
               endpoint: "databricks-gpt-oss-120b"
               score_threshold: "0.5"
@@ -145,7 +194,19 @@ resources:
               max_rows: ${var.max_rows}
               alignment_mode: "union"
               reasoning_effort: ${var.reasoning_effort}
+              gliner_model: ${var.gliner_model}
               gliner_max_words: ${var.gliner_max_words}
+              gliner_threshold: "0.2"
+              presidio_model_size: "trf"
+              presidio_pattern_only: "false"
+              language: ${var.language}
+              translate_to: ${var.translate_to}
+              output_mode: "separate"
+              confirm_destructive: "false"
+              allow_consensus_redaction: "false"
+              safe_list_table: ""
+              block_list_table: ""
+              audit_table: ""
               num_cores: "8"
           new_cluster:
             spark_version: "17.3.x-scala2.13"
@@ -154,7 +215,7 @@ resources:
             node_type_id: ${var.cpu_node_type}
             num_workers: 2
             data_security_mode: SINGLE_USER
-          libraries:
+          libraries: &pipeline_libs
             - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
 
     redaction_pipeline_cpu_medium:
@@ -164,23 +225,7 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
             base_parameters:
-              source_table: ""
-              text_column: ""
-              output_table: ""
-              doc_id_column: "doc_id"
-              detection_profile: ${var.detection_profile}
-              use_presidio: "true"
-              use_ai_query: "true"
-              use_gliner: "true"
-              redaction_strategy: "typed"
-              endpoint: "databricks-gpt-oss-120b"
-              score_threshold: "0.5"
-              refresh_approach: "full"
-              output_strategy: "production"
-              max_rows: ${var.max_rows}
-              alignment_mode: "union"
-              reasoning_effort: ${var.reasoning_effort}
-              gliner_max_words: ${var.gliner_max_words}
+              <<: *pipeline_base_params
               num_cores: "20"
           new_cluster:
             spark_version: "17.3.x-scala2.13"
@@ -189,8 +234,7 @@ resources:
             node_type_id: ${var.cpu_node_type}
             num_workers: 5
             data_security_mode: SINGLE_USER
-          libraries:
-            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+          libraries: *pipeline_libs
 
     redaction_pipeline_cpu_large:
       name: "[${bundle.target}] dbxredact - Redaction Pipeline (CPU Large)"
@@ -199,23 +243,7 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
             base_parameters:
-              source_table: ""
-              text_column: ""
-              output_table: ""
-              doc_id_column: "doc_id"
-              detection_profile: ${var.detection_profile}
-              use_presidio: "true"
-              use_ai_query: "true"
-              use_gliner: "true"
-              redaction_strategy: "typed"
-              endpoint: "databricks-gpt-oss-120b"
-              score_threshold: "0.5"
-              refresh_approach: "full"
-              output_strategy: "production"
-              max_rows: ${var.max_rows}
-              alignment_mode: "union"
-              reasoning_effort: ${var.reasoning_effort}
-              gliner_max_words: ${var.gliner_max_words}
+              <<: *pipeline_base_params
               num_cores: "40"
           new_cluster:
             spark_version: "17.3.x-scala2.13"
@@ -224,8 +252,7 @@ resources:
             node_type_id: ${var.cpu_node_type}
             num_workers: 10
             data_security_mode: SINGLE_USER
-          libraries:
-            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+          libraries: *pipeline_libs
 
     redaction_pipeline_gpu_small:
       name: "[${bundle.target}] dbxredact - Redaction Pipeline (GPU Small)"
@@ -234,23 +261,7 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
             base_parameters:
-              source_table: ""
-              text_column: ""
-              output_table: ""
-              doc_id_column: "doc_id"
-              detection_profile: ${var.detection_profile}
-              use_presidio: "true"
-              use_ai_query: "true"
-              use_gliner: "true"
-              redaction_strategy: "typed"
-              endpoint: "databricks-gpt-oss-120b"
-              score_threshold: "0.5"
-              refresh_approach: "full"
-              output_strategy: "production"
-              max_rows: ${var.max_rows}
-              alignment_mode: "union"
-              reasoning_effort: ${var.reasoning_effort}
-              gliner_max_words: ${var.gliner_max_words}
+              <<: *pipeline_base_params
               num_cores: "8"
           new_cluster:
             spark_version: "17.3.x-gpu-ml-scala2.13"
@@ -259,8 +270,7 @@ resources:
             data_security_mode: SINGLE_USER
             spark_conf:
               spark.task.resource.gpu.amount: "0.25"
-          libraries:
-            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+          libraries: *pipeline_libs
 
     redaction_pipeline_gpu_medium:
       name: "[${bundle.target}] dbxredact - Redaction Pipeline (GPU Medium)"
@@ -269,23 +279,7 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
             base_parameters:
-              source_table: ""
-              text_column: ""
-              output_table: ""
-              doc_id_column: "doc_id"
-              detection_profile: ${var.detection_profile}
-              use_presidio: "true"
-              use_ai_query: "true"
-              use_gliner: "true"
-              redaction_strategy: "typed"
-              endpoint: "databricks-gpt-oss-120b"
-              score_threshold: "0.5"
-              refresh_approach: "full"
-              output_strategy: "production"
-              max_rows: ${var.max_rows}
-              alignment_mode: "union"
-              reasoning_effort: ${var.reasoning_effort}
-              gliner_max_words: ${var.gliner_max_words}
+              <<: *pipeline_base_params
               num_cores: "20"
           new_cluster:
             spark_version: "17.3.x-gpu-ml-scala2.13"
@@ -294,8 +288,7 @@ resources:
             data_security_mode: SINGLE_USER
             spark_conf:
               spark.task.resource.gpu.amount: "0.25"
-          libraries:
-            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+          libraries: *pipeline_libs
 
     redaction_pipeline_gpu_large:
       name: "[${bundle.target}] dbxredact - Redaction Pipeline (GPU Large)"
@@ -304,23 +297,7 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/4_redaction_pipeline.py
             base_parameters:
-              source_table: ""
-              text_column: ""
-              output_table: ""
-              doc_id_column: "doc_id"
-              detection_profile: ${var.detection_profile}
-              use_presidio: "true"
-              use_ai_query: "true"
-              use_gliner: "true"
-              redaction_strategy: "typed"
-              endpoint: "databricks-gpt-oss-120b"
-              score_threshold: "0.5"
-              refresh_approach: "full"
-              output_strategy: "production"
-              max_rows: ${var.max_rows}
-              alignment_mode: "union"
-              reasoning_effort: ${var.reasoning_effort}
-              gliner_max_words: ${var.gliner_max_words}
+              <<: *pipeline_base_params
               num_cores: "40"
           new_cluster:
             spark_version: "17.3.x-gpu-ml-scala2.13"
@@ -329,5 +306,70 @@ resources:
             data_security_mode: SINGLE_USER
             spark_conf:
               spark.task.resource.gpu.amount: "0.25"
-          libraries:
-            - whl: ../dist/dbxredact-${var.package_version}-py3-none-any.whl
+          libraries: *pipeline_libs
+
+    # -- Metagen PI Detection --------------------------------------------------
+    metagen_pi_detection:
+      name: "[${bundle.target}] dbxredact - Metagen PI Detection"
+      tasks:
+        - task_key: run_pi_detection
+          notebook_task:
+            notebook_path: ../notebooks/5_metagen_pi_detection.py
+            base_parameters:
+              table_names: ""
+              catalog_name: ${var.catalog}
+              schema_name: ${var.schema}
+              output_mode: "tag"
+              model: "databricks-meta-llama-3-3-70b-instruct"
+              include_deterministic_pi: "true"
+          new_cluster:
+            spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
+            node_type_id: ${var.cpu_node_type}
+            num_workers: 0
+            data_security_mode: SINGLE_USER
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: "local[*]"
+            custom_tags:
+              ResourceClass: SingleNode
+
+    # -- Ingestion Pipeline (AutoLoader) ---------------------------------------
+    redaction_ingestion_cpu_small:
+      name: "[${bundle.target}] dbxredact - Ingestion Pipeline (CPU Small)"
+      tasks:
+        - task_key: run_ingestion
+          notebook_task:
+            notebook_path: ../notebooks/6_ingestion_pipeline.py
+            base_parameters:
+              source_path: ""
+              file_format: "json"
+              output_table: ""
+              text_columns: ""
+              structured_columns: ""
+              masking_strategy: "mask"
+              doc_id_column: "doc_id"
+              checkpoint_path: ""
+              schema_location: ""
+              max_files_per_trigger: "50"
+              trigger_processing_time: ""
+              multi_column_strategy: "sequential"
+              encryption_secret: ""
+              use_presidio: "true"
+              use_ai_query: "true"
+              use_gliner: "false"
+              endpoint: "databricks-gpt-oss-120b"
+              score_threshold: "0.5"
+              redaction_strategy: "generic"
+              alignment_mode: "union"
+              gliner_model: ${var.gliner_model}
+              gliner_threshold: "0.2"
+          new_cluster:
+            spark_version: "17.3.x-scala2.13"
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
+            node_type_id: ${var.cpu_node_type}
+            num_workers: 2
+            data_security_mode: SINGLE_USER
+          libraries: *pipeline_libs

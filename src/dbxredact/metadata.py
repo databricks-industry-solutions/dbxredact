@@ -1,8 +1,11 @@
 """Unity Catalog metadata query functions for PHI/PII redaction."""
 
+import logging
 import re
 from typing import List, Dict
 from pyspark.sql import SparkSession
+
+logger = logging.getLogger(__name__)
 
 _SAFE_IDENTIFIER = re.compile(r"^[a-zA-Z0-9_]+$")
 
@@ -44,11 +47,13 @@ def get_columns_by_tag(
     _validate_identifier(tag_name, "tag_name")
     _validate_identifier(tag_value, "tag_value")
 
+    # NOTE: system.information_schema.column_tags uses catalog_name/schema_name
+    # (NOT table_catalog/table_schema like information_schema.columns).
     query = f"""
     SELECT column_name
     FROM system.information_schema.column_tags
-    WHERE table_catalog = '{catalog}'
-      AND table_schema = '{schema}'
+    WHERE catalog_name = '{catalog}'
+      AND schema_name = '{schema}'
       AND table_name = '{table}'
       AND tag_name = '{tag_name}'
       AND tag_value = '{tag_value}'
@@ -104,11 +109,12 @@ def get_table_metadata(
         for row in columns_df.collect()
     }
 
+    # column_tags uses catalog_name/schema_name (unlike the columns view above).
     tags_query = f"""
     SELECT column_name, tag_name, tag_value
     FROM system.information_schema.column_tags
-    WHERE table_catalog = '{catalog}'
-      AND table_schema = '{schema}'
+    WHERE catalog_name = '{catalog}'
+      AND schema_name = '{schema}'
       AND table_name = '{table}'
     """
 
@@ -118,4 +124,68 @@ def get_table_metadata(
             metadata[row.column_name]["tags"][row.tag_name] = row.tag_value
 
     return metadata
+
+
+_STRING_TYPES = {"string", "varchar", "char", "text"}
+
+
+def discover_pii_columns(
+    spark: SparkSession,
+    table_name: str,
+    classification_tag: str = "data_classification",
+    classification_value: str = "protected",
+    type_tag: str = "pii_type",
+) -> Dict:
+    """Discover PII columns using a two-tag scheme on UC column tags.
+
+    Columns tagged ``data_classification=protected`` are classified as either
+    *text* (NER detection) or *structured* (rule-based masking) based on the
+    ``pii_type`` tag value.  Untagged columns are passthrough; those whose
+    names end with ``_id`` are returned as doc-ID candidates.
+
+    Returns:
+        dict with keys ``text_columns``, ``structured_columns``,
+        ``doc_id_candidates``, and ``warnings``.
+    """
+    catalog, schema, table = _parse_table_name(table_name)
+    _validate_identifier(classification_tag, "classification_tag")
+    _validate_identifier(classification_value, "classification_value")
+    _validate_identifier(type_tag, "type_tag")
+
+    metadata = get_table_metadata(spark, table_name)
+
+    text_columns: List[str] = []
+    structured_columns: Dict[str, str] = {}
+    doc_id_candidates: List[str] = []
+    warnings: List[str] = []
+
+    for col_name, info in metadata.items():
+        tags = info.get("tags", {})
+        data_type = info.get("type", "").lower()
+        is_protected = tags.get(classification_tag) == classification_value
+        pii_type_val = tags.get(type_tag)
+
+        if is_protected:
+            if pii_type_val and pii_type_val != "free_text":
+                structured_columns[col_name] = pii_type_val
+            elif data_type in _STRING_TYPES:
+                text_columns.append(col_name)
+            else:
+                msg = (
+                    f"Column '{col_name}' is tagged {classification_tag}="
+                    f"{classification_value} but has no {type_tag} and is "
+                    f"{data_type} type -- skipped"
+                )
+                warnings.append(msg)
+                logger.warning(msg)
+        else:
+            if col_name.endswith("_id") or col_name == "doc_id":
+                doc_id_candidates.append(col_name)
+
+    return {
+        "text_columns": text_columns,
+        "structured_columns": structured_columns,
+        "doc_id_candidates": doc_id_candidates,
+        "warnings": warnings,
+    }
 

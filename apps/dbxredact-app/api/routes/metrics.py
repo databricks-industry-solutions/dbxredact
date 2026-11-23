@@ -36,13 +36,14 @@ async def metrics_by_entity_type(output_table: str = Query(...)):
 
 @router.get("/confidence-distribution")
 async def confidence_distribution(output_table: str = Query(...)):
+    score_expr = "GREATEST(COALESCE(ent.presidio_score, 0), COALESCE(ent.gliner_score, 0), COALESCE(ent.ai_score, 0))"
     rows = fetch_all(
         f"""SELECT
             CASE
-                WHEN ent.score >= 0.9 THEN '0.9-1.0'
-                WHEN ent.score >= 0.7 THEN '0.7-0.9'
-                WHEN ent.score >= 0.5 THEN '0.5-0.7'
-                WHEN ent.score >= 0.3 THEN '0.3-0.5'
+                WHEN {score_expr} >= 0.9 THEN '0.9-1.0'
+                WHEN {score_expr} >= 0.7 THEN '0.7-0.9'
+                WHEN {score_expr} >= 0.5 THEN '0.5-0.7'
+                WHEN {score_expr} >= 0.3 THEN '0.3-0.5'
                 ELSE '0.0-0.3'
             END as bucket,
             count(*) as count
@@ -58,7 +59,8 @@ async def confidence_distribution(output_table: str = Query(...)):
 async def entity_examples(output_table: str = Query(...), limit: int = Query(50, le=200)):
     """Sample of detected entities with text, type, and confidence."""
     rows = fetch_all(
-        f"""SELECT ent.entity, ent.entity_type, ent.confidence
+        f"""SELECT ent.entity, ent.entity_type, ent.confidence,
+            GREATEST(COALESCE(ent.presidio_score, 0), COALESCE(ent.gliner_score, 0), COALESCE(ent.ai_score, 0)) as score
         FROM {quote_table(output_table)}
         LATERAL VIEW explode(aligned_entities) t AS ent
         LIMIT {int(limit)}"""
@@ -70,10 +72,17 @@ async def entity_examples(output_table: str = Query(...), limit: int = Query(50,
 async def evaluation_metrics(eval_table: str = Query(...)):
     """Precision/Recall/F1 from the long-format evaluation results table."""
     rows = fetch_all(
-        f"""SELECT method_name, metric_name, metric_value, match_mode
+        f"""WITH latest AS (
+            SELECT run_id FROM {quote_table(eval_table)}
+            ORDER BY timestamp DESC LIMIT 1
+        )
+        SELECT method_name, metric_name, metric_value, match_mode
         FROM {quote_table(eval_table)}
-        WHERE metric_name IN ('precision', 'recall', 'f1_score', 'accuracy',
-                              'true_positives', 'false_positives', 'false_negatives', 'true_negatives')
+        WHERE run_id = (SELECT run_id FROM latest)
+          AND metric_name IN ('precision', 'recall', 'f1_score', 'accuracy',
+                              'true_positives', 'false_positives', 'false_negatives', 'true_negatives',
+                              'token_precision', 'token_recall', 'token_f1_score',
+                              'token_true_positives', 'token_false_positives', 'token_false_negatives')
         ORDER BY method_name, metric_name"""
     )
     return rows
@@ -158,10 +167,13 @@ async def recommendations_for_lists(recs_table: str = Query(...)):
 @router.get("/job-history")
 async def job_metrics():
     return fetch_all(
-        f"""SELECT config_id, status, count(*) as run_count,
-            avg(timestampdiff(SECOND, started_at, completed_at)) as avg_duration_sec
-        FROM {_table('redact_job_history')}
-        WHERE started_at IS NOT NULL
-        GROUP BY config_id, status
+        f"""SELECT j.config_id,
+            COALESCE(c.name, j.config_id) as config_name,
+            j.status, count(*) as run_count,
+            avg(timestampdiff(SECOND, j.started_at, j.completed_at)) as avg_duration_sec
+        FROM {_table('redact_job_history')} j
+        LEFT JOIN {_table('redact_config')} c ON j.config_id = c.config_id
+        WHERE j.started_at IS NOT NULL
+        GROUP BY j.config_id, c.name, j.status
         ORDER BY run_count DESC"""
     )

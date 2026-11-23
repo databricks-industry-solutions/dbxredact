@@ -1,0 +1,5 @@
+{
+  "catalog": "your_catalog",
+  "schema": "redaction",
+  "sql_warehouse_id": "your_warehouse_id"
+}

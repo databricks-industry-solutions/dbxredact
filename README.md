@@ -29,11 +29,12 @@ dbxredact detects and redacts Protected Health Information (PHI) and Personally 
 ## Prerequisites
 
 - [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html) >= 0.283.0
-- [Poetry](https://python-poetry.org/docs/#installation) >= 2.0
-- [Node.js / npm](https://nodejs.org/) >= 18 (for the web app frontend build)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) >= 0.4 (the bundle builds the wheel with `uv build`)
 - Python >= 3.10
 - A Databricks workspace with Unity Catalog enabled
-- A SQL Warehouse -- set the ID in `variables.yml` (`sql_warehouse_id`) and in your `dev.env` / `prod.env` as `WAREHOUSE_ID`
+- A SQL Warehouse (the management app uses it; you'll supply its ID as the `sql_warehouse_id` bundle variable)
+
+> The React frontend is pre-built and committed under `apps/dbxredact-app/dist/`, so Node.js/npm is **not** required to deploy. You only need it if you're modifying the frontend (`cd apps/dbxredact-app && npm ci && npm run build`).
 
 ## Quickstart
 
@@ -46,7 +47,7 @@ cd dbxredact
 
 ### 2. Install prerequisites
 
-Make sure you have the tools listed in [Prerequisites](#prerequisites) installed: Databricks CLI (>= 0.283.0), Poetry (>= 2.0), Node.js/npm (>= 18), and Python (>= 3.10).
+Make sure you have the tools listed in [Prerequisites](#prerequisites) installed: Databricks CLI (>= 0.283.0), uv (>= 0.4), Node.js/npm (>= 18), and Python (>= 3.10).
 
 Authenticate the Databricks CLI to your workspace:
 
@@ -60,51 +61,66 @@ Run these SQL statements in your workspace (e.g., via a SQL editor or notebook).
 
 ```sql
 CREATE SCHEMA IF NOT EXISTS your_catalog.your_schema;
-CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.wheels;
 CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.cluster_logs;
 CREATE VOLUME IF NOT EXISTS your_catalog.your_schema.checkpoints;
 ```
 
-`wheels` stores the Python library. `cluster_logs` is used by the benchmark job. `checkpoints` is used by the streaming pipeline.
+`cluster_logs` is used by the benchmark job. `checkpoints` is used by the streaming pipeline. (The Python wheel is deployed by the bundle itself -- no `wheels` volume is required.)
 
-> **Note:** The wheel volume only needs to exist in the deployment schema (the `SCHEMA` in your env file). The redaction pipeline itself can read from and write to any fully qualified table in any schema.
+> **Note:** These volumes only need to exist in the deployment schema. The redaction pipeline itself can read from and write to any fully qualified table in any schema.
 
-### 4. Configure environment
+### 4. Deploy
 
-```bash
-cp example.env dev.env
-```
+`databricks.yml` is a committed static bundle, so deployment is a plain `databricks bundle deploy`. Per-workspace values (catalog, schema, warehouse ID) come from **bundle variables**; the wheel is built automatically by the bundle's `artifacts` hook (`uv build`).
 
-Open `dev.env` and fill in your values:
-
-```
-DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
-CATALOG=your_catalog
-SCHEMA=your_schema
-WAREHOUSE_ID=your_warehouse_id
-
-# Optional: set to "false" to deploy jobs only (no app)
-# DEPLOY_APP=false
-```
-
-`WAREHOUSE_ID` is the ID of a SQL warehouse in your workspace. Find it under **SQL Warehouses > your warehouse > Connection Details**. It is required when deploying the app. If you set `DEPLOY_APP=false`, it can be omitted.
-
-### 5. Deploy
+Supply the variables via a `variable-overrides.json` file that DAB auto-loads for the target (this is the only path it auto-loads -- a repo-root copy is ignored):
 
 ```bash
-./deploy.sh dev
+mkdir -p .databricks/bundle/dev
+cp variable-overrides.example.json .databricks/bundle/dev/variable-overrides.json
+# edit .databricks/bundle/dev/variable-overrides.json with your catalog / schema / sql_warehouse_id
 ```
 
-The script is interactive -- it prompts before each step (press Enter to proceed, `n` to skip, `q` to quit). It will:
+Then deploy, start the app, and grant the app its Unity Catalog permissions:
 
-1. Generate `databricks.yml` from the template using your env file values
-2. Build the Python wheel with Poetry
-3. Upload the wheel to your Unity Catalog volume
-4. Validate and deploy the Databricks Asset Bundle (jobs, app, and artifacts)
-5. Grant UC permissions to the app service principal
-6. Start the management app
+```bash
+databricks bundle deploy -t dev                 # builds the wheel + deploys jobs and the app
+databricks bundle run dbxredact_app -t dev      # creates + starts the app (and its service principal)
+./grant_app_permissions.sh -t dev               # grants the app SPN UC access (see step 5)
+```
 
-Use `DEPLOY_APP=false` in your env file to skip app-related steps and deploy jobs only.
+The workspace host comes from your CLI profile (`databricks auth login` / `-p <profile>`) or the `DATABRICKS_HOST` env var. You can also pass variables without the file via `--var "catalog=...,schema=...,sql_warehouse_id=..."` or `BUNDLE_VAR_*` env vars.
+
+**Deploy from the workspace UI (no local machine):** clone this repo into a [Databricks Git Folder](https://docs.databricks.com/en/repos/index.html), create `.databricks/bundle/dev/variable-overrides.json` in the workspace, open `databricks.yml` and click the **Deploy** (rocket) button, then deploy + start the app from **Workspace > Apps**. Finally run the grants (step 5).
+
+**Jobs-only mode (no app):** comment out the `- resources/app.yml` line in the `include:` block of `databricks.yml` before deploying, and skip the `bundle run dbxredact_app` and grants steps.
+
+#### Optional: guided wrapper (`deploy.sh`)
+
+If you prefer an interactive, `.env`-driven flow, `deploy.sh` wraps all of the above. It reads a `dev.env` / `prod.env` (copy from `example.env`), writes the `variable-overrides.json` for you, then runs validate → deploy → start app → grants, prompting before each step. It also supports `DEPLOY_APP=false` for jobs-only deploys. This script is **optional** -- the plain `databricks bundle deploy` flow above is fully sufficient.
+
+```bash
+cp example.env dev.env   # fill in DATABRICKS_HOST, CATALOG, SCHEMA, WAREHOUSE_ID
+./deploy.sh dev          # add -y to skip the interactive confirmations
+```
+
+### 5. Grant the app its Unity Catalog permissions
+
+The Databricks App runs as its own service principal, which needs UC access to read/write tables in your schema. This grant **cannot** be expressed in the bundle (the service principal doesn't exist until the app is created), so it runs as a separate step after the app's first start:
+
+```bash
+./grant_app_permissions.sh -t dev
+```
+
+The script resolves the app service principal and runs the five required grants. If you'd rather do it manually (or you lack the CLI), paste these into a SQL editor as a catalog admin, replacing `<application_id>` with the app SPN's applicationId (**Admin Console > Service Principals > dbxredact-app**) and `<catalog>`/`<schema>` with your values:
+
+```sql
+GRANT USE CATALOG ON CATALOG `<catalog>` TO `<application_id>`;
+GRANT USE SCHEMA  ON SCHEMA `<catalog>`.`<schema>` TO `<application_id>`;
+GRANT CREATE TABLE ON SCHEMA `<catalog>`.`<schema>` TO `<application_id>`;
+GRANT SELECT ON SCHEMA `<catalog>`.`<schema>` TO `<application_id>`;
+GRANT MODIFY ON SCHEMA `<catalog>`.`<schema>` TO `<application_id>`;
+```
 
 ### 6. Run a pipeline
 
@@ -130,7 +146,7 @@ To use this approach, clone the repo into a [Databricks Git Folder](https://docs
 %pip install git+https://github.com/databricks-industry-solutions/dbxredact.git
 
 # Or, if you have a pre-built wheel in a UC volume:
-%pip install /Volumes/your_catalog/your_schema/wheels/dbxredact-0.1.2-py3-none-any.whl
+%pip install /Volumes/your_catalog/your_schema/your_volume/dbxredact-0.3.1-py3-none-any.whl
 ```
 
 Then open `notebooks/4_redaction_pipeline.py`, configure the widgets at the top of the notebook, and run all cells. You will need to attach the notebook to an ML-runtime cluster yourself.
@@ -227,7 +243,7 @@ The app is defined in `apps/dbxredact-app/` and deployed via the Databricks Asse
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABRICKS_WAREHOUSE_ID` | (required) | SQL warehouse for app queries |
+| `DATABRICKS_WAREHOUSE_ID` | (required) | SQL warehouse for app queries (note: the *job* variable is `WAREHOUSE_ID`; the *app* uses `DATABRICKS_WAREHOUSE_ID`) |
 | `CATALOG` / `SCHEMA` | (required) | Unity Catalog location for app tables |
 | `ALLOWED_ORIGINS` | `*` | Comma-separated CORS origins (set for production) |
 | `RETENTION_DAYS` | `90` | Days before PII retention warnings fire for annotation/ground-truth tables |
@@ -300,9 +316,9 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph Local["Local Dev Environment"]
-        DEV["dev.env\nCATALOG, SCHEMA, HOST"]
+        DEV["variable-overrides.json\ncatalog, schema, sql_warehouse_id"]
         SCRIPT["scripts/run_benchmark.sh\n-p job_params"]
-        DEPLOY["deploy.sh\npoetry build + bundle deploy"]
+        DEPLOY["databricks bundle deploy\n(or ./deploy.sh)"]
         LOGS["benchmark_results/\nstdout, stderr, summary"]
     end
 
@@ -310,7 +326,7 @@ flowchart TB
         direction TB
         VALIDATE["databricks bundle validate"]
         BDEPLOY["databricks bundle deploy"]
-        WHEEL["dist/*.whl uploaded"]
+        WHEEL["artifacts hook: uv build\ndist/*.whl synced"]
     end
 
     subgraph BenchmarkJob["Benchmark Job (Databricks)"]
@@ -478,14 +494,29 @@ FROM catalog.schema.original o
 JOIN catalog.schema.redacted r ON o.doc_id = r.doc_id
 ```
 
-### Multiple Column Redaction
+### Multiple Column / Table-Level Redaction
 
-Currently, each pipeline run processes a single text column. Multi-column support is on the roadmap. For now, run the pipeline once per column and join outputs downstream on `doc_id`:
+`run_table_redaction` handles multiple text columns and structured PII columns in a single pass. It runs NER on each text column independently and applies rule-based masking to structured columns (SSN, phone, email, etc.):
 
 ```python
-for col in ["notes", "address", "comments"]:
-    run_redaction_pipeline(spark, source_table=..., text_column=col,
-                           output_table=f"..._{col}_redacted", ...)
+from dbxredact.pipeline import run_table_redaction
+
+result_df = run_table_redaction(
+    spark=spark,
+    source_table="catalog.schema.patients",
+    output_table="catalog.schema.patients_redacted",
+    text_columns=["clinical_notes", "discharge_summary"],
+    structured_columns={"ssn": "ssn", "phone": "phone", "email": "email"},
+    redaction_strategy="typed",
+    masking_strategy="mask",  # or "hash" / "encrypt"
+)
+```
+
+If you only need single-column NER redaction, `run_redaction_pipeline` is simpler:
+
+```python
+run_redaction_pipeline(spark, source_table=..., text_column="notes",
+                       output_table=..., config=config)
 ```
 
 ### Document Length
@@ -554,11 +585,13 @@ The audit log records `run_id`, `doc_id`, `entity_type`, `entity_count`, `detect
 
 ```
 dbxredact/
-  databricks.yml.template    # DAB config template (deploy.sh generates databricks.yml)
-  deploy.sh                  # Build, configure, and deploy script
-  pyproject.toml             # Poetry dependencies and build config
-  variables.yml              # Bundle variables (catalog, schema, etc.)
-  example.env                # Template for dev.env / prod.env
+  databricks.yml                    # DAB config (static, committed -- deploy with `databricks bundle deploy`)
+  variable-overrides.example.json   # Template for .databricks/bundle/<target>/variable-overrides.json
+  grant_app_permissions.sh          # Post-deploy UC grants for the app service principal
+  deploy.sh                         # Optional guided wrapper (.env-driven) around bundle deploy
+  pyproject.toml                    # Dependencies and build config (PEP 621 + hatchling)
+  variables.yml                     # Bundle variables (catalog, schema, etc.)
+  example.env                       # Template for dev.env / prod.env (used by deploy.sh)
   src/dbxredact/             # Core Python library
     config.py                #   Prompts, thresholds, RedactionConfig dataclass
     analyzer.py              #   Custom Presidio recognizers (HIPAA Safe Harbor)
@@ -594,11 +627,50 @@ dbxredact/
 ## Testing
 
 ```bash
-poetry install --with dev
-poetry run pytest tests/ -x -q --ignore=tests/integration
+uv sync
+
+# Unit tests (no external dependencies)
+uv run pytest tests/ -x -q --ignore=tests/integration
+
+# Integration tests (uses local PySpark -- no Databricks connection needed)
+uv run pytest tests/integration/ -x -q
+
+# App API tests
+uv run pytest apps/dbxredact-app/tests/ -x -q
 ```
 
-Integration tests (`tests/integration/`) require a live Spark cluster and are excluded from local/CI runs.
+Unit tests and integration tests should be run separately (different CI jobs). Integration tests use a local SparkSession and test the full detection/redaction pipeline with mocked detectors.
+
+### Pre-release sanity checks (real end-to-end, on a workspace)
+
+Before a release, run the wave-based integration-test job against a real catalog. Unlike the
+local tests above, these notebooks (`notebooks/integration_tests/`) run on real clusters with
+real detectors and real Unity Catalog tables, and assert both detection quality (known PII is
+actually redacted) and that the safety guards fire. The suite creates and drops its own tables
+and a `test_volume` under the chosen `test_schema`.
+
+The job (`resources/tests/integration_tests.job.yml`) is **not deployed by default** -- it is
+excluded from the normal bundle so test clusters/jobs never ship with the app. To run it:
+
+```bash
+# 1. Uncomment the tests include in databricks.yml:
+#      # - resources/tests/integration_tests.job.yml
+#    -> - resources/tests/integration_tests.job.yml
+
+# 2. Deploy (builds the wheel + creates the integration_tests job)
+databricks bundle deploy -t dev
+
+# 3. Run it, parameterizing the catalog at run time (nothing workspace-specific is committed):
+databricks bundle run integration_tests -t dev \
+  --params test_catalog=<your_catalog>,test_schema=dbxredact_tests,endpoint=databricks-gpt-oss-120b
+```
+
+`test_catalog` defaults to blank, in which case each notebook falls back to the cluster's
+current catalog. The waves are ordered cheapest-first: **Wave A** (imports/config) and
+**Wave B** (Presidio-only detection, redaction, and structured masking -- `test_15`) cost no
+LLM tokens; **Wave C** (AI Query, ensemble, consensus, and ingestion formats -- `test_16`),
+**Wave D** (advanced features), and **Wave E** (end-to-end, incl. GPU/GLiNER) consume model
+tokens and GPU compute. To skip the expensive waves, run individual tasks from the Jobs UI.
 
 ## Compute Types
 Use an ML cluster - not currently working on serverless. GLiNER models perform better on GPU, but other models do not.
@@ -648,12 +720,23 @@ The default is `en_core_web_trf` (RoBERTa transformer, NER F1 ~90.2%). The code 
 
 ## Deploying to Production
 
-Set these variables in `variables.yml` before running `./deploy.sh prod`:
+Deploy to the `prod` target with `databricks bundle deploy -t prod` (or `./deploy.sh prod`). The `prod` target runs in `production` mode and enforces `run_as` permissions, so set these two variables (alongside `catalog` / `schema` / `sql_warehouse_id`) in your `.databricks/bundle/prod/variable-overrides.json`:
 
 - `current_user`: Service principal or user email for `run_as` permissions (e.g. `deployer@company.com`)
 - `current_working_directory`: Workspace path for artifact deployment (e.g. `/Workspace/Shared/dbxredact`)
 
-The `prod` target enforces `run_as` permissions and requires explicit user configuration.
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `bundle deploy` fails at `uv build` | uv not installed or missing from PATH | `curl -LsSf https://astral.sh/uv/install.sh \| sh` then re-open terminal |
+| Wheel build fails behind corporate proxy | `UV_INDEX_URL` not set | `export UV_INDEX_URL=$(pip3 config get global.index-url)` before deploying |
+| `bundle deploy` fails: catalog/schema empty | `variable-overrides.json` not in the auto-loaded path | It must be at `.databricks/bundle/<target>/variable-overrides.json`, not the repo root; or pass `--var`/`BUNDLE_VAR_*` |
+| App can't read/write tables | UC grants not applied | Run `./grant_app_permissions.sh -t <target>` after the app's first start (see Quickstart step 5) |
+| Job fails with `ModuleNotFoundError: dbxredact` | Wheel not installed on cluster | Verify the wheel library is attached to your cluster or installed via `%pip install` |
+| App shows "warehouse not found" | Wrong env var name | The app expects `DATABRICKS_WAREHOUSE_ID`, not `WAREHOUSE_ID` (which is the *job* variable) |
+| `run_table_redaction` results are non-deterministic | Missing `doc_id_column` | Ensure your source table has a unique document ID column and pass it via `doc_id_column=` |
+| GLiNER model download fails on air-gapped cluster | No HuggingFace Hub access | Pre-download the model to a UC Volume and set `model_path` in config |
 
 ## Compliance and Responsibility
 

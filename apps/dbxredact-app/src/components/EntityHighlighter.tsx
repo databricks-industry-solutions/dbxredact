@@ -65,7 +65,7 @@ export default function EntityHighlighter({
       <span
         key={`e${i}`}
         className={`${color} rounded px-0.5 cursor-help border-b-2 border-current`}
-        title={`${seg.entity_type} (${(seg.score ?? 0).toFixed(2)})`}
+        title={seg.score != null ? `${seg.entity_type} (${seg.score.toFixed(2)})` : seg.entity_type}
       >
         {text.slice(seg.start, seg.end)}
         {showIndices && (

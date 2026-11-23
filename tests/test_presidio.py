@@ -68,8 +68,12 @@ class TestFormatPresidioBatchResults:
         assert len(output) == 1
         assert len(output[0]) == 0
 
-    def test_entity_at_threshold_boundary_filtered(self):
-        """Score must be strictly greater than threshold."""
+    def test_entity_at_threshold_boundary_kept(self):
+        """A score exactly at the threshold is kept (filter is score >= threshold).
+
+        The filter uses >= so that a threshold of 1.0 still matches score-1.0
+        entities rather than excluding everything.
+        """
         results = _make_batch_results(
             doc_ids=["d1"],
             texts=["John Smith lives here"],
@@ -78,7 +82,8 @@ class TestFormatPresidioBatchResults:
             ],
         )
         output = format_presidio_batch_results(results, score_threshold=0.5)
-        assert len(output[0]) == 0
+        assert len(output[0]) == 1
+        assert output[0][0]["entity_type"] == "PERSON"
 
     def test_multiple_docs_multiple_entities(self):
         results = _make_batch_results(

@@ -10,11 +10,9 @@ from pyspark.sql.functions import pandas_udf, col
 
 from .config import (
     DEFAULT_GLINER_MODEL,
-    DEFAULT_GLINER_LABELS,
     DEFAULT_GLINER_THRESHOLD,
     DEFAULT_GLINER_MAX_WORDS,
-    DEFAULT_GLINER_THRESHOLDS_BY_TYPE,
-    GLINER_LABEL_MAP,
+    get_gliner_preset,
     should_ignore_entity,
     _entity_schema,
 )
@@ -155,9 +153,9 @@ def _chunk_and_predict(
     return list(seen.values())
 
 
-def _map_label(raw_label: str) -> str:
-    """Map a nemotron-pii training label to a standardized entity type."""
-    return GLINER_LABEL_MAP.get(raw_label, raw_label.upper().replace(" ", "_"))
+def _map_label(raw_label: str, label_map: dict) -> str:
+    """Map a raw GLiNER label to a standardized entity type."""
+    return label_map.get(raw_label, raw_label.upper().replace(" ", "_"))
 
 
 def make_gliner_udf(
@@ -170,8 +168,14 @@ def make_gliner_udf(
 
     Uses factory pattern to only capture serializable primitives in the closure.
     The model loads lazily via module-level cache on each worker.
+
+    When *labels* is None the preset registry is consulted so the correct
+    labels, label map, and per-label thresholds are used for the model.
     """
-    labels_list = list(labels or DEFAULT_GLINER_LABELS)
+    preset = get_gliner_preset(model_name)
+    labels_list = list(labels or preset["labels"])
+    label_map = preset["label_map"]
+    thresholds_by_type = preset["thresholds"]
     schema = _entity_schema()
 
     @pandas_udf(schema)
@@ -193,7 +197,7 @@ def make_gliner_udf(
                     entities = _chunk_and_predict(model, norm_text, labels_list, threshold, max_words=max_words)
                     entities = [
                         e for e in entities
-                        if e.get("score", 0) >= DEFAULT_GLINER_THRESHOLDS_BY_TYPE.get(
+                        if e.get("score", 0) >= thresholds_by_type.get(
                             e["label"], threshold
                         )
                     ]
@@ -206,14 +210,14 @@ def make_gliner_udf(
                     formatted = [
                         {
                             "entity": ent["text"],
-                            "entity_type": _map_label(ent["label"]),
+                            "entity_type": _map_label(ent["label"], label_map),
                             "score": float(ent.get("score", 0.0)),
                             "start": ent["start"],
                             "end": ent["end"],
                             "doc_id": str(doc_id),
                         }
                         for ent in entities
-                        if not should_ignore_entity(ent["text"], _map_label(ent["label"]))
+                        if not should_ignore_entity(ent["text"], _map_label(ent["label"], label_map))
                     ]
                     results.append(formatted)
                 except (RuntimeError, ValueError, KeyError, IndexError, TypeError) as e:

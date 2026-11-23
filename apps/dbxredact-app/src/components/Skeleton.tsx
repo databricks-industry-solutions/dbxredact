@@ -11,3 +11,12 @@ export function SkeletonRows({ rows = 3, className }: { rows?: number; className
     </div>
   );
 }
+
+export function PageLoader({ rows = 5 }: { rows?: number }) {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-6 w-48" />
+      <SkeletonRows rows={rows} />
+    </div>
+  );
+}

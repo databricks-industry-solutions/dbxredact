@@ -94,8 +94,12 @@ def create_redaction_udf(strategy: RedactionStrategy = "generic"):
     def redact_udf(texts: pd.Series, entities_series: pd.Series) -> pd.Series:
         results = []
         for text, entities in zip(texts, entities_series):
-            ent_list = _safe_entity_list(entities)
-            results.append(redact_text(text, ent_list, strategy=strategy))
+            try:
+                ent_list = _safe_entity_list(entities)
+                results.append(redact_text(text, ent_list, strategy=strategy))
+            except Exception:
+                logger.error("Redaction failed, masking entire value to prevent PII leak", exc_info=True)
+                results.append("[REDACTION_FAILED]")
         return pd.Series(results)
 
     return redact_udf
@@ -116,9 +120,13 @@ def create_redaction_audit_udf(strategy: RedactionStrategy = "generic"):
     def redact_audit_udf(texts: pd.Series, entities_series: pd.Series) -> pd.DataFrame:
         rows = []
         for text, entities in zip(texts, entities_series):
-            ent_list = _safe_entity_list(entities)
-            redacted = redact_text(text, ent_list, strategy=strategy)
-            rows.append((redacted, len(ent_list)))
+            try:
+                ent_list = _safe_entity_list(entities)
+                redacted = redact_text(text, ent_list, strategy=strategy)
+                rows.append((redacted, len(ent_list)))
+            except Exception:
+                logger.error("Redaction failed, masking entire value to prevent PII leak", exc_info=True)
+                rows.append(("[REDACTION_FAILED]", -1))
         return pd.DataFrame(rows, columns=["redacted_text", "entity_count"])
 
     return redact_audit_udf

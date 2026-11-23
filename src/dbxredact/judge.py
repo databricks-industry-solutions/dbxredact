@@ -1,9 +1,12 @@
 """AI Judge for grading redaction quality and recommending improvements."""
 
+import logging
 from typing import Dict, Any
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import col, expr, from_json, lit
+
+logger = logging.getLogger(__name__)
 
 from .config import (
     JUDGE_PROMPT_SKELETON,
@@ -107,7 +110,8 @@ def compute_judge_summary(judge_df: DataFrame) -> Dict[str, Any]:
         judge_df: DataFrame with at least 'method' and 'grade' columns
 
     Returns:
-        Dict with pass_rate, partial_rate, fail_rate, total_docs, top_missed
+        Dict with pass_rate, partial_rate, fail_rate, total_docs,
+        graded_count, failed_count, top_missed
     """
     total = judge_df.count()
     if total == 0:
@@ -116,11 +120,24 @@ def compute_judge_summary(judge_df: DataFrame) -> Dict[str, Any]:
             "partial_rate": 0.0,
             "fail_rate": 0.0,
             "total_docs": 0,
+            "graded_count": 0,
+            "failed_count": 0,
             "top_missed": [],
         }
 
+    failed_count = judge_df.where(col("grade").isNull()).count()
+    graded_count = total - failed_count
+
+    if failed_count > 0:
+        logger.warning(
+            "%d of %d judge results have null grades (AI query failures). "
+            "Rates are computed from the %d successfully graded documents only.",
+            failed_count, total, graded_count,
+        )
+
     grade_counts = (
-        judge_df.groupBy("grade").count().toPandas().set_index("grade")["count"]
+        judge_df.where(col("grade").isNotNull())
+        .groupBy("grade").count().toPandas().set_index("grade")["count"]
     )
     pass_n = int(grade_counts.get("PASS", 0))
     partial_n = int(grade_counts.get("PARTIAL", 0))
@@ -139,11 +156,15 @@ def compute_judge_summary(judge_df: DataFrame) -> Dict[str, Any]:
         .to_dict(orient="records")
     )
 
+    denom = graded_count if graded_count > 0 else 1
+
     return {
-        "pass_rate": pass_n / total,
-        "partial_rate": partial_n / total,
-        "fail_rate": fail_n / total,
+        "pass_rate": pass_n / denom,
+        "partial_rate": partial_n / denom,
+        "fail_rate": fail_n / denom,
         "total_docs": total,
+        "graded_count": graded_count,
+        "failed_count": failed_count,
         "top_missed": top_missed,
     }
 

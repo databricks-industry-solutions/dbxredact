@@ -1,7 +1,15 @@
 """Active learning utilities -- uncertainty scoring and review queue building."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
+from pyspark.sql.types import DoubleType
+
+if TYPE_CHECKING:
+    from dbxredact.calibration import CalibratedScorer
 
 
 def _best_score(ent_alias: str = "ent") -> F.Column:
@@ -22,12 +30,33 @@ def _num_sources(ent_alias: str = "ent") -> F.Column:
     )
 
 
+def _calibrated_score_col(
+    calibration: "CalibratedScorer", source: str, raw_col: F.Column,
+) -> F.Column:
+    """Build a column expression that applies calibration to a raw score."""
+    cal = calibration
+
+    @F.udf(DoubleType())
+    def _cal(val):
+        if val is None:
+            return None
+        return float(cal.transform_single(source, float(val)))
+
+    return _cal(raw_col)
+
+
 def compute_document_uncertainty(
     detection_df: DataFrame,
     doc_id_column: str = "doc_id",
     entities_column: str = "aligned_entities",
+    calibration: "CalibratedScorer | None" = None,
 ) -> DataFrame:
     """Score each document by detection uncertainty.
+
+    Args:
+        calibration: Optional CalibratedScorer. When provided, raw detector
+            scores are calibrated before aggregation so that scores from
+            different sources are comparable.
 
     Returns a DataFrame with columns: doc_id, avg_score, min_score, entity_count,
     low_confidence_count, uncertainty_score (0-1, higher = more uncertain).
@@ -37,7 +66,14 @@ def compute_document_uncertainty(
         F.explode_outer(F.col(entities_column)).alias("ent"),
     )
 
-    score_col = _best_score("ent")
+    if calibration is not None:
+        score_col = F.coalesce(
+            _calibrated_score_col(calibration, "presidio", F.col("ent.presidio_score")),
+            _calibrated_score_col(calibration, "gliner", F.col("ent.gliner_score")),
+            _calibrated_score_col(calibration, "ai", F.col("ent.ai_score")),
+        )
+    else:
+        score_col = _best_score("ent")
 
     agg = exploded.groupBy(doc_id_column).agg(
         F.avg(score_col).alias("avg_score"),
@@ -50,7 +86,9 @@ def compute_document_uncertainty(
         "uncertainty_score",
         F.when(F.col("entity_count") == 0, F.lit(0.5))
         .otherwise(
-            F.lit(1.0) - F.col("avg_score") + (F.col("low_confidence_count") / F.col("entity_count")) * 0.3
+            F.least(F.lit(1.0), F.greatest(F.lit(0.0),
+                F.lit(1.0) - F.col("avg_score") + (F.col("low_confidence_count") / F.col("entity_count")) * 0.3
+            ))
         ),
     )
 
@@ -60,9 +98,12 @@ def build_review_queue(
     top_k: int = 100,
     doc_id_column: str = "doc_id",
     entities_column: str = "aligned_entities",
+    calibration: "CalibratedScorer | None" = None,
 ) -> DataFrame:
     """Return the top-K most uncertain documents for human review."""
-    scored = compute_document_uncertainty(detection_df, doc_id_column, entities_column)
+    scored = compute_document_uncertainty(
+        detection_df, doc_id_column, entities_column, calibration=calibration,
+    )
     return scored.orderBy(F.col("uncertainty_score").desc()).limit(top_k)
 
 

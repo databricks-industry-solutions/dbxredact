@@ -1,14 +1,15 @@
 {
   "name": "dbxredact-app",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.3.1",
   "type": "module",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {

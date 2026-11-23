@@ -1,4 +1,15 @@
+# Pinned ruff version keeps formatting/lint deterministic across machines.
+# ruff-pre-commit only processes STAGED files, so it will not mass-reformat
+# the pre-existing (never-ruff-formatted) files -- each file is cleaned up the
+# next time it is actually edited.
 repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.0
+    hooks:
+      - id: ruff          # lint (with autofix)
+        args: [--fix]
+      - id: ruff-format   # format
+
   - repo: local
     hooks:
       - id: pytest

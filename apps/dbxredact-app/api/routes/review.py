@@ -47,20 +47,33 @@ async def compare_documents(
 @router.get("/documents")
 async def list_documents(
     source_table: str = Query(...),
+    doc_id_column: str = Query("doc_id"),
+    text_column: str = Query("text"),
     limit: int = Query(50, le=200),
     offset: int = Query(0),
 ):
+    validate_identifier(doc_id_column)
+    validate_identifier(text_column)
     rows = fetch_all(
-        f"SELECT * FROM {quote_table(source_table)} LIMIT %(limit)s OFFSET %(offset)s",
+        f"SELECT `{doc_id_column}` AS doc_id, `{text_column}` AS text "
+        f"FROM {quote_table(source_table)} LIMIT %(limit)s OFFSET %(offset)s",
         {"limit": limit, "offset": offset},
     )
     return rows
 
 
 @router.get("/documents/{doc_id}")
-async def get_document(doc_id: str, source_table: str = Query(...)):
+async def get_document(
+    doc_id: str,
+    source_table: str = Query(...),
+    doc_id_column: str = Query("doc_id"),
+    text_column: str = Query("text"),
+):
+    validate_identifier(doc_id_column)
+    validate_identifier(text_column)
     row = fetch_one(
-        f"SELECT * FROM {quote_table(source_table)} WHERE doc_id = %(doc_id)s",
+        f"SELECT `{doc_id_column}` AS doc_id, `{text_column}` AS text "
+        f"FROM {quote_table(source_table)} WHERE `{doc_id_column}` = %(doc_id)s",
         {"doc_id": doc_id},
     )
     if not row:

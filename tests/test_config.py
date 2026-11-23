@@ -60,10 +60,14 @@ class TestShouldIgnoreEntity:
     def test_clinical_roles_ignored(self, text):
         assert should_ignore_entity(text, "PERSON") is True
 
-    @pytest.mark.parametrize("text", ["doctor", "patient"])
-    def test_doctor_patient_not_ignored(self, text):
-        """'doctor' and 'patient' can appear in compound names."""
-        assert should_ignore_entity(text, "PERSON") is False
+    def test_doctor_not_ignored(self):
+        """'doctor' can appear in compound names."""
+        assert should_ignore_entity("doctor", "PERSON") is False
+
+    @pytest.mark.parametrize("text", ["patient", "the patient"])
+    def test_patient_ignored(self, text):
+        """Generic 'patient' references are not PII names."""
+        assert should_ignore_entity(text, "PERSON") is True
 
     @pytest.mark.parametrize("text", ["am", "pm"])
     def test_bare_time_fragments_ignored(self, text):
@@ -122,7 +126,8 @@ class TestRedactionConfig:
         cfg = RedactionConfig()
         assert cfg.use_presidio is True
         assert cfg.use_ai_query is True
-        assert cfg.use_gliner is False
+        assert cfg.ner_backend == "none"
+        assert cfg.use_gliner is False  # ner_backend="none" leaves use_gliner at default
         assert cfg.endpoint is None
         assert cfg.score_threshold == DEFAULT_PRESIDIO_SCORE_THRESHOLD
         assert cfg.gliner_model == DEFAULT_GLINER_MODEL
@@ -146,7 +151,7 @@ class TestRedactionConfig:
 
     def test_custom_values(self):
         cfg = RedactionConfig(
-            use_presidio=False, use_gliner=True, num_cores=4,
+            use_presidio=False, ner_backend="gliner", num_cores=4,
             redaction_strategy="typed", output_mode="in_place",
             confirm_destructive=True, max_rows=None,
         )
@@ -157,6 +162,17 @@ class TestRedactionConfig:
         assert cfg.output_mode == "in_place"
         assert cfg.confirm_destructive is True
         assert cfg.max_rows is None
+
+    def test_privacy_filter_backend(self):
+        cfg = RedactionConfig(ner_backend="privacy_filter")
+        assert cfg.use_privacy_filter is True
+        assert cfg.use_gliner is False
+        assert cfg.ner_backend == "privacy_filter"
+
+    def test_privacy_filter_and_gliner_mutually_exclusive(self):
+        cfg = RedactionConfig(ner_backend="privacy_filter", use_gliner=True)
+        assert cfg.use_privacy_filter is True
+        assert cfg.use_gliner is False
 
 
 class TestGovernanceValidation:

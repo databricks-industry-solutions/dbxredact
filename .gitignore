@@ -1,6 +1,16 @@
 # Databricks Asset Bundle files
+# databricks.yml is committed (static config, placeholder-free). Per-workspace
+# values come from .databricks/bundle/<target>/variable-overrides.json, which is
+# gitignored below. NEVER commit real workspace host / catalog / schema / warehouse.
 .databricks/
-databricks.yml
+databricks.yml.template
+# CLI-generated deploy state -- contains workspace-specific resource IDs.
+.databricks-resources.json
+# Variable overrides hold real workspace values. The auto-loaded path lives under
+# .databricks/ (already ignored); this also catches a stray repo-root copy.
+# The placeholder example file IS committed.
+variable-overrides.json
+!variable-overrides.example.json
 
 # IDE files
 .vscode/
@@ -18,14 +28,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
-dist/
+/dist/
 build/
 .venv/
 venv/
 ENV/
 
-# Poetry
-poetry.lock
+# Lock files are tracked (uv.lock is committed for reproducibility)
 
 # Testing
 .pytest_cache/
@@ -48,11 +57,13 @@ ROADMAP.md
 
 # Frontend build artifacts
 apps/dbxredact-app/node_modules/
-apps/dbxredact-app/dist/
-apps/dbxredact-app/package-lock.json
+apps/dbxredact-app/src/node_modules/
 
 .ai-dev-kit/
 .github/skills/
 
 # Internal dev notes
 .dev/
+
+# Isaac Review tooling artifacts
+.isaac/

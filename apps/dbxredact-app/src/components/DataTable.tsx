@@ -12,7 +12,7 @@ interface Props<T> {
   columns: Column<T>[];
   data: T[];
   pageSize?: number;
-  rowKey: (row: T) => string;
+  rowKey: (row: T, index: number) => string;
   rowClassName?: (row: T) => string;
   emptyMessage?: string;
 }
@@ -92,8 +92,8 @@ export default function DataTable<T extends Record<string, unknown>>({
             {pageData.length === 0 ? (
               <tr><td colSpan={columns.length} className="text-center text-sm text-gray-400 py-6">{emptyMessage}</td></tr>
             ) : (
-              pageData.map((row) => (
-                <tr key={rowKey(row)} className={rowClassName?.(row) ?? ""}>
+              pageData.map((row, index) => (
+                <tr key={rowKey(row, index)} className={rowClassName?.(row) ?? ""}>
                   {columns.map((col) => (
                     <td key={col.key}>
                       {col.render ? col.render(row) : (row[col.key] as React.ReactNode) ?? ""}

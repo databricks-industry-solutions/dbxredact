@@ -159,6 +159,97 @@ MedicalText: "SSN 123-45-6789. DOB: 24/07/1974. Phone: 608-555-7714. MRN: 040826
 response: [{{"entity": "123-45-6789", "entity_type": "US_SSN"}}, {{"entity": "24/07/1974", "entity_type": "DATE_TIME"}}, {{"entity": "608-555-7714", "entity_type": "PHONE_NUMBER"}}, {{"entity": "0408267", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{"entity": "15/03/25", "entity_type": "DATE_TIME"}}]
 """
 
+# ---------------------------------------------------------------------------
+# Spanish PHI detection prompt -- same output contract, HIPAA list in Spanish,
+# additional Latin American identifiers (CURP, RFC, DNI, NIE, RUT)
+# ---------------------------------------------------------------------------
+PHI_PROMPT_SKELETON_ES = """
+Eres un experto en detección de Información de Salud Protegida (PHI) e Información de Identificación Personal (PII). Identificarás todas las entidades PHI/PII en un texto.
+
+La PHI/PII incluye:
+1. Nombres de personas;
+2. Subdivisiones geográficas menores a un estado, incluyendo dirección, ciudad, condado, código postal y equivalentes;
+3. Todos los elementos de fechas (excepto el año) relacionados directamente con un individuo, incluyendo fecha de nacimiento, fecha de ingreso, fecha de alta, fecha de defunción; y todas las edades mayores de 89 años;
+4. Números de teléfono;
+5. Números de fax;
+6. Direcciones de correo electrónico;
+7. Números de seguro social (SSN, NSS, CURP, RFC, DNI, NIE, RUT);
+8. Números de expediente médico;
+9. Números de beneficiario de plan de salud;
+10. Números de cuenta bancaria o financiera;
+11. Números de certificado o licencia;
+12. Identificadores de vehículos y números de serie, incluyendo placas;
+13. Identificadores de dispositivos y números de serie;
+14. URLs;
+15. Direcciones IP;
+16. Identificadores biométricos;
+17. Imágenes fotográficas de rostro completo;
+18. Cualquier otro número, característica o código de identificación único.
+
+Entidades adicionales a detectar:
+- Nombres de hospitales e instalaciones de salud, incluyendo abreviaturas
+- Nombres de organizaciones y empresas
+- Números de cuenta financiera
+- IDs de referencia o caso
+
+Identificarás todas las entidades PHI/PII con los siguientes valores como "label":
+
+{label_enums}
+
+Responde con una lista de diccionarios: [{{"entity": "Juan García", "entity_type": "PERSON"}}, {{"entity": "123-45-6789", "entity_type": "US_SSN"}}]
+
+IMPORTANTE: Devuelve cada entidad EXACTAMENTE como aparece en el texto original. Copia el texto carácter por carácter — no normalices espacios, no corrijas ortografía ni reformules. Lista cada entidad única solo UNA VEZ.
+
+El texto está aquí:
+<TextoMedico>
+{{med_text}}
+<TextoMedico/>
+
+EJEMPLOS:
+TextoMedico: "MRN: 222345 -- Atendí al paciente Juan García hoy a las 11:30 en el Hospital General de Guadalajara, quien presenta dolor de garganta y temperatura de 39.4°C"
+respuesta: [{{"entity": "Juan García", "entity_type": "PERSON"}}, {{"entity": "222345", "entity_type": "MEDICAL_RECORD_NUMBER"}}, {{"entity": "Hospital General de Guadalajara", "entity_type": "HOSPITAL_NAME"}}]
+
+TextoMedico: "CURP: GARM850101HDFRRL09. NSS: 12345678901. Tel: 55-1234-5678. Fecha de ingreso: 15/03/2024"
+respuesta: [{{"entity": "GARM850101HDFRRL09", "entity_type": "ID_NUMBER"}}, {{"entity": "12345678901", "entity_type": "US_SSN"}}, {{"entity": "55-1234-5678", "entity_type": "PHONE_NUMBER"}}, {{"entity": "15/03/2024", "entity_type": "DATE_TIME"}}]
+"""
+
+PROMPT_SKELETON_BY_LANGUAGE = {
+    "en": PHI_PROMPT_SKELETON,
+    "es": PHI_PROMPT_SKELETON_ES,
+}
+SUPPORTED_LANGUAGES = set(PROMPT_SKELETON_BY_LANGUAGE.keys())
+
+# ---------------------------------------------------------------------------
+# Translation prompt -- preserves redaction bracket tokens during translation
+# ---------------------------------------------------------------------------
+TRANSLATION_PROMPT_SKELETON = """You are a professional translator. Translate the following text from {source_lang} to {target_lang}.
+
+CRITICAL RULES:
+1. Preserve ALL text inside square brackets exactly as-is. These are redaction markers and must NOT be translated, modified, or removed. Examples: [REDACTED], [PERSON], [DATE_TIME], [PHONE_NUMBER]
+2. Translate everything else naturally and accurately.
+3. Return ONLY the translated text, no explanations.
+
+Text to translate:
+{text}"""
+
+# ---------------------------------------------------------------------------
+# Review prompt -- second-pass detection on translated text
+# ---------------------------------------------------------------------------
+REVIEW_PROMPT_SKELETON = """You are an expert PHI/PII reviewer. The text below has already been partially redacted (entities replaced with [BRACKETED_LABELS]) and translated.
+
+Your job: find any PHI/PII that was MISSED by the initial redaction pass. IGNORE all text inside square brackets -- those are already handled.
+
+Look for: names, dates, addresses, phone numbers, emails, SSNs, medical record numbers, account numbers, IDs, hospital names, organization names, and any other personally identifiable information.
+
+Respond with a list of dictionaries: [{{"entity": "missed entity text", "entity_type": "PERSON"}}]
+If nothing was missed, respond with an empty list: []
+
+Entity type labels: {label_enums}
+
+<ReviewText>
+{{med_text}}
+</ReviewText>"""
+
 # Default thresholds
 DEFAULT_PRESIDIO_SCORE_THRESHOLD = 0.7
 DEFAULT_FUZZY_MATCH_THRESHOLD = 50
@@ -168,10 +259,14 @@ DEFAULT_OVERLAP_TOLERANCE = 0
 # AI entities get a default confidence of 0.8 since the LLM does not provide a per-entity score
 DEFAULT_AI_CONFIDENCE_SCORE = 0.8
 DEFAULT_AI_REASONING_EFFORT = "low"  # Valid: "low", "medium", "high"
+DEFAULT_AI_MAX_CHARS = 300_000
+DEFAULT_AI_OVERLAP_CHARS = 1_000
 
-# GLiNER defaults
+# ---------------------------------------------------------------------------
+# GLiNER defaults  (nvidia/gliner-PII)
 # Labels must match the nvidia/nemotron-pii training data (lowercase with underscores).
 # The model uses these as zero-shot prompts, so exact label text matters.
+# ---------------------------------------------------------------------------
 DEFAULT_GLINER_MODEL = "nvidia/gliner-PII"
 DEFAULT_GLINER_LABELS = [
     "name",
@@ -213,8 +308,6 @@ DEFAULT_GLINER_LABELS = [
     "pin",
 ]
 
-# Maps nemotron-pii training labels -> standardized output entity types.
-# Multiple input labels can map to the same output type.
 GLINER_LABEL_MAP = {
     "name": "PERSON",
     "first_name": "PERSON",
@@ -258,7 +351,6 @@ DEFAULT_GLINER_THRESHOLD = 0.2
 DEFAULT_GLINER_MAX_WORDS = 256
 
 DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
-    # Keys must match DEFAULT_GLINER_LABELS exactly
     "name": 0.15,
     "first_name": 0.15,
     "last_name": 0.15,
@@ -298,10 +390,201 @@ DEFAULT_GLINER_THRESHOLDS_BY_TYPE = {
     "pin": 0.4,
 }
 
+# ---------------------------------------------------------------------------
+# GLiNER preset: urchade/gliner_multi_pii-v1  (Apache 2.0)
+# Uses natural-language labels; maps to the same standardized entity types.
+# ---------------------------------------------------------------------------
+_URCHADE_GLINER_LABELS = [
+    "person",
+    "email address",
+    "phone number",
+    "mobile phone number",
+    "landline phone number",
+    "fax number",
+    "address",
+    "postal code",
+    "social security number",
+    "national id number",
+    "identity card number",
+    "identity document number",
+    "tax identification number",
+    "date of birth",
+    "credit card number",
+    "credit card expiration date",
+    "cvv",
+    "cvc",
+    "bank account number",
+    "iban",
+    "ip address",
+    "organization",
+    "passport number",
+    "driver's license number",
+    "registration number",
+    "license plate number",
+    "vehicle registration number",
+    "serial number",
+    "username",
+    "social media handle",
+    "digital signature",
+    "health insurance id number",
+    "health insurance number",
+    "national health insurance number",
+    "insurance number",
+    "medical condition",
+    "medication",
+    "blood type",
+    "visa number",
+    "flight number",
+    "reservation number",
+    "transaction number",
+    "birth certificate number",
+    "train ticket number",
+    "passport expiration date",
+    "insurance company",
+    "cpf",
+    "cnpj",
+]
+
+_URCHADE_GLINER_LABEL_MAP = {
+    "person": "PERSON",
+    "email address": "EMAIL_ADDRESS",
+    "phone number": "PHONE_NUMBER",
+    "mobile phone number": "PHONE_NUMBER",
+    "landline phone number": "PHONE_NUMBER",
+    "fax number": "PHONE_NUMBER",
+    "address": "LOCATION",
+    "postal code": "LOCATION",
+    "social security number": "US_SSN",
+    "national id number": "ID_NUMBER",
+    "identity card number": "ID_NUMBER",
+    "identity document number": "ID_NUMBER",
+    "tax identification number": "ID_NUMBER",
+    "date of birth": "DATE_TIME",
+    "credit card number": "CREDIT_CARD",
+    "credit card expiration date": "CREDIT_CARD",
+    "cvv": "CREDIT_CARD",
+    "cvc": "CREDIT_CARD",
+    "bank account number": "ACCOUNT_NUMBER",
+    "iban": "ACCOUNT_NUMBER",
+    "ip address": "IP_ADDRESS",
+    "organization": "ORGANIZATION",
+    "passport number": "ID_NUMBER",
+    "driver's license number": "LICENSE_NUMBER",
+    "registration number": "ID_NUMBER",
+    "license plate number": "VEHICLE_IDENTIFIER",
+    "vehicle registration number": "VEHICLE_IDENTIFIER",
+    "serial number": "ID_NUMBER",
+    "username": "ONLINE_IDENTIFIER",
+    "social media handle": "ONLINE_IDENTIFIER",
+    "digital signature": "ONLINE_IDENTIFIER",
+    "health insurance id number": "HEALTH_PLAN_NUMBER",
+    "health insurance number": "HEALTH_PLAN_NUMBER",
+    "national health insurance number": "HEALTH_PLAN_NUMBER",
+    "insurance number": "HEALTH_PLAN_NUMBER",
+    "medical condition": "MEDICAL_INFO",
+    "medication": "MEDICAL_INFO",
+    "blood type": "MEDICAL_INFO",
+    "visa number": "ID_NUMBER",
+    "flight number": "ID_NUMBER",
+    "reservation number": "ID_NUMBER",
+    "transaction number": "ID_NUMBER",
+    "birth certificate number": "ID_NUMBER",
+    "train ticket number": "ID_NUMBER",
+    "passport expiration date": "DATE_TIME",
+    "insurance company": "ORGANIZATION",
+    "cpf": "ID_NUMBER",
+    "cnpj": "ID_NUMBER",
+}
+
+_URCHADE_GLINER_THRESHOLDS_BY_TYPE = {
+    "person": 0.15,
+    "email address": 0.3,
+    "phone number": 0.3,
+    "mobile phone number": 0.3,
+    "landline phone number": 0.3,
+    "fax number": 0.3,
+    "address": 0.2,
+    "postal code": 0.3,
+    "social security number": 0.4,
+    "national id number": 0.35,
+    "identity card number": 0.35,
+    "identity document number": 0.35,
+    "tax identification number": 0.35,
+    "date of birth": 0.25,
+    "credit card number": 0.4,
+    "credit card expiration date": 0.35,
+    "cvv": 0.4,
+    "cvc": 0.4,
+    "bank account number": 0.35,
+    "iban": 0.35,
+    "ip address": 0.3,
+    "organization": 0.3,
+    "passport number": 0.35,
+    "driver's license number": 0.35,
+    "registration number": 0.35,
+    "license plate number": 0.35,
+    "vehicle registration number": 0.35,
+    "serial number": 0.35,
+    "username": 0.3,
+    "social media handle": 0.3,
+    "digital signature": 0.35,
+    "health insurance id number": 0.35,
+    "health insurance number": 0.35,
+    "national health insurance number": 0.35,
+    "insurance number": 0.35,
+    "medical condition": 0.3,
+    "medication": 0.3,
+    "blood type": 0.35,
+    "visa number": 0.35,
+    "flight number": 0.35,
+    "reservation number": 0.35,
+    "transaction number": 0.35,
+    "birth certificate number": 0.35,
+    "train ticket number": 0.35,
+    "passport expiration date": 0.35,
+    "insurance company": 0.3,
+    "cpf": 0.35,
+    "cnpj": 0.35,
+}
+
+# ---------------------------------------------------------------------------
+# Preset registry: bundles model -> (labels, label_map, thresholds)
+# ---------------------------------------------------------------------------
+GLINER_MODEL_PRESETS = {
+    "nvidia/gliner-PII": {
+        "labels": DEFAULT_GLINER_LABELS,
+        "label_map": GLINER_LABEL_MAP,
+        "thresholds": DEFAULT_GLINER_THRESHOLDS_BY_TYPE,
+    },
+    "urchade/gliner_multi_pii-v1": {
+        "labels": _URCHADE_GLINER_LABELS,
+        "label_map": _URCHADE_GLINER_LABEL_MAP,
+        "thresholds": _URCHADE_GLINER_THRESHOLDS_BY_TYPE,
+    },
+}
+
+
+def get_gliner_preset(model_name: str) -> dict:
+    """Return the preset (labels, label_map, thresholds) for a GLiNER model.
+
+    Falls back to the nvidia defaults for unknown model names so that existing
+    custom-model workflows keep working.
+    """
+    return GLINER_MODEL_PRESETS.get(
+        model_name, GLINER_MODEL_PRESETS[DEFAULT_GLINER_MODEL]
+    )
+
+# ---------------------------------------------------------------------------
+# Privacy Filter defaults  (openai/privacy-filter)
+# ---------------------------------------------------------------------------
+DEFAULT_PRIVACY_FILTER_MODEL = "openai/privacy-filter"
+DEFAULT_PRIVACY_FILTER_THRESHOLD = 0.5
+
 # Confidence thresholds
 HIGH_CONFIDENCE_THRESHOLD = 0.7
 
 # Source weights for confidence calculation (used in weighted scoring)
+# "gliner" slot is reused for privacy_filter (mutually exclusive backends)
 SOURCE_WEIGHTS = {
     "presidio": 0.35,
     "gliner": 0.30,
@@ -328,7 +611,8 @@ REQUIRED_ENTITY_FIELDS = {"entity", "start", "end"}
 # ---------------------------------------------------------------------------
 # Entity types to suppress entirely (matched against the detection entity_type).
 ENTITY_TYPES_TO_IGNORE = {
-    "NRP",  # Nationalities / religious / political groups -- not PII in most contexts
+    "NRP",           # Nationalities / religious / political groups -- not PII in most contexts
+    "MEDICAL_INFO",  # Drug names, diseases, procedures -- not PII unless linked to a patient
 }
 
 # Regex patterns matched against the detected entity *text* (case-insensitive).
@@ -338,7 +622,7 @@ ENTITY_TEXT_IGNORE_PATTERNS = _re.compile(
     r"^("
     r"dr\.?|mr\.?|mrs\.?|ms\.?|prof\.?|sir|madam"  # titles / prefixes
     r"|he|she|they|you|we|it|i"                       # pronouns
-    r"|nurse|physician|surgeon"                        # generic clinical roles (not "doctor"/"patient" -- can appear in names)
+    r"|nurse|physician|surgeon|(?:the\s+)?patient"      # generic clinical roles/references
     r"|am|pm"                                          # bare time fragments
     r"|today|yesterday|tomorrow"                         # relative day words
     r"|(19|20)\d{2}"                                     # bare 4-digit years
@@ -389,9 +673,13 @@ def should_ignore_entity(
 
 
 # ---------------------------------------------------------------------------
-# Prompt version tracking (short hash of PHI_PROMPT_SKELETON for audit)
+# Prompt version tracking (short hash per language for audit)
 # ---------------------------------------------------------------------------
 PROMPT_VERSION = _hashlib.sha256(PHI_PROMPT_SKELETON.encode()).hexdigest()[:12]
+PROMPT_VERSION_BY_LANGUAGE = {
+    lang: _hashlib.sha256(skel.encode()).hexdigest()[:12]
+    for lang, skel in PROMPT_SKELETON_BY_LANGUAGE.items()
+}
 
 
 # ---------------------------------------------------------------------------
@@ -410,17 +698,24 @@ class RedactionConfig:
     use_presidio: bool = True
     use_ai_query: bool = True
     use_gliner: bool = False
+    ner_backend: str = "none"  # "gliner", "privacy_filter", or "none"
     endpoint: Optional[str] = None
     score_threshold: float = DEFAULT_PRESIDIO_SCORE_THRESHOLD
     gliner_model: str = DEFAULT_GLINER_MODEL
     gliner_threshold: float = DEFAULT_GLINER_THRESHOLD
     gliner_max_words: Optional[int] = None
+    privacy_filter_threshold: float = DEFAULT_PRIVACY_FILTER_THRESHOLD
     num_cores: int = 10
     fail_on_presidio_error: bool = True
     reasoning_effort: str = DEFAULT_AI_REASONING_EFFORT
     presidio_model_size: Optional[str] = None
     presidio_pattern_only: bool = False
     ai_model_type: str = "foundation"
+    ai_max_chars: Optional[int] = DEFAULT_AI_MAX_CHARS
+    ai_overlap_chars: int = DEFAULT_AI_OVERLAP_CHARS
+    # Language
+    language: str = "en"
+    translate_to: Optional[str] = None
     # Alignment
     alignment_mode: str = "union"
     fuzzy_threshold: int = 50
@@ -434,7 +729,42 @@ class RedactionConfig:
     max_rows: Optional[int] = 10000
     entity_filter: Any = field(default=None, repr=False)
 
+    @property
+    def use_privacy_filter(self) -> bool:
+        return self.ner_backend == "privacy_filter"
+
     def __post_init__(self):
+        # Keep use_gliner and ner_backend consistent. An explicitly set
+        # ner_backend drives use_gliner (backward compat); when ner_backend is
+        # left at its default ("none") but use_gliner=True was passed, honor the
+        # flag and reverse-derive ner_backend so both agree.
+        if self.ner_backend == "gliner":
+            object.__setattr__(self, "use_gliner", True)
+        elif self.ner_backend == "privacy_filter":
+            object.__setattr__(self, "use_gliner", False)
+        elif self.ner_backend == "none":
+            if self.use_gliner:
+                object.__setattr__(self, "ner_backend", "gliner")
+            else:
+                object.__setattr__(self, "use_gliner", False)
+
+        if self.language not in PROMPT_SKELETON_BY_LANGUAGE:
+            raise ValueError(
+                f"language={self.language!r} is not supported. "
+                f"Choose from: {list(PROMPT_SKELETON_BY_LANGUAGE.keys())}"
+            )
+        if self.translate_to:
+            if self.translate_to == self.language:
+                raise ValueError(
+                    f"translate_to={self.translate_to!r} must differ from "
+                    f"language={self.language!r}"
+                )
+            if self.translate_to not in SUPPORTED_LANGUAGES:
+                raise ValueError(
+                    f"translate_to={self.translate_to!r} is not supported. "
+                    f"Choose from: {sorted(SUPPORTED_LANGUAGES)}"
+                )
+
         if self.score_threshold < MIN_SCORE_THRESHOLD:
             raise ValueError(
                 f"score_threshold={self.score_threshold} is below the governance "
@@ -456,6 +786,50 @@ class RedactionConfig:
                 "gliner_threshold is at governance floor (%s). This should be exceptional.",
                 MIN_GLINER_THRESHOLD,
             )
+
+
+# ---------------------------------------------------------------------------
+# Sensitivity-driven redaction profiles
+# ---------------------------------------------------------------------------
+# Map a table's ``data_sensitivity`` tag (from dbxredact.sensitivity) to a
+# RedactionConfig, so run_catalog_redaction applies a level-appropriate profile
+# per table.
+#
+# All profiles use ``alignment_mode="union"`` (recall-biased): these configs
+# drive *actual redaction*, where a missed span leaks PII, so consensus -- which
+# the pipeline gates behind allow_consensus_redaction and warns "may leave PII
+# unredacted" -- is deliberately avoided.  Levels are differentiated by how
+# aggressive detection is (score_threshold, GLiNER) and by redaction strategy,
+# not by alignment mode.  All thresholds sit well above MIN_SCORE_THRESHOLD.
+SENSITIVITY_PROFILES = {
+    # PHI: most aggressive recall -- lowest threshold + GLiNER NER on top of
+    # Presidio + AI Query, since missed PHI carries the highest compliance cost.
+    "phi": RedactionConfig(
+        use_presidio=True,
+        use_ai_query=True,
+        ner_backend="gliner",
+        alignment_mode="union",
+        score_threshold=0.35,
+        redaction_strategy="typed",
+    ),
+    # PCI: payment identifiers are structured/high-precision; typed redaction
+    # labels them, moderate threshold.
+    "pci": RedactionConfig(
+        use_presidio=True,
+        use_ai_query=True,
+        alignment_mode="union",
+        score_threshold=0.4,
+        redaction_strategy="typed",
+    ),
+    # PII: general personal data -- balanced recall with generic redaction.
+    "pii": RedactionConfig(
+        use_presidio=True,
+        use_ai_query=True,
+        alignment_mode="union",
+        score_threshold=0.5,
+        redaction_strategy="generic",
+    ),
+}
 
 
 # ---------------------------------------------------------------------------
