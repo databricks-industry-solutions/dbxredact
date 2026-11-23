@@ -29,7 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 gliner = ["gliner>=0.2.0,<1.0.0"]
 privacy_filter = ["opf @ git+https://github.com/openai/privacy-filter.git@f7f00ca7fb869683eb732c010299d901457f19c3"]
-app = ["fastapi>=0.115.0", "uvicorn>=0.30.0"]
+app = ["fastapi>=0.135.0", "starlette>=1.0.1", "uvicorn>=0.30.0"]
 
 [dependency-groups]
 dev = [

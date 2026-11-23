@@ -18,6 +18,9 @@ set -euo pipefail
 RUFF_VERSION="0.14.0"
 cd "$(dirname "$0")/.."
 
+# Block internal proxy hosts (lockfiles pick them up from local tooling).
+scripts/check_no_internal_urls.sh
+
 FIX=0
 SCOPE="staged"
 FILES=()

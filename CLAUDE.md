@@ -134,7 +134,15 @@ Numbered pipeline: `0_load_benchmark_data` -> `1_benchmarking_detection` -> `2_b
 - Library tests use local PySpark via `conftest.py` session-scoped `spark` fixture
 - App tests use FastAPI `TestClient` with mocked `WorkspaceClient` and DB layer
 - Mock helpers (`_mock_fetch_all`, `_mock_fetch_one`, `_mock_execute`) dispatch by SQL table name
-- CI enforces >= 40% library coverage and runs ruff lint/format checks
+- `.github/workflows/ci.yml` defines a >= 40% coverage gate and ruff checks, but **GitHub Actions does not run in the industry-solutions org**. Run tests and `scripts/lint.sh` locally before pushing.
+
+## Dependencies & Lockfiles
+
+This repo is public, and maintainers' machines resolve packages through internal proxies that lockfiles record.
+- `uv.lock` is **not committed** (gitignored). Users resolve from `pyproject.toml` ranges.
+- `apps/dbxredact-app/src/package-lock.json` is committed, but its `resolved` URLs must point to `https://registry.npmjs.org/`. Rewrite them after any `npm install`.
+- `scripts/check_no_internal_urls.sh` blocks internal proxy hosts. It runs from `scripts/lint.sh` and as a pre-commit hook.
+- Security floors for transitive deps of the deployed app (e.g. `starlette>=1.0.1`) go in both `apps/dbxredact-app/requirements.txt` and the `app` extra in `pyproject.toml`. The Apps runtime won't upgrade preinstalled packages that already satisfy a floor.
 
 ## Version
 
