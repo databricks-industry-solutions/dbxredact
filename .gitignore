@@ -34,7 +34,9 @@ build/
 venv/
 ENV/
 
-# Lock files are tracked (uv.lock is committed for reproducibility)
+# uv.lock is NOT committed: local resolution goes through an internal package
+# proxy that gets recorded in the lockfile. Users resolve from pyproject.toml.
+uv.lock
 
 # Testing
 .pytest_cache/
