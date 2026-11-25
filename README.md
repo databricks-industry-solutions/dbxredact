@@ -197,7 +197,7 @@ Ground-truth annotations may not be perfect -- some edge cases (3-letter hospita
 
 Databricks also has a built-in SQL function, `ai_mask`, that masks sensitive values in text inside a query, with no library, cluster, or model endpoint to deploy. It runs on Databricks SQL warehouses (not SQL Classic) and on Databricks Runtime clusters, in regions that support AI Functions. For requirements, syntax, and the full classifier list, see the `ai_mask` reference for [AWS](https://docs.databricks.com/aws/en/sql/language-manual/functions/ai_mask), [Azure](https://learn.microsoft.com/en-us/azure/databricks/sql/language-manual/functions/ai_mask), and [GCP](https://docs.databricks.com/gcp/en/sql/language-manual/functions/ai_mask).
 
-**Version 1.0**, the default, available on AWS, Azure and GCP, takes plain-language labels and replaces each match with `[MASKED]`:
+**Version 1.0** (the default) takes plain-language labels and replaces each match with `[MASKED]`:
 
 ```sql
 SELECT
