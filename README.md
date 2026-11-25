@@ -206,7 +206,7 @@ SELECT
 FROM catalog.schema.notes;
 ```
 
-**Version 2.0** (Beta, on AWS US regions; the reference lists all supported regions) uses a Databricks-built detection model with a fixed set of classifiers, such as `NAME`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, and `US_SSN`, and replaces each value with a typed placeholder such as `[NAME]`. Opt in per call with `options => map('version', '2.0')`, and omit the classifier list to use the default set. A call without that option runs version 1.0, which reads classifier names as plain labels and returns `[MASKED]`. The result is a `VARIANT`; read `response` for the masked text and `error_message` for rows that could not be processed:
+**Version 2.0** (Beta) uses a Databricks-built detection model with a fixed set of classifiers, such as `NAME`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, and `US_SSN`, and replaces each value with a typed placeholder such as `[NAME]`. Opt in per call with `options => map('version', '2.0')`, and omit the classifier list to use the default set. A call without that option runs version 1.0, which reads classifier names as plain labels and returns `[MASKED]`. The result is a `VARIANT`; read `response` for the masked text and `error_message` for rows that could not be processed:
 
 ```sql
 SELECT
@@ -225,9 +225,9 @@ FROM (
 );
 ```
 
-Version 2.0 isn't available on workspaces with the compliance security profile; use version 1.0 there. Beta behavior can change before general availability.
+Availability and behavior of version 2.0 can change during the Beta. See the `ai_mask` reference for where it is available today, and use version 1.0 elsewhere.
 
-**When to use dbxredact instead.** `ai_mask` returns masked text, not entity spans, so it does not feed this accelerator's alignment, block / safe lists, evaluation, or review app. Use dbxredact when you need entity-level output, an ensemble of detectors, block / safe lists, benchmarking against your own labeled data, your own model or endpoint (for example a fine-tuned GLiNER), or typed placeholders on Azure or GCP. Both work on text only; extract text from images or scanned documents first. As with any redaction approach, validate the output on your own data (see [Compliance and Responsibility](#compliance-and-responsibility)).
+**When to use dbxredact instead.** `ai_mask` returns masked text, not entity spans, so it does not feed this accelerator's alignment, block / safe lists, evaluation, or review app. Use dbxredact when you need entity-level output, an ensemble of detectors, block / safe lists, benchmarking against your own labeled data, your own model or endpoint (for example a fine-tuned GLiNER), or typed placeholders where version 2.0 isn't available. Both work on text only; extract text from images or scanned documents first. As with any redaction approach, validate the output on your own data (see [Compliance and Responsibility](#compliance-and-responsibility)).
 
 ## Cluster Profiles
 
